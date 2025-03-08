@@ -1,0 +1,27 @@
+{
+    "version": "0.2.0",
+    "configurations": [
+        {
+            "type": "lldb",
+            "request": "launch",
+            "name": "Debug executable",
+            "cargo": {
+                "args": [
+                    "build",
+                    "--bin=XLang-Rust",
+                    "--package=XLang-Rust"
+                ],
+                "filter": {
+                    "name": "XLang-Rust",
+                    "kind": "bin"
+                }
+            },
+            "args": [],
+            "cwd": "${workspaceFolder}",
+            "env": {
+                "RUST_BACKTRACE": "1",
+                "PYTHONIOENCODING": "UTF-8"
+            },
+        }
+    ]
+}
