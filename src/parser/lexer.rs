@@ -1,5 +1,5 @@
 
-#[derive(Debug)]
+#[derive(Debug, Clone)]
 pub enum TokenType {
     NUMBER,
     STRING,
@@ -38,23 +38,24 @@ impl PartialEq for TokenType {
 }
 
 
-#[derive(Debug)]
-pub struct Token {
-    pub token: String,         // The token string
+#[derive(Debug, Clone)]
+pub struct Token<'a> {
+    pub token: &'a str,         // The token string
     pub token_type: TokenType, // The type of the token
     pub origin_token: String,  // The original token string
     pub position: usize,       // The position of the token in the input string
 }
 
-impl Token {
+impl<'a> Token<'a> {
     pub fn new(
         token: String,
         token_type: TokenType,
         origin_token: String,
         position: usize,
-    ) -> Self {
+    ) -> Token<'a> {
+        let token_str = Box::leak(token.into_boxed_str());
         Token {
-            token,
+            token: token_str,
             token_type,
             origin_token,
             position,
