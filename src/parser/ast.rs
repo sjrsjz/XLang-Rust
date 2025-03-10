@@ -185,6 +185,23 @@ impl ASTNode<'_> {
             },
         }
     }
+
+    pub fn formatted_print(&self, indent: usize) {
+        let indent_str = " ".repeat(indent);
+        let mut output = format!("{}{:?} {:?}", indent_str, self.node_type, self.token);
+        
+        if let Some(ref info) = self.addtional_info {
+            output.push_str(&format!(" {:?}", info));
+        }
+        
+        println!("{}", output);
+        
+        if self.children.len() > 0 {
+            for child in &self.children {
+                child.formatted_print(indent + 2);
+            }
+        }
+    }
 }
 
 type MatcherFn<'a> = Box<
@@ -302,12 +319,13 @@ fn is_square_bracket(token: &GatheredTokens) -> bool {
 }
 
 pub fn build_ast<'a>(tokens: GatheredTokens<'a>) -> Result<ASTNode<'a>, ParserError<'a>> {
-    let (matched, offset) = match_all(&(gather(tokens)?), 0)?;
+    let gathered = gather(&tokens)?;
+    let (matched, offset) = match_all(&gathered, 0)?;
     if matched.is_none() {
         return Err(ParserError::InvalidSyntax(&tokens[0]));
     }
     let matched = matched.unwrap();
-    if offset != tokens.len() {
+    if offset != gathered.len() {
         return Err(ParserError::NotFullyMatched(
             &tokens[0],
             &tokens[tokens.len() - 1],
@@ -455,7 +473,7 @@ fn match_expressions<'t>(
     let mut separated = Vec::<ASTNode>::new();
     while current + offset < tokens.len() {
         if is_symbol(&tokens[current + offset], ";") {
-            let (node, node_offset) = match_all(tokens, current + offset + 1)?;
+            let (node, node_offset) = match_all(&left_tokens, 0)?;
             if node.is_none() {
                 return Ok((None, 0));
             }
@@ -465,6 +483,7 @@ fn match_expressions<'t>(
                     &tokens[current][tokens[current].len() - 1],
                 ));
             }
+            
             separated.push(node.unwrap());
             left_tokens.clear();
             offset += 1;
@@ -693,12 +712,6 @@ fn match_named_to<'t>(
     }
     let right = right.unwrap();
 
-    if right_offset != tokens.len() {
-        return Err(ParserError::NotFullyMatched(
-            &tokens[current][0],
-            &tokens[current][tokens[current].len() - 1],
-        ));
-    }
 
     return Ok((
         Some(ASTNode::new(
@@ -741,13 +754,6 @@ fn match_key_value<'t>(
         return Ok((None, 0));
     }
     let right = right.unwrap();
-
-    if right_offset != tokens.len() {
-        return Err(ParserError::NotFullyMatched(
-            &tokens[current][0],
-            &tokens[current][tokens[current].len() - 1],
-        ));
-    }
 
     return Ok((
         Some(ASTNode::new(
@@ -792,12 +798,6 @@ fn match_while<'t>(
     }
     let body = body.unwrap();
 
-    if body_offset != tokens.len() {
-        return Err(ParserError::NotFullyMatched(
-            &tokens[current][0],
-            &tokens[current][tokens[current].len() - 1],
-        ));
-    }
 
     return Ok((
         Some(ASTNode::new(
@@ -1381,12 +1381,7 @@ fn match_lambda_def<'t>(
         return Ok((None, 0));
     }
     let right = right.unwrap();
-    if right_offset != tokens.len() {
-        return Err(ParserError::NotFullyMatched(
-            &tokens[current][0],
-            &tokens[current][tokens[current].len() - 1],
-        ));
-    }
+
     return Ok((
         Some(ASTNode::new(
             ASTNodeType::LambdaDef,
