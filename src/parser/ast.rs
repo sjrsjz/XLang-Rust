@@ -3,15 +3,22 @@ use std::{fmt::Debug, vec};
 use crate::{lexer, Token, TokenType};
 
 #[derive(Debug)]
-pub enum ParserError<'T> {
-    UnexpectedToken(&'T Token<'T>),                     // Token
-    UnmatchedParenthesis(&'T Token<'T>, &'T Token<'T>), // (opening, closing)
-    InvalidSyntax(&'T Token<'T>),
-    NotFullyMatched(&'T Token<'T>, &'T Token<'T>),
-    InvalidVariableName(&'T Token<'T>),
+pub enum ParserError<'t> {
+    UnexpectedToken(&'t Token<'t>),                     // Token
+    UnmatchedParenthesis(&'t Token<'t>, &'t Token<'t>), // (opening, closing)
+    InvalidSyntax(&'t Token<'t>),
+    NotFullyMatched(&'t Token<'t>, &'t Token<'t>),
+    InvalidVariableName(&'t Token<'t>),
+    UnsupportedStructure(&'t Token<'t>),
 }
-type TokenStream<'T> = Vec<Token<'T>>;
-type GatheredTokens<'T> = &'T [Token<'T>];
+pub type TokenStream<'t> = Vec<Token<'t>>;
+pub type GatheredTokens<'t> = &'t [Token<'t>];
+
+pub mod ASTTokenStream {
+    pub fn from_stream<'t>(stream: &'t super::TokenStream<'t>) -> super::GatheredTokens<'t> {
+        stream.as_slice()
+    }
+}
 
 fn get_next_tokens<'a>(
     tokens: GatheredTokens<'a>,
@@ -65,11 +72,14 @@ fn get_next_tokens<'a>(
     return Ok(&tokens[current..next_tokens_end]);
 }
 
-fn gather<'T>(tokens: GatheredTokens<'T>) -> Result<Vec<GatheredTokens<'T>>, ParserError<'T>> {
+fn gather<'t>(tokens: GatheredTokens<'t>) -> Result<Vec<GatheredTokens<'t>>, ParserError<'t>> {
     let mut current = 0;
     let mut result = Vec::<GatheredTokens>::new();
     while current < tokens.len() {
         let next_tokens = get_next_tokens(tokens, current)?;
+        if next_tokens.len() == 0 {
+            return Err(ParserError::UnsupportedStructure(&tokens[current]));
+        }
         current += next_tokens.len();
         result.push(next_tokens);
     }
@@ -148,20 +158,20 @@ pub enum ASTNodeAdditionalInfo {
 }
 
 #[derive(Debug)]
-pub struct ASTNode<'T> {
+pub struct ASTNode<'t> {
     pub node_type: ASTNodeType,                        // Type of the node
-    pub token: &'T Token<'T>,                          // Token associated with the node
-    pub children: Vec<ASTNode<'T>>,                    // Children of the node
+    pub token: &'t Token<'t>,                          // Token associated with the node
+    pub children: Vec<ASTNode<'t>>,                    // Children of the node
     pub addtional_info: Option<ASTNodeAdditionalInfo>, // Additional information about the node
 }
 
 impl ASTNode<'_> {
-    pub fn new<'T>(
+    pub fn new<'t>(
         node_type: ASTNodeType,
-        token: &'T Token,
-        children: Option<Vec<ASTNode<'T>>>,
+        token: &'t Token,
+        children: Option<Vec<ASTNode<'t>>>,
         addtional_info: Option<ASTNodeAdditionalInfo>,
-    ) -> ASTNode<'T> {
+    ) -> ASTNode<'t> {
         ASTNode {
             node_type,
             token,
@@ -230,7 +240,7 @@ fn is_identifier(token: &GatheredTokens, identifier: &str) -> bool {
     token.token_type == TokenType::IDENTIFIER && token.token == identifier
 }
 
-fn unwrap_brace<'T>(token: &GatheredTokens<'T>) -> Result<GatheredTokens<'T>, ParserError<'T>> {
+fn unwrap_brace<'t>(token: &GatheredTokens<'t>) -> Result<GatheredTokens<'t>, ParserError<'t>> {
     if token.len() < 2 {
         return Err(ParserError::UnexpectedToken(&token[0]));
     }
@@ -303,127 +313,127 @@ pub fn build_ast<'a>(tokens: GatheredTokens<'a>) -> Result<ASTNode<'a>, ParserEr
     return Ok(matched);
 }
 
-fn match_all<'T>(
-    tokens: &Vec<GatheredTokens<'T>>,
+fn match_all<'t>(
+    tokens: &Vec<GatheredTokens<'t>>,
     current: usize,
-) -> Result<(Option<ASTNode<'T>>, usize), ParserError<'T>> {
+) -> Result<(Option<ASTNode<'t>>, usize), ParserError<'t>> {
     let mut node_matcher = NodeMatcher::new();
     node_matcher.add_matcher(Box::new(
-        |tokens, current| -> Result<(Option<ASTNode<'T>>, usize), ParserError<'T>> {
+        |tokens, current| -> Result<(Option<ASTNode<'t>>, usize), ParserError<'t>> {
             match_expressions(tokens, current)
         },
     ));
 
     node_matcher.add_matcher(Box::new(
-        |tokens, current| -> Result<(Option<ASTNode<'T>>, usize), ParserError<'T>> {
+        |tokens, current| -> Result<(Option<ASTNode<'t>>, usize), ParserError<'t>> {
             match_return(tokens, current)
         },
     ));
 
     node_matcher.add_matcher(Box::new(
-        |tokens, current| -> Result<(Option<ASTNode<'T>>, usize), ParserError<'T>> {
+        |tokens, current| -> Result<(Option<ASTNode<'t>>, usize), ParserError<'t>> {
             match_tuple(tokens, current)
         },
     ));
 
     node_matcher.add_matcher(Box::new(
-        |tokens, current| -> Result<(Option<ASTNode<'T>>, usize), ParserError<'T>> {
+        |tokens, current| -> Result<(Option<ASTNode<'t>>, usize), ParserError<'t>> {
             match_let(tokens, current)
         },
     ));
 
     node_matcher.add_matcher(Box::new(
-        |tokens, current| -> Result<(Option<ASTNode<'T>>, usize), ParserError<'T>> {
+        |tokens, current| -> Result<(Option<ASTNode<'t>>, usize), ParserError<'t>> {
             match_assign(tokens, current)
         },
     ));
 
     node_matcher.add_matcher(Box::new(
-        |tokens, current| -> Result<(Option<ASTNode<'T>>, usize), ParserError<'T>> {
+        |tokens, current| -> Result<(Option<ASTNode<'t>>, usize), ParserError<'t>> {
             match_named_to(tokens, current)
         },
     ));
 
     node_matcher.add_matcher(Box::new(
-        |tokens, current| -> Result<(Option<ASTNode<'T>>, usize), ParserError<'T>> {
+        |tokens, current| -> Result<(Option<ASTNode<'t>>, usize), ParserError<'t>> {
             match_key_value(tokens, current)
         },
     ));
 
     node_matcher.add_matcher(Box::new(
-        |tokens, current| -> Result<(Option<ASTNode<'T>>, usize), ParserError<'T>> {
+        |tokens, current| -> Result<(Option<ASTNode<'t>>, usize), ParserError<'t>> {
             match_while(tokens, current)
         },
     ));
 
     node_matcher.add_matcher(Box::new(
-        |tokens, current| -> Result<(Option<ASTNode<'T>>, usize), ParserError<'T>> {
+        |tokens, current| -> Result<(Option<ASTNode<'t>>, usize), ParserError<'t>> {
             match_if(tokens, current)
         },
     ));
 
     node_matcher.add_matcher(Box::new(
-        |tokens, current| -> Result<(Option<ASTNode<'T>>, usize), ParserError<'T>> {
+        |tokens, current| -> Result<(Option<ASTNode<'t>>, usize), ParserError<'t>> {
             match_control_flow(tokens, current)
         },
     ));
 
     node_matcher.add_matcher(Box::new(
-        |tokens, current| -> Result<(Option<ASTNode<'T>>, usize), ParserError<'T>> {
+        |tokens, current| -> Result<(Option<ASTNode<'t>>, usize), ParserError<'t>> {
             match_or(tokens, current)
         },
     ));
 
     node_matcher.add_matcher(Box::new(
-        |tokens, current| -> Result<(Option<ASTNode<'T>>, usize), ParserError<'T>> {
+        |tokens, current| -> Result<(Option<ASTNode<'t>>, usize), ParserError<'t>> {
             match_and(tokens, current)
         },
     ));
 
     node_matcher.add_matcher(Box::new(
-        |tokens, current| -> Result<(Option<ASTNode<'T>>, usize), ParserError<'T>> {
+        |tokens, current| -> Result<(Option<ASTNode<'t>>, usize), ParserError<'t>> {
             match_not(tokens, current)
         },
     ));
 
     node_matcher.add_matcher(Box::new(
-        |tokens, current| -> Result<(Option<ASTNode<'T>>, usize), ParserError<'T>> {
+        |tokens, current| -> Result<(Option<ASTNode<'t>>, usize), ParserError<'t>> {
             match_operation_compare(tokens, current)
         },
     ));
 
     node_matcher.add_matcher(Box::new(
-        |tokens, current| -> Result<(Option<ASTNode<'T>>, usize), ParserError<'T>> {
+        |tokens, current| -> Result<(Option<ASTNode<'t>>, usize), ParserError<'t>> {
             match_operation_add_sub(tokens, current)
         },
     ));
 
     node_matcher.add_matcher(Box::new(
-        |tokens, current| -> Result<(Option<ASTNode<'T>>, usize), ParserError<'T>> {
+        |tokens, current| -> Result<(Option<ASTNode<'t>>, usize), ParserError<'t>> {
             match_operation_mul_div_mod(tokens, current)
         },
     ));
 
     node_matcher.add_matcher(Box::new(
-        |tokens, current| -> Result<(Option<ASTNode<'T>>, usize), ParserError<'T>> {
+        |tokens, current| -> Result<(Option<ASTNode<'t>>, usize), ParserError<'t>> {
             match_lambda_def(tokens, current)
         },
     ));
 
     node_matcher.add_matcher(Box::new(
-        |tokens, current| -> Result<(Option<ASTNode<'T>>, usize), ParserError<'T>> {
+        |tokens, current| -> Result<(Option<ASTNode<'t>>, usize), ParserError<'t>> {
             match_modifier(tokens, current)
         },
     ));
 
     node_matcher.add_matcher(Box::new(
-        |tokens, current| -> Result<(Option<ASTNode<'T>>, usize), ParserError<'T>> {
+        |tokens, current| -> Result<(Option<ASTNode<'t>>, usize), ParserError<'t>> {
             match_member_access_and_call(tokens, current)
         },
     ));
 
     node_matcher.add_matcher(Box::new(
-        |tokens, current| -> Result<(Option<ASTNode<'T>>, usize), ParserError<'T>> {
+        |tokens, current| -> Result<(Option<ASTNode<'t>>, usize), ParserError<'t>> {
             match_variable(tokens, current)
         },
     ));
@@ -432,10 +442,10 @@ fn match_all<'T>(
     return node_matcher.match_node(tokens, current);
 }
 
-fn match_expressions<'T>(
-    tokens: &Vec<GatheredTokens<'T>>,
+fn match_expressions<'t>(
+    tokens: &Vec<GatheredTokens<'t>>,
     current: usize,
-) -> Result<(Option<ASTNode<'T>>, usize), ParserError<'T>> {
+) -> Result<(Option<ASTNode<'t>>, usize), ParserError<'t>> {
     let mut offset = 0usize;
     let mut left_tokens = Vec::<GatheredTokens>::new();
     let mut last_offset = 0usize;
@@ -480,10 +490,10 @@ fn match_expressions<'T>(
     ));
 }
 
-fn match_return<'T>(
-    tokens: &Vec<GatheredTokens<'T>>,
+fn match_return<'t>(
+    tokens: &Vec<GatheredTokens<'t>>,
     current: usize,
-) -> Result<(Option<ASTNode<'T>>, usize), ParserError<'T>> {
+) -> Result<(Option<ASTNode<'t>>, usize), ParserError<'t>> {
     if current + 1 >= tokens.len() {
         return Ok((None, 0));
     }
@@ -506,10 +516,10 @@ fn match_return<'T>(
     ));
 }
 
-fn match_tuple<'T>(
-    tokens: &Vec<GatheredTokens<'T>>,
+fn match_tuple<'t>(
+    tokens: &Vec<GatheredTokens<'t>>,
     current: usize,
-) -> Result<(Option<ASTNode<'T>>, usize), ParserError<'T>> {
+) -> Result<(Option<ASTNode<'t>>, usize), ParserError<'t>> {
     let mut offset = 0usize;
     let mut left_tokens = Vec::<GatheredTokens>::new();
     let mut last_offset = 0usize;
@@ -554,10 +564,10 @@ fn match_tuple<'T>(
     ));
 }
 
-fn match_let<'T>(
-    tokens: &Vec<GatheredTokens<'T>>,
+fn match_let<'t>(
+    tokens: &Vec<GatheredTokens<'t>>,
     current: usize,
-) -> Result<(Option<ASTNode<'T>>, usize), ParserError<'T>> {
+) -> Result<(Option<ASTNode<'t>>, usize), ParserError<'t>> {
     if current + 2 >= tokens.len() {
         return Ok((None, 0));
     }
@@ -601,10 +611,10 @@ fn match_let<'T>(
     ));
 }
 
-fn match_assign<'T>(
-    tokens: &Vec<GatheredTokens<'T>>,
+fn match_assign<'t>(
+    tokens: &Vec<GatheredTokens<'t>>,
     current: usize,
-) -> Result<(Option<ASTNode<'T>>, usize), ParserError<'T>> {
+) -> Result<(Option<ASTNode<'t>>, usize), ParserError<'t>> {
     if current + 2 >= tokens.len() {
         return Ok((None, 0));
     }
@@ -648,10 +658,10 @@ fn match_assign<'T>(
     ));
 }
 
-fn match_named_to<'T>(
-    tokens: &Vec<GatheredTokens<'T>>,
+fn match_named_to<'t>(
+    tokens: &Vec<GatheredTokens<'t>>,
     current: usize,
-) -> Result<(Option<ASTNode<'T>>, usize), ParserError<'T>> {
+) -> Result<(Option<ASTNode<'t>>, usize), ParserError<'t>> {
     if current + 2 >= tokens.len() {
         return Ok((None, 0));
     }
@@ -698,10 +708,10 @@ fn match_named_to<'T>(
     ));
 }
 
-fn match_key_value<'T>(
-    tokens: &Vec<GatheredTokens<'T>>,
+fn match_key_value<'t>(
+    tokens: &Vec<GatheredTokens<'t>>,
     current: usize,
-) -> Result<(Option<ASTNode<'T>>, usize), ParserError<'T>> {
+) -> Result<(Option<ASTNode<'t>>, usize), ParserError<'t>> {
     if current + 2 >= tokens.len() {
         return Ok((None, 0));
     }
@@ -747,10 +757,10 @@ fn match_key_value<'T>(
     ));
 }
 
-fn match_while<'T>(
-    tokens: &Vec<GatheredTokens<'T>>,
+fn match_while<'t>(
+    tokens: &Vec<GatheredTokens<'t>>,
     current: usize,
-) -> Result<(Option<ASTNode<'T>>, usize), ParserError<'T>> {
+) -> Result<(Option<ASTNode<'t>>, usize), ParserError<'t>> {
     if current + 2 >= tokens.len() {
         return Ok((None, 0));
     }
@@ -797,10 +807,10 @@ fn match_while<'T>(
     ));
 }
 
-fn match_if<'T>(
-    tokens: &Vec<GatheredTokens<'T>>,
+fn match_if<'t>(
+    tokens: &Vec<GatheredTokens<'t>>,
     current: usize,
-) -> Result<(Option<ASTNode<'T>>, usize), ParserError<'T>> {
+) -> Result<(Option<ASTNode<'t>>, usize), ParserError<'t>> {
     if current + 2 >= tokens.len() {
         return Ok((None, 0));
     }
@@ -870,10 +880,10 @@ fn match_if<'T>(
     ));
 }
 
-fn match_control_flow<'T>(
-    tokens: &Vec<GatheredTokens<'T>>,
+fn match_control_flow<'t>(
+    tokens: &Vec<GatheredTokens<'t>>,
     current: usize,
-) -> Result<(Option<ASTNode<'T>>, usize), ParserError<'T>> {
+) -> Result<(Option<ASTNode<'t>>, usize), ParserError<'t>> {
     if current >= tokens.len() {
         return Ok((None, 0));
     }
@@ -901,10 +911,10 @@ fn match_control_flow<'T>(
     return Ok((None, 0));
 }
 
-fn match_or<'T>(
-    tokens: &Vec<GatheredTokens<'T>>,
+fn match_or<'t>(
+    tokens: &Vec<GatheredTokens<'t>>,
     current: usize,
-) -> Result<(Option<ASTNode<'T>>, usize), ParserError<'T>> {
+) -> Result<(Option<ASTNode<'t>>, usize), ParserError<'t>> {
     let mut offset: usize = tokens.len() - current - 1;
     let mut operator = Option::<&str>::None;
     let mut operator_pos: usize = 0;
@@ -959,10 +969,10 @@ fn match_or<'T>(
     ));
 }
 
-fn match_and<'T>(
-    tokens: &Vec<GatheredTokens<'T>>,
+fn match_and<'t>(
+    tokens: &Vec<GatheredTokens<'t>>,
     current: usize,
-) -> Result<(Option<ASTNode<'T>>, usize), ParserError<'T>> {
+) -> Result<(Option<ASTNode<'t>>, usize), ParserError<'t>> {
     let mut offset: usize = tokens.len() - current - 1;
     let mut operator = Option::<&str>::None;
     let mut operator_pos: usize = 0;
@@ -1017,10 +1027,10 @@ fn match_and<'T>(
     ));
 }
 
-fn match_not<'T>(
-    tokens: &Vec<GatheredTokens<'T>>,
+fn match_not<'t>(
+    tokens: &Vec<GatheredTokens<'t>>,
     current: usize,
-) -> Result<(Option<ASTNode<'T>>, usize), ParserError<'T>> {
+) -> Result<(Option<ASTNode<'t>>, usize), ParserError<'t>> {
     if current >= tokens.len() {
         return Ok((None, 0));
     }
@@ -1046,10 +1056,10 @@ fn match_not<'T>(
 }
 
 // >, <, >=, <=, ==, !=
-fn match_operation_compare<'T>(
-    tokens: &Vec<GatheredTokens<'T>>,
+fn match_operation_compare<'t>(
+    tokens: &Vec<GatheredTokens<'t>>,
     current: usize,
-) -> Result<(Option<ASTNode<'T>>, usize), ParserError<'T>> {
+) -> Result<(Option<ASTNode<'t>>, usize), ParserError<'t>> {
     let mut offset: usize = tokens.len() - current - 1;
     let mut operator = Option::<&str>::None;
     let mut operator_pos: usize = 0;
@@ -1118,10 +1128,10 @@ fn match_operation_compare<'T>(
 }
 
 // +, -
-fn match_operation_add_sub<'T>(
-    tokens: &Vec<GatheredTokens<'T>>,
+fn match_operation_add_sub<'t>(
+    tokens: &Vec<GatheredTokens<'t>>,
     current: usize,
-) -> Result<(Option<ASTNode<'T>>, usize), ParserError<'T>> {
+) -> Result<(Option<ASTNode<'t>>, usize), ParserError<'t>> {
     let mut offset: usize = tokens.len().saturating_sub(current).saturating_sub(1);
     let mut operator = Option::<&str>::None;
     let mut operator_pos: usize = 0;
@@ -1262,10 +1272,10 @@ fn match_operation_add_sub<'T>(
     ));
 }
 
-fn match_operation_mul_div_mod<'T>(
-    tokens: &Vec<GatheredTokens<'T>>,
+fn match_operation_mul_div_mod<'t>(
+    tokens: &Vec<GatheredTokens<'t>>,
     current: usize,
-) -> Result<(Option<ASTNode<'T>>, usize), ParserError<'T>> {
+) -> Result<(Option<ASTNode<'t>>, usize), ParserError<'t>> {
     let mut offset: usize = tokens.len().saturating_sub(current).saturating_sub(1);
     let mut operator = Option::<&str>::None;
     let mut operator_pos: usize = 0;
@@ -1340,10 +1350,10 @@ fn match_operation_mul_div_mod<'T>(
 }
 
 
-fn match_lambda_def<'T>(
-    tokens: &Vec<GatheredTokens<'T>>,
+fn match_lambda_def<'t>(
+    tokens: &Vec<GatheredTokens<'t>>,
     current: usize,
-) -> Result<(Option<ASTNode<'T>>, usize), ParserError<'T>> {
+) -> Result<(Option<ASTNode<'t>>, usize), ParserError<'t>> {
     if current + 2 >= tokens.len() {
         return Ok((None, 0));
     }
@@ -1386,10 +1396,10 @@ fn match_lambda_def<'T>(
 
 }
 
-fn match_modifier<'T>(
-    tokens: &Vec<GatheredTokens<'T>>,
+fn match_modifier<'t>(
+    tokens: &Vec<GatheredTokens<'t>>,
     current: usize,
-) -> Result<(Option<ASTNode<'T>>, usize), ParserError<'T>> {
+) -> Result<(Option<ASTNode<'t>>, usize), ParserError<'t>> {
     if current + 1 >= tokens.len() {
         return Ok((None, 0));
     }
@@ -1422,10 +1432,10 @@ fn match_modifier<'T>(
     return Ok((None, 0));
 }
 
-fn match_member_access_and_call<'T>(
-    tokens: &Vec<GatheredTokens<'T>>,
+fn match_member_access_and_call<'t>(
+    tokens: &Vec<GatheredTokens<'t>>,
     current: usize,
-) -> Result<(Option<ASTNode<'T>>, usize), ParserError<'T>> {
+) -> Result<(Option<ASTNode<'t>>, usize), ParserError<'t>> {
     let mut offset: usize = tokens.len() - current - 1;
     let mut access_type = Option::<&str>::None;
     let mut access_pos: usize = 0;
@@ -1591,10 +1601,10 @@ fn match_member_access_and_call<'T>(
 
 // ...existing code...
 
-fn match_variable<'T>(
-    tokens: &Vec<GatheredTokens<'T>>,
+fn match_variable<'t>(
+    tokens: &Vec<GatheredTokens<'t>>,
     current: usize,
-) -> Result<(Option<ASTNode<'T>>, usize), ParserError<'T>> {
+) -> Result<(Option<ASTNode<'t>>, usize), ParserError<'t>> {
     if current >= tokens.len() {
         return Ok((None, 0));
     }
