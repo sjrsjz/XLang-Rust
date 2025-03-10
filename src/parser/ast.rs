@@ -129,8 +129,22 @@ pub enum ASTNodeOperation {
 }
 
 #[derive(Debug)]
+pub enum ASTNodeModifier {
+    Copy, // Copy
+    Ref,  // Ref
+    Deref, // Deref
+    KeyOf, // KeyOf
+    ValueOf, // ValueOf
+    SelfOf, // SelfOf
+    Assert, // Assert
+    Import, // Import 
+    TypeOf, // TypeOf   
+}
+
+#[derive(Debug)]
 pub enum ASTNodeAdditionalInfo {
     ASTNodeOperation(ASTNodeOperation),
+    ASTNodeModifier(ASTNodeModifier),
 }
 
 #[derive(Debug)]
@@ -216,6 +230,64 @@ fn is_identifier(token: &GatheredTokens, identifier: &str) -> bool {
     token.token_type == TokenType::IDENTIFIER && token.token == identifier
 }
 
+fn unwrap_brace<'T>(token: &GatheredTokens<'T>) -> Result<GatheredTokens<'T>, ParserError<'T>> {
+    if token.len() < 2 {
+        return Err(ParserError::UnexpectedToken(&token[0]));
+    }
+    if token[0].token_type == TokenType::SYMBOL
+        && token[0].token == "{"
+        && token[token.len() - 1].token_type == TokenType::SYMBOL
+        && token[token.len() - 1].token == "}"
+    {
+        return Ok(&token[1..token.len() - 1]);
+    }
+    if token[0].token_type == TokenType::SYMBOL
+        && token[0].token == "["
+        && token[token.len() - 1].token_type == TokenType::SYMBOL
+        && token[token.len() - 1].token == "]"
+    {
+        return Ok(&token[1..token.len() - 1]);
+    }
+    if token[0].token_type == TokenType::SYMBOL
+        && token[0].token == "("
+        && token[token.len() - 1].token_type == TokenType::SYMBOL
+        && token[token.len() - 1].token == ")"
+    {
+        return Ok(&token[1..token.len() - 1]);
+    }
+    return Err(ParserError::UnexpectedToken(&token[0]));
+}
+
+fn is_bracket(token: &GatheredTokens) -> bool {
+    if token.len() < 2 {
+        return false;
+    }
+    return (token[0].token_type == TokenType::SYMBOL
+        && token[0].token == "("
+        && token[token.len() - 1].token_type == TokenType::SYMBOL
+        && token[token.len() - 1].token == ")");
+}
+
+fn is_brace(token: &GatheredTokens) -> bool {
+    if token.len() < 2 {
+        return false;
+    }
+    return (token[0].token_type == TokenType::SYMBOL
+        && token[0].token == "{"
+        && token[token.len() - 1].token_type == TokenType::SYMBOL
+        && token[token.len() - 1].token == "}");
+}
+
+fn is_square_bracket(token: &GatheredTokens) -> bool {
+    if token.len() < 2 {
+        return false;
+    }
+    return (token[0].token_type == TokenType::SYMBOL
+        && token[0].token == "["
+        && token[token.len() - 1].token_type == TokenType::SYMBOL
+        && token[token.len() - 1].token == "]");
+}
+
 pub fn build_ast<'a>(tokens: GatheredTokens<'a>) -> Result<ASTNode<'a>, ParserError<'a>> {
     let (matched, offset) = match_all(&(gather(tokens)?), 0)?;
     if matched.is_none() {
@@ -265,6 +337,97 @@ fn match_all<'T>(
             match_assign(tokens, current)
         },
     ));
+
+    node_matcher.add_matcher(Box::new(
+        |tokens, current| -> Result<(Option<ASTNode<'T>>, usize), ParserError<'T>> {
+            match_named_to(tokens, current)
+        },
+    ));
+
+    node_matcher.add_matcher(Box::new(
+        |tokens, current| -> Result<(Option<ASTNode<'T>>, usize), ParserError<'T>> {
+            match_key_value(tokens, current)
+        },
+    ));
+
+    node_matcher.add_matcher(Box::new(
+        |tokens, current| -> Result<(Option<ASTNode<'T>>, usize), ParserError<'T>> {
+            match_while(tokens, current)
+        },
+    ));
+
+    node_matcher.add_matcher(Box::new(
+        |tokens, current| -> Result<(Option<ASTNode<'T>>, usize), ParserError<'T>> {
+            match_if(tokens, current)
+        },
+    ));
+
+    node_matcher.add_matcher(Box::new(
+        |tokens, current| -> Result<(Option<ASTNode<'T>>, usize), ParserError<'T>> {
+            match_control_flow(tokens, current)
+        },
+    ));
+
+    node_matcher.add_matcher(Box::new(
+        |tokens, current| -> Result<(Option<ASTNode<'T>>, usize), ParserError<'T>> {
+            match_or(tokens, current)
+        },
+    ));
+
+    node_matcher.add_matcher(Box::new(
+        |tokens, current| -> Result<(Option<ASTNode<'T>>, usize), ParserError<'T>> {
+            match_and(tokens, current)
+        },
+    ));
+
+    node_matcher.add_matcher(Box::new(
+        |tokens, current| -> Result<(Option<ASTNode<'T>>, usize), ParserError<'T>> {
+            match_not(tokens, current)
+        },
+    ));
+
+    node_matcher.add_matcher(Box::new(
+        |tokens, current| -> Result<(Option<ASTNode<'T>>, usize), ParserError<'T>> {
+            match_operation_compare(tokens, current)
+        },
+    ));
+
+    node_matcher.add_matcher(Box::new(
+        |tokens, current| -> Result<(Option<ASTNode<'T>>, usize), ParserError<'T>> {
+            match_operation_add_sub(tokens, current)
+        },
+    ));
+
+    node_matcher.add_matcher(Box::new(
+        |tokens, current| -> Result<(Option<ASTNode<'T>>, usize), ParserError<'T>> {
+            match_operation_mul_div_mod(tokens, current)
+        },
+    ));
+
+    node_matcher.add_matcher(Box::new(
+        |tokens, current| -> Result<(Option<ASTNode<'T>>, usize), ParserError<'T>> {
+            match_lambda_def(tokens, current)
+        },
+    ));
+
+    node_matcher.add_matcher(Box::new(
+        |tokens, current| -> Result<(Option<ASTNode<'T>>, usize), ParserError<'T>> {
+            match_modifier(tokens, current)
+        },
+    ));
+
+    node_matcher.add_matcher(Box::new(
+        |tokens, current| -> Result<(Option<ASTNode<'T>>, usize), ParserError<'T>> {
+            match_member_access_and_call(tokens, current)
+        },
+    ));
+
+    node_matcher.add_matcher(Box::new(
+        |tokens, current| -> Result<(Option<ASTNode<'T>>, usize), ParserError<'T>> {
+            match_variable(tokens, current)
+        },
+    ));
+
 
     return node_matcher.match_node(tokens, current);
 }
@@ -788,15 +951,13 @@ fn match_or<'T>(
             ASTNodeType::Operation,
             &tokens[current][0],
             Some(vec![left, right]),
-            Some(
-                ASTNodeAdditionalInfo::ASTNodeOperation(ASTNodeOperation::Or)
-            ),
+            Some(ASTNodeAdditionalInfo::ASTNodeOperation(
+                ASTNodeOperation::Or,
+            )),
         )),
         tokens.len() - current, // return full length of the tokens
     ));
 }
-
-
 
 fn match_and<'T>(
     tokens: &Vec<GatheredTokens<'T>>,
@@ -848,9 +1009,9 @@ fn match_and<'T>(
             ASTNodeType::Operation,
             &tokens[current][0],
             Some(vec![left, right]),
-            Some(
-                ASTNodeAdditionalInfo::ASTNodeOperation(ASTNodeOperation::And)
-            ),
+            Some(ASTNodeAdditionalInfo::ASTNodeOperation(
+                ASTNodeOperation::And,
+            )),
         )),
         tokens.len() - current, // return full length of the tokens
     ));
@@ -874,9 +1035,9 @@ fn match_not<'T>(
                 ASTNodeType::Operation,
                 &tokens[current][0],
                 Some(vec![node]),
-                Some(
-                    ASTNodeAdditionalInfo::ASTNodeOperation(ASTNodeOperation::Not)
-                ),
+                Some(ASTNodeAdditionalInfo::ASTNodeOperation(
+                    ASTNodeOperation::Not,
+                )),
             )),
             node_offset + 1,
         ));
@@ -956,203 +1117,209 @@ fn match_operation_compare<'T>(
     ));
 }
 
-
 // +, -
 fn match_operation_add_sub<'T>(
-    tokens: &Vec<GatheredTokens<'T>>, 
-    current: usize
+    tokens: &Vec<GatheredTokens<'T>>,
+    current: usize,
 ) -> Result<(Option<ASTNode<'T>>, usize), ParserError<'T>> {
     let mut offset: usize = tokens.len().saturating_sub(current).saturating_sub(1);
     let mut operator = Option::<&str>::None;
     let mut operator_pos: usize = 0;
-    
+
     // 从右往左查找 + 或 - 操作符
     while offset > 0 {
         let pos = current + offset;
         if is_symbol(&tokens[pos], "+") || is_symbol(&tokens[pos], "-") {
             let op_token = tokens[pos][0].token;
-            
+
             // 检查是否为一元操作符
             let is_unary = if pos == current {
                 true // 如果在表达式开始位置，一定是一元操作符
             } else {
                 // 检查前一个token是否为运算符或括号等，表明这是一元操作符
                 let prev_pos = pos - 1;
-                tokens[prev_pos].len() == 1 && tokens[prev_pos][0].token_type == TokenType::SYMBOL &&
-                vec!["+", "-", "*", "/", "%", "==", "!=", "<", ">", "<=", ">=", "("].contains(&tokens[prev_pos][0].token)
+                tokens[prev_pos].len() == 1
+                    && tokens[prev_pos][0].token_type == TokenType::SYMBOL
+                    && vec![
+                        "+", "-", "*", "/", "%", "==", "!=", "<", ">", "<=", ">=", "(",
+                    ]
+                    .contains(&tokens[prev_pos][0].token)
             };
-            
+
             // 如果是一元操作符，继续向左搜索二元操作符
             if is_unary && pos > current {
                 offset -= 1;
                 continue;
             }
-            
+
             operator = Some(op_token);
             operator_pos = pos;
             break;
         }
         offset -= 1;
     }
-    
+
     if operator.is_none() {
         return Ok((None, 0)); // 没有找到操作符
     }
-    
+
     let op = operator.unwrap();
-    
+
     // 处理一元操作符的情况(+x, -x)
-    if operator_pos == current || 
-       (operator_pos > current && 
-        tokens[operator_pos - 1].len() == 1 &&
-        tokens[operator_pos - 1][0].token_type == TokenType::SYMBOL &&
-        vec!["+", "-", "*", "/", "%", "==", "!=", "<", ">", "<=", ">=", "("].contains(&tokens[operator_pos - 1][0].token)) {
-        
+    if operator_pos == current
+        || (operator_pos > current
+            && tokens[operator_pos - 1].len() == 1
+            && tokens[operator_pos - 1][0].token_type == TokenType::SYMBOL
+            && vec![
+                "+", "-", "*", "/", "%", "==", "!=", "<", ">", "<=", ">=", "(",
+            ]
+            .contains(&tokens[operator_pos - 1][0].token))
+    {
         // 解析右侧表达式
         let right_tokens = &tokens[operator_pos + 1..].to_vec();
         let (right, right_offset) = match_all(right_tokens, 0)?;
-        
+
         if right.is_none() {
             return Ok((None, 0));
         }
-        
+
         let right = right.unwrap();
         if right_offset != right_tokens.len() {
             return Err(ParserError::NotFullyMatched(
-                &tokens[current][0], 
-                &tokens[current][tokens[current].len() - 1]
+                &tokens[current][0],
+                &tokens[current][tokens[current].len() - 1],
             ));
         }
-        
+
         // 确定操作类型
         let operation = if op == "+" {
             ASTNodeOperation::Add
         } else {
             ASTNodeOperation::Subtract
         };
-        
+
         // 返回一元操作节点
         return Ok((
             Some(ASTNode::new(
                 ASTNodeType::Operation,
                 &tokens[operator_pos][0],
                 Some(vec![right]),
-                Some(ASTNodeAdditionalInfo::ASTNodeOperation(operation))
+                Some(ASTNodeAdditionalInfo::ASTNodeOperation(operation)),
             )),
-            tokens.len() - current
+            tokens.len() - current,
         ));
     }
-    
+
     // 处理二元操作符情况
-    
+
     // 解析左侧表达式
     let left_tokens = &tokens[current..operator_pos].to_vec();
     let (left, left_offset) = match_all(left_tokens, 0)?;
-    
+
     if left.is_none() {
         return Ok((None, 0));
     }
-    
+
     let left = left.unwrap();
     if left_offset != left_tokens.len() {
         return Err(ParserError::NotFullyMatched(
-            &tokens[current][0], 
-            &tokens[current][tokens[current].len() - 1]
+            &tokens[current][0],
+            &tokens[current][tokens[current].len() - 1],
         ));
     }
-    
+
     // 解析右侧表达式
     let right_tokens = &tokens[operator_pos + 1..].to_vec();
     let (right, right_offset) = match_all(right_tokens, 0)?;
-    
+
     if right.is_none() {
         return Ok((None, 0));
     }
-    
+
     let right = right.unwrap();
     if right_offset != right_tokens.len() {
         return Err(ParserError::NotFullyMatched(
-            &tokens[current][0], 
-            &tokens[current][tokens[current].len() - 1]
+            &tokens[current][0],
+            &tokens[current][tokens[current].len() - 1],
         ));
     }
-    
+
     // 确定操作类型
     let operation = if op == "+" {
         ASTNodeOperation::Add
     } else {
         ASTNodeOperation::Subtract
     };
-    
+
     return Ok((
         Some(ASTNode::new(
             ASTNodeType::Operation,
             &tokens[current][0],
             Some(vec![left, right]),
-            Some(ASTNodeAdditionalInfo::ASTNodeOperation(operation))
+            Some(ASTNodeAdditionalInfo::ASTNodeOperation(operation)),
         )),
-        tokens.len() - current // 返回整个匹配长度
+        tokens.len() - current, // 返回整个匹配长度
     ));
 }
 
-
 fn match_operation_mul_div_mod<'T>(
-    tokens: &Vec<GatheredTokens<'T>>, 
-    current: usize
+    tokens: &Vec<GatheredTokens<'T>>,
+    current: usize,
 ) -> Result<(Option<ASTNode<'T>>, usize), ParserError<'T>> {
     let mut offset: usize = tokens.len().saturating_sub(current).saturating_sub(1);
     let mut operator = Option::<&str>::None;
     let mut operator_pos: usize = 0;
-    
+
     // 从右往左查找 *, / 或 % 操作符
     while offset > 0 {
         let pos = current + offset;
-        if is_symbol(&tokens[pos], "*") || 
-           is_symbol(&tokens[pos], "/") || 
-           is_symbol(&tokens[pos], "%") {
+        if is_symbol(&tokens[pos], "*")
+            || is_symbol(&tokens[pos], "/")
+            || is_symbol(&tokens[pos], "%")
+        {
             operator = Some(tokens[pos][0].token);
             operator_pos = pos;
             break;
         }
         offset -= 1;
     }
-    
+
     if operator.is_none() {
         return Ok((None, 0)); // 没有找到操作符
     }
-    
+
     // 解析左侧表达式
     let left_tokens = &tokens[current..operator_pos].to_vec();
     let (left, left_offset) = match_all(left_tokens, 0)?;
-    
+
     if left.is_none() {
         return Ok((None, 0));
     }
-    
+
     let left = left.unwrap();
     if left_offset != left_tokens.len() {
         return Err(ParserError::NotFullyMatched(
-            &tokens[current][0], 
-            &tokens[current][tokens[current].len() - 1]
+            &tokens[current][0],
+            &tokens[current][tokens[current].len() - 1],
         ));
     }
-    
+
     // 解析右侧表达式
     let right_tokens = &tokens[operator_pos + 1..].to_vec();
     let (right, right_offset) = match_all(right_tokens, 0)?;
-    
+
     if right.is_none() {
         return Ok((None, 0));
     }
-    
+
     let right = right.unwrap();
     if right_offset != right_tokens.len() {
         return Err(ParserError::NotFullyMatched(
-            &tokens[current][0], 
-            &tokens[current][tokens[current].len() - 1]
+            &tokens[current][0],
+            &tokens[current][tokens[current].len() - 1],
         ));
     }
-    
+
     // 确定操作类型
     let operation = match operator.unwrap() {
         "*" => ASTNodeOperation::Multiply,
@@ -1160,14 +1327,398 @@ fn match_operation_mul_div_mod<'T>(
         "%" => ASTNodeOperation::Modulus,
         _ => unreachable!(),
     };
-    
+
     return Ok((
         Some(ASTNode::new(
             ASTNodeType::Operation,
             &tokens[current][0],
             Some(vec![left, right]),
-            Some(ASTNodeAdditionalInfo::ASTNodeOperation(operation))
+            Some(ASTNodeAdditionalInfo::ASTNodeOperation(operation)),
         )),
-        tokens.len() - current // 返回整个匹配长度
+        tokens.len() - current, // 返回整个匹配长度
     ));
+}
+
+
+fn match_lambda_def<'T>(
+    tokens: &Vec<GatheredTokens<'T>>,
+    current: usize,
+) -> Result<(Option<ASTNode<'T>>, usize), ParserError<'T>> {
+    if current + 2 >= tokens.len() {
+        return Ok((None, 0));
+    }
+    if !is_symbol(&tokens[current + 1], "->") {
+        // (x, y) -> expression
+        return Ok((None, 0));
+    }
+    let left_tokens = gather(&tokens[current])?;
+    let (left, left_offset) = match_all(&left_tokens, 0)?;
+    if left.is_none() {
+        return Ok((None, 0));
+    }
+    let left = left.unwrap();
+    if left_offset != left_tokens.len() {
+        return Err(ParserError::NotFullyMatched(
+            &tokens[current][0],
+            &tokens[current][tokens[current].len() - 1],
+        ));
+    }
+    let (right, right_offset) = match_all(tokens, current + 2)?;
+    if right.is_none() {
+        return Ok((None, 0));
+    }
+    let right = right.unwrap();
+    if right_offset != tokens.len() {
+        return Err(ParserError::NotFullyMatched(
+            &tokens[current][0],
+            &tokens[current][tokens[current].len() - 1],
+        ));
+    }
+    return Ok((
+        Some(ASTNode::new(
+            ASTNodeType::LambdaDef,
+            &tokens[current][0],
+            Some(vec![left, right]),
+            None,
+        )),
+        right_offset + 2,
+    ));
+
+}
+
+fn match_modifier<'T>(
+    tokens: &Vec<GatheredTokens<'T>>,
+    current: usize,
+) -> Result<(Option<ASTNode<'T>>, usize), ParserError<'T>> {
+    if current + 1 >= tokens.len() {
+        return Ok((None, 0));
+    }
+    if tokens[current].len() == 1 && vec!["copy", "ref", "deref", "keyof", "valueof", "selfof", "assert", "import"].contains(&tokens[current][0].token){
+        let (node, node_offset) = match_all(tokens, current + 1)?;
+        if node.is_none() {
+            return Ok((None, 0));
+        }
+        let node = node.unwrap();
+        return Ok((
+            Some(ASTNode::new(
+                ASTNodeType::Modifier,
+                &tokens[current][0],
+                Some(vec![node]),
+                match tokens[current][0].token {
+                    "copy" => Some(ASTNodeAdditionalInfo::ASTNodeModifier(ASTNodeModifier::Copy)),
+                    "ref" => Some(ASTNodeAdditionalInfo::ASTNodeModifier(ASTNodeModifier::Ref)),
+                    "deref" => Some(ASTNodeAdditionalInfo::ASTNodeModifier(ASTNodeModifier::Deref)),
+                    "keyof" => Some(ASTNodeAdditionalInfo::ASTNodeModifier(ASTNodeModifier::KeyOf)),
+                    "valueof" => Some(ASTNodeAdditionalInfo::ASTNodeModifier(ASTNodeModifier::ValueOf)),
+                    "selfof" => Some(ASTNodeAdditionalInfo::ASTNodeModifier(ASTNodeModifier::SelfOf)),
+                    "assert" => Some(ASTNodeAdditionalInfo::ASTNodeModifier(ASTNodeModifier::Assert)),
+                    "import" => Some(ASTNodeAdditionalInfo::ASTNodeModifier(ASTNodeModifier::Import)),
+                    _ => None,                    
+                }
+            )),
+            node_offset + 1,
+        ));
+    }
+    return Ok((None, 0));
+}
+
+fn match_member_access_and_call<'T>(
+    tokens: &Vec<GatheredTokens<'T>>,
+    current: usize,
+) -> Result<(Option<ASTNode<'T>>, usize), ParserError<'T>> {
+    let mut offset: usize = tokens.len() - current - 1;
+    let mut access_type = Option::<&str>::None;
+    let mut access_pos: usize = 0;
+
+    // 从右往左搜索访问操作符
+    while offset > 0 {
+        let pos = current + offset;
+        
+        // 检查是否为索引访问 obj[idx]
+        if is_square_bracket(&tokens[pos]) {
+            access_type = Some("[]");
+            access_pos = pos;
+            break;
+        }
+        // 检查是否为属性访问 obj.prop
+        else if is_symbol(&tokens[pos], ".") {
+            access_type = Some(".");
+            access_pos = pos;
+            break;
+        }
+        // 检查是否为函数调用 func(args)
+        else if is_bracket(&tokens[pos]) {
+            access_type = Some("()");
+            access_pos = pos;
+            break;
+        }
+        
+        offset -= 1;
+    }
+
+    if access_type.is_none() {
+        return Ok((None, 0)); // 没有找到访问操作符
+    }
+
+    // 解析左侧表达式（被访问的对象或被调用的函数）
+    let left_tokens = &tokens[current..access_pos].to_vec();
+    if left_tokens.len() == 0 {
+        return Ok((None, 0));
+    }
+    
+    let (left, left_offset) = match_all(left_tokens, 0)?;
+    if left.is_none() {
+        return Ok((None, 0));
+    }
+    
+    let left = left.unwrap();
+    if left_offset != left_tokens.len() {
+        return Err(ParserError::NotFullyMatched(
+            &tokens[current][0],
+            &tokens[current][tokens[current].len() - 1],
+        ));
+    }
+
+    match access_type.unwrap() {
+        // 处理索引访问 obj[idx]
+        "[]" => {
+            // 解包索引括号中的内容
+            let index_tokens = unwrap_brace(&tokens[access_pos])?;
+            let gathered_index = gather(index_tokens)?;
+            
+            let (index_node, index_offset) = match_all(&gathered_index, 0)?;
+            if index_node.is_none() {
+                return Ok((None, 0));
+            }
+            
+            let index_node = index_node.unwrap();
+            
+            return Ok((
+                Some(ASTNode::new(
+                    ASTNodeType::IndexOf,
+                    &tokens[current][0],
+                    Some(vec![left, index_node]),
+                    None,
+                )),
+                (access_pos - current) + 1,
+            ));
+        },
+        
+        // 处理属性访问 obj.prop
+        "." => {
+            if access_pos + 1 >= tokens.len() {
+                return Ok((None, 0));
+            }
+            
+            // 获取属性名称
+            let right_tokens = &tokens[access_pos + 1..].to_vec();
+            let (right, right_offset) = match_all(right_tokens, 0)?;
+            if right.is_none() {
+                return Ok((None, 0));
+            }
+            
+            let right = right.unwrap();
+            
+            // 如果右侧是变量，将其视为属性名
+            if right.node_type == ASTNodeType::Variable {
+                return Ok((
+                    Some(ASTNode::new(
+                        ASTNodeType::GetAttr,
+                        &tokens[current][0],
+                        Some(vec![left, right]),
+                        None,
+                    )),
+                    (access_pos - current) + 1 + right_offset,
+                ));
+            }
+            
+            return Ok((None, 0));
+        },
+        
+        // 处理函数调用 func(args)
+        "()" => {
+            // 解包括号中的参数
+            let args_tokens = unwrap_brace(&tokens[access_pos])?;
+            let gathered_args = gather(args_tokens)?;
+            
+            if gathered_args.len() == 0 {
+                // 处理无参数情况
+                return Ok((
+                    Some(ASTNode::new(
+                        ASTNodeType::LambdaCall,
+                        &tokens[current][0],
+                        Some(vec![left]),
+                        None,
+                    )),
+                    (access_pos - current) + 1,
+                ));
+            } else {
+                // 处理有参数情况
+                let (args_node, args_offset) = match_all(&gathered_args, 0)?;
+                if args_node.is_none() {
+                    return Ok((None, 0));
+                }
+                
+                let args_node = args_node.unwrap();
+                
+                // 如果不是元组类型，将其包装为元组
+                let args = if args_node.node_type != ASTNodeType::Tuple {
+                    ASTNode::new(
+                        ASTNodeType::Tuple,
+                        &tokens[access_pos][0],
+                        Some(vec![args_node]),
+                        None,
+                    )
+                } else {
+                    args_node
+                };
+                
+                return Ok((
+                    Some(ASTNode::new(
+                        ASTNodeType::LambdaCall,
+                        &tokens[current][0],
+                        Some(vec![left, args]),
+                        None,
+                    )),
+                    (access_pos - current) + 1,
+                ));
+            }
+        },
+        
+        _ => unreachable!(),
+    }
+}
+
+// ...existing code...
+
+fn match_variable<'T>(
+    tokens: &Vec<GatheredTokens<'T>>,
+    current: usize,
+) -> Result<(Option<ASTNode<'T>>, usize), ParserError<'T>> {
+    if current >= tokens.len() {
+        return Ok((None, 0));
+    }
+    
+    // 匹配括号内容（元组）
+    if is_bracket(&tokens[current]) {
+        let inner_tokens = unwrap_brace(&tokens[current])?;
+        
+        // 处理空元组 ()
+        if inner_tokens.len() == 0 {
+            return Ok((
+                Some(ASTNode::new(
+                    ASTNodeType::Tuple,
+                    &tokens[current][0],
+                    None,
+                    None,
+                )),
+                1,
+            ));
+        }
+        
+        let gathered_inner = gather(inner_tokens)?;
+        let (node, offset) = match_all(&gathered_inner, 0)?;
+        if node.is_none() {
+            return Ok((None, 0));
+        }
+        
+        return Ok((Some(node.unwrap()), 1));
+    }
+    
+    // 匹配函数体 {...}
+    if is_brace(&tokens[current]) {
+        let body_tokens = unwrap_brace(&tokens[current])?;
+        let gathered_body = gather(body_tokens)?;
+        let (body, _) = match_all(&gathered_body, 0)?;
+        
+        return Ok((
+            Some(ASTNode::new(
+                ASTNodeType::Body,
+                &tokens[current][0],
+                body.map(|b| vec![b]),
+                None,
+            )),
+            1,
+        ));
+    }
+    
+    // 匹配字符串常量
+    if tokens[current].len() == 1 && tokens[current][0].token_type == TokenType::STRING {
+        return Ok((
+            Some(ASTNode::new(
+                ASTNodeType::String,
+                &tokens[current][0],
+                None,
+                None,
+            )),
+            1,
+        ));
+    }
+    
+    // 匹配数字常量
+    if tokens[current].len() == 1 && tokens[current][0].token_type == TokenType::NUMBER {
+        return Ok((
+            Some(ASTNode::new(
+                ASTNodeType::Number,
+                &tokens[current][0],
+                None,
+                None,
+            )),
+            1,
+        ));
+    }
+    
+    // 匹配布尔值（true）
+    if is_identifier(&tokens[current], "true") {
+        return Ok((
+            Some(ASTNode::new(
+                ASTNodeType::Boolen,
+                &tokens[current][0],
+                None,
+                None,
+            )),
+            1,
+        ));
+    }
+    
+    // 匹配布尔值（false）
+    if is_identifier(&tokens[current], "false") {
+        return Ok((
+            Some(ASTNode::new(
+                ASTNodeType::Boolen,
+                &tokens[current][0],
+                None,
+                None,
+            )),
+            1,
+        ));
+    }
+    
+    // 匹配空值（null）
+    if is_identifier(&tokens[current], "null") {
+        return Ok((
+            Some(ASTNode::new(
+                ASTNodeType::Null,
+                &tokens[current][0],
+                None,
+                None,
+            )),
+            1,
+        ));
+    }
+    
+    // 匹配普通变量名
+    if tokens[current].len() == 1 && tokens[current][0].token_type == TokenType::IDENTIFIER {
+        return Ok((
+            Some(ASTNode::new(
+                ASTNodeType::Variable,
+                &tokens[current][0],
+                None,
+                None,
+            )),
+            1,
+        ));
+    }
+    
+    return Ok((None, 0));
 }
