@@ -9,30 +9,7 @@ use self::parser::ast::build_ast;
 use self::parser::ast::ASTTokenStream;
 fn main() {
     let code = r#"
-        lazy := (computation => null) -> {
-    result := null;
-    evaluated := false;
-    
-    return (evaluated => evaluated,
-            result => result,
-            computation => computation) -> {
-        if (evaluated == false) {
-            result = computation();
-            evaluated = true;
-        };
-        return result;
-    };
-};
-
-expensiveComputation := lazy(() -> {
-    print("Computing...");
-    return 42;
-});
-
-
-print(expensiveComputation()); 
-
-print(expensiveComputation()); "#;
+print(1)"#;
     let tokens = lexer::reject_comment(lexer::tokenize(code));
     for token in &tokens {
         print!("{:?} ", token.to_string());

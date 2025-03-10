@@ -26,30 +26,30 @@ fn get_next_tokens<'a>(
 ) -> Result<GatheredTokens<'a>, ParserError<'a>> {
     let mut stack = Vec::<(&str, usize)>::new();
     let mut next_tokens_end = 0usize;
-    let mut current = current;
-    if current >= (*tokens).len() {
+    let mut index = current;
+    if index >= (*tokens).len() {
         return Ok(&[]);
     }
     loop {
-        if vec!["{", "[", "("].contains(&tokens[current].token)
-            && tokens[current].token_type == TokenType::SYMBOL
+        if vec!["{", "[", "("].contains(&tokens[index].token)
+            && tokens[index].token_type == TokenType::SYMBOL
         {
-            stack.push((tokens[current].token, current));
+            stack.push((tokens[index].token, index));
             next_tokens_end += 1;
-        } else if vec!["}", "]", ")"].contains(&tokens[current].token)
-            && tokens[current].token_type == TokenType::SYMBOL
+        } else if vec!["}", "]", ")"].contains(&tokens[index].token)
+            && tokens[index].token_type == TokenType::SYMBOL
         {
             if stack.len() == 0 {
                 break;
             }
             let (last, last_position) = stack.pop().unwrap();
-            if (last == "{" && tokens[current].token != "}")
-                || (last == "[" && tokens[current].token != "]")
-                || (last == "(" && tokens[current].token != ")")
+            if (last == "{" && tokens[index].token != "}")
+                || (last == "[" && tokens[index].token != "]")
+                || (last == "(" && tokens[index].token != ")")
             {
                 return Err(ParserError::UnmatchedParenthesis(
                     &tokens[last_position],
-                    &tokens[current],
+                    &tokens[index],
                 ));
             }
 
@@ -57,8 +57,8 @@ fn get_next_tokens<'a>(
         } else {
             next_tokens_end += 1;
         }
-        current += 1;
-        if current >= (*tokens).len() || stack.len() == 0 {
+        index += 1;
+        if index >= (tokens).len() || stack.len() == 0 {
             break;
         }
     }
@@ -66,10 +66,10 @@ fn get_next_tokens<'a>(
         let (last, last_position) = stack.pop().unwrap();
         return Err(ParserError::UnmatchedParenthesis(
             &tokens[last_position],
-            &tokens[current],
+            &tokens[index],
         ));
     }
-    return Ok(&tokens[current..next_tokens_end]);
+    return Ok(&tokens[current..current + next_tokens_end]);
 }
 
 fn gather<'t>(tokens: GatheredTokens<'t>) -> Result<Vec<GatheredTokens<'t>>, ParserError<'t>> {
@@ -215,6 +215,9 @@ impl<'a> NodeMatcher<'a> {
         current: usize,
     ) -> Result<(Option<ASTNode<'a>>, usize), ParserError<'a>> {
         for matcher in &self.matchers {
+            if current >= tokens.len() {
+                return Ok((None, 0));
+            }
             let (node, offset) = matcher(tokens, current)?;
             if node.is_some() {
                 return Ok((node, offset));
@@ -918,7 +921,7 @@ fn match_or<'t>(
     let mut offset: usize = tokens.len() - current - 1;
     let mut operator = Option::<&str>::None;
     let mut operator_pos: usize = 0;
-    while offset >= 0 {
+    while offset > 0 {
         let pos = current + offset;
         if is_identifier(&tokens[pos], "or") {
             operator = Some("or");
@@ -976,7 +979,7 @@ fn match_and<'t>(
     let mut offset: usize = tokens.len() - current - 1;
     let mut operator = Option::<&str>::None;
     let mut operator_pos: usize = 0;
-    while offset >= 0 {
+    while offset > 0 {
         let pos = current + offset;
         if is_identifier(&tokens[pos], "and") {
             operator = Some("and");
@@ -1063,7 +1066,7 @@ fn match_operation_compare<'t>(
     let mut offset: usize = tokens.len() - current - 1;
     let mut operator = Option::<&str>::None;
     let mut operator_pos: usize = 0;
-    while offset >= 0 {
+    while offset > 0 {
         let pos = current + offset;
         if is_symbol(&tokens[pos], ">")
             || is_symbol(&tokens[pos], "<")
