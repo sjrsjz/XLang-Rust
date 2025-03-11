@@ -1,5 +1,6 @@
 
 mod parser;
+pub mod vm;
 use self::parser::lexer::{
     TokenType,
     lexer,
@@ -7,7 +8,21 @@ use self::parser::lexer::{
 };
 use self::parser::ast::build_ast;
 use self::parser::ast::ASTTokenStream;
+
+
+use self::vm::gc::gc::{GCObject, GCTraceable,GCSystem};
+use self::vm::gc::variable::GCInteger;
+
+fn gc_test() {
+
+}
+
+
 fn main() {
+
+    gc_test();
+    return;
+
     let code = r#"
 
 

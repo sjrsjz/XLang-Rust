@@ -1,5 +1,3 @@
-pub mod ir;
-
 #[derive(Debug)]
 pub enum IROperation {
     Add,          // +
