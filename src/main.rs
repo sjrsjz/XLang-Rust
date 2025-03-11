@@ -19,7 +19,8 @@ factorial := Z((f => null) -> {
             return n * f(n - 1);
         };
     };
-})
+});
+1:=
 "#;
     let tokens = lexer::reject_comment(lexer::tokenize(code));
     for token in &tokens {

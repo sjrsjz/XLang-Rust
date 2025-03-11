@@ -22,6 +22,7 @@
                 "RUST_BACKTRACE": "1",
                 "PYTHONIOENCODING": "UTF-8"
             },
+            "console": "integratedTerminal"
         }
     ]
 }
