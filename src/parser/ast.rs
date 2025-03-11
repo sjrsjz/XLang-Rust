@@ -11,6 +11,35 @@ pub enum ParserError<'t> {
     InvalidVariableName(&'t Token<'t>),
     UnsupportedStructure(&'t Token<'t>),
 }
+
+impl ParserError<'_> {
+    pub fn format(&self, tokens: &Vec<Token>) -> String {
+        match self {
+            ParserError::UnexpectedToken(token) => {
+                format!("解析错误: 意外的令牌 '{}' 在位置 {}", token.token, token.position)
+            },
+            ParserError::UnmatchedParenthesis(opening, closing) => {
+                format!("解析错误: 未匹配的括号 '{}' 在位置 {} 与 '{}' 在位置 {}",
+                    opening.token, opening.position,
+                    closing.token, closing.position)
+            },
+            ParserError::InvalidSyntax(token) => {
+                format!("语法错误: 无效的语法在位置 {}", token.position)
+            },
+            ParserError::NotFullyMatched(start, end) => {
+                format!("解析错误: 从位置 {} 到位置 {} 的表达式未完全匹配",
+                    start.position, end.position)
+            },
+            ParserError::InvalidVariableName(token) => {
+                format!("解析错误: 无效的变量名 '{}' 在位置 {}", token.token, token.position)
+            },
+            ParserError::UnsupportedStructure(token) => {
+                format!("解析错误: 不支持的结构在位置 {}", token.position)
+            },
+        }
+    }
+}
+
 pub type TokenStream<'t> = Vec<Token<'t>>;
 pub type GatheredTokens<'t> = &'t [Token<'t>];
 
@@ -1313,7 +1342,7 @@ fn match_operation_mul_div_mod<'t>(
     if left_offset != left_tokens.len() {
         return Err(ParserError::NotFullyMatched(
             &tokens[current][0],
-            &tokens[current][tokens[current].len() - 1],
+            &tokens[operator_pos][tokens[operator_pos].len() - 1],
         ));
     }
 
@@ -1328,8 +1357,8 @@ fn match_operation_mul_div_mod<'t>(
     let right = right.unwrap();
     if right_offset != right_tokens.len() {
         return Err(ParserError::NotFullyMatched(
-            &tokens[current][0],
-            &tokens[current][tokens[current].len() - 1],
+            &tokens[operator_pos + 1][0],
+            &tokens[tokens.len() - 1][tokens[tokens.len() - 1].len() - 1],
         ));
     }
 
