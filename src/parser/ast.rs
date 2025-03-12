@@ -1,6 +1,6 @@
 use std::{fmt::Debug, vec};
 
-use crate::{lexer, Token, TokenType};
+use crate::{Token, TokenType};
 
 #[derive(Debug)]
 pub enum ParserError<'t> {
@@ -19,16 +19,25 @@ impl ParserError<'_> {
                 format!("解析错误: 意外的令牌 '{}' 在位置 {}", token.token, token.position)
             },
             ParserError::UnmatchedParenthesis(opening, closing) => {
-                format!("解析错误: 未匹配的括号 '{}' 在位置 {} 与 '{}' 在位置 {}",
-                    opening.token, opening.position,
-                    closing.token, closing.position)
+                let mut code = String::new();
+                let opening_idx = tokens.iter().position(|t| t.position == opening.position).unwrap();
+                let closing_idx = tokens.iter().position(|t| t.position == closing.position).unwrap();
+                for token in tokens[opening_idx..=closing_idx].iter() {
+                    code.push_str(&token.token);
+                }
+                format!("解析错误: 括号不匹配 '{}' 在位置 {}", code, opening.position)
             },
             ParserError::InvalidSyntax(token) => {
                 format!("语法错误: 无效的语法在位置 {}", token.position)
             },
             ParserError::NotFullyMatched(start, end) => {
-                format!("解析错误: 从位置 {} 到位置 {} 的表达式未完全匹配",
-                    start.position, end.position)
+                let mut code = String::new();
+                let start_idx = tokens.iter().position(|t| t.position == start.position).unwrap();
+                let end_idx = tokens.iter().position(|t| t.position == end.position).unwrap();
+                for token in tokens[start_idx..=end_idx].iter() {
+                    code.push_str(&token.token);
+                }
+                format!("解析错误: 未完全匹配 '{}' 在位置 {}", code, start.position)
             },
             ParserError::InvalidVariableName(token) => {
                 format!("解析错误: 无效的变量名 '{}' 在位置 {}", token.token, token.position)
@@ -43,7 +52,7 @@ impl ParserError<'_> {
 pub type TokenStream<'t> = Vec<Token<'t>>;
 pub type GatheredTokens<'t> = &'t [Token<'t>];
 
-pub mod ASTTokenStream {
+pub mod ast_token_stream {
     pub fn from_stream<'t>(stream: &'t super::TokenStream<'t>) -> super::GatheredTokens<'t> {
         stream.as_slice()
     }
@@ -339,30 +348,30 @@ fn is_bracket(token: &GatheredTokens) -> bool {
     if token.len() < 2 {
         return false;
     }
-    return (token[0].token_type == TokenType::SYMBOL
+    return token[0].token_type == TokenType::SYMBOL
         && token[0].token == "("
         && token[token.len() - 1].token_type == TokenType::SYMBOL
-        && token[token.len() - 1].token == ")");
+        && token[token.len() - 1].token == ")";
 }
 
 fn is_brace(token: &GatheredTokens) -> bool {
     if token.len() < 2 {
         return false;
     }
-    return (token[0].token_type == TokenType::SYMBOL
+    return token[0].token_type == TokenType::SYMBOL
         && token[0].token == "{"
         && token[token.len() - 1].token_type == TokenType::SYMBOL
-        && token[token.len() - 1].token == "}");
+        && token[token.len() - 1].token == "}";
 }
 
 fn is_square_bracket(token: &GatheredTokens) -> bool {
     if token.len() < 2 {
         return false;
     }
-    return (token[0].token_type == TokenType::SYMBOL
+    return token[0].token_type == TokenType::SYMBOL
         && token[0].token == "["
         && token[token.len() - 1].token_type == TokenType::SYMBOL
-        && token[token.len() - 1].token == "]");
+        && token[token.len() - 1].token == "]";
 }
 
 pub fn build_ast<'a>(tokens: GatheredTokens<'a>) -> Result<ASTNode<'a>, ParserError<'a>> {
@@ -665,7 +674,7 @@ fn match_let<'t>(
     }
     let left = left.unwrap();
 
-    if (left.node_type != ASTNodeType::Variable && left.node_type != ASTNodeType::String) {
+    if left.node_type != ASTNodeType::Variable && left.node_type != ASTNodeType::String {
         return Err(ParserError::InvalidVariableName(&tokens[current][0]));
     }
 
@@ -712,7 +721,7 @@ fn match_assign<'t>(
     }
     let left = left.unwrap();
 
-    if (left.node_type != ASTNodeType::Variable && left.node_type != ASTNodeType::String) {
+    if left.node_type != ASTNodeType::Variable && left.node_type != ASTNodeType::String {
         return Err(ParserError::InvalidVariableName(&tokens[current][0]));
     }
 
@@ -1541,7 +1550,7 @@ fn match_member_access_and_call<'t>(
             let index_tokens = unwrap_brace(&tokens[access_pos])?;
             let gathered_index = gather(index_tokens)?;
             
-            let (index_node, index_offset) = match_all(&gathered_index, 0)?;
+            let (index_node, _) = match_all(&gathered_index, 0)?;
             if index_node.is_none() {
                 return Ok((None, 0));
             }
@@ -1609,7 +1618,7 @@ fn match_member_access_and_call<'t>(
                 ));
             } else {
                 // 处理有参数情况
-                let (args_node, args_offset) = match_all(&gathered_args, 0)?;
+                let (args_node, _) = match_all(&gathered_args, 0)?;
                 if args_node.is_none() {
                     return Ok((None, 0));
                 }
@@ -1670,7 +1679,7 @@ fn match_variable<'t>(
         }
         
         let gathered_inner = gather(inner_tokens)?;
-        let (node, offset) = match_all(&gathered_inner, 0)?;
+        let (node, _) = match_all(&gathered_inner, 0)?;
         if node.is_none() {
             return Ok((None, 0));
         }

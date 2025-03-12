@@ -1,20 +1,18 @@
 mod parser;
 pub mod vm;
 use self::parser::ast::build_ast;
-use self::parser::ast::ASTTokenStream;
+use self::parser::ast::ast_token_stream;
 use self::parser::lexer::{lexer, Token, TokenType};
 
-use self::vm::gc::gc::{GCObject, GCSystem, GCTraceable};
-use self::vm::gc::variable::{
-    GCArray, GCBool, GCDictionary, GCFloat, GCFunction, GCInteger, GCNull, GCString,
-};
+use self::vm::gc::gc::GCSystem;
+use self::vm::gc::variable::GCInteger;
 
 
 fn gc_test() {
     let mut gc = GCSystem::new();
-    let mut A_i32 = gc.new_object(GCInteger::new(10));
-    let mut B_i32 = gc.new_object(GCInteger::new(20));
-    let mut C_i32 = gc.new_object(GCInteger::new(30));
+    let A_i32 = gc.new_object(GCInteger::new(10));
+    let B_i32 = gc.new_object(GCInteger::new(20));
+    let C_i32 = gc.new_object(GCInteger::new(30));
 
     println!("Before offline");
     gc.debug_print();
@@ -57,7 +55,7 @@ factorial := Z((f => null) -> {
             return n * f(n - 1);
         };
     };
-});
+});0:=
 
 "#;
     let tokens = lexer::reject_comment(lexer::tokenize(code));
@@ -65,7 +63,7 @@ factorial := Z((f => null) -> {
         print!("{:?} ", token.to_string());
     }
 
-    let gathered = ASTTokenStream::from_stream(&tokens);
+    let gathered = ast_token_stream::from_stream(&tokens);
     let ast = build_ast(&gathered);
     if ast.is_err() {
         println!("");

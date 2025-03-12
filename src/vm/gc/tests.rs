@@ -1,7 +1,5 @@
-use super::gc::{GCObject, GCRef, GCSystem};
-use super::variable::{GCArray, GCBool, GCDictionary, GCFloat, GCFunction, GCInteger, GCNull, GCString};
-use std::cell::RefCell;
-use std::rc::Rc;
+use super::gc::*;
+use super::variable::*;
 
 #[test]
 fn test_gc_basic_allocation() {
@@ -53,7 +51,7 @@ fn test_gc_references() {
     let mut gc = GCSystem::new();
     
     // 创建一个数组，其中包含一些对象
-    let mut array = GCArray::new();
+    let array = GCArray::new();
     let array_ref = gc.new_object(array);
     
     // 创建一些对象并将其添加到数组中
@@ -97,8 +95,8 @@ fn test_gc_cyclic_references() {
     let mut gc = GCSystem::new();
     
     // 创建两个字典对象，它们相互引用
-    let mut dict1 = GCDictionary::new();
-    let mut dict2 = GCDictionary::new();
+    let dict1 = GCDictionary::new();
+    let dict2 = GCDictionary::new();
     
     let dict1_ref = gc.new_object(dict1);
     let dict2_ref = gc.new_object(dict2);

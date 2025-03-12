@@ -1,5 +1,5 @@
 use super::gc::{GCObject, GCTraceable};
-use std::collections::{HashMap, HashSet};
+use std::collections::HashMap;
 
 // 已有的整数类型
 #[derive(Debug)]
