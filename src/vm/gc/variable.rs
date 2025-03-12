@@ -246,62 +246,7 @@ impl GCObject for GCDictionary {
 }
 
 
-// 函数类型，可以存储函数指针和闭包环境
-#[derive(Debug)]
-pub struct GCFunction<F> 
-where 
-    F: Fn(&[super::gc::GCRef]) -> super::gc::GCRef + 'static
-{
-    pub func: F,
-    pub captured: HashMap<String, super::gc::GCRef>,
-    traceable: GCTraceable,
-}
 
-impl<F> GCFunction<F> 
-where 
-    F: Fn(&[super::gc::GCRef]) -> super::gc::GCRef + 'static
-{
-    pub fn new(func: F) -> Self {
-        GCFunction {
-            func,
-            captured: HashMap::new(),
-            traceable: GCTraceable::new(None),
-        }
-    }
-    
-    pub fn capture(&mut self, name: String, value: super::gc::GCRef) {
-        // 如果变量已捕获，先移除对旧值的引用
-        if let Some(old_value) = self.captured.get(&name) {
-            self.traceable.remove_reference(old_value);
-        }
-        
-        // 添加对新值的引用
-        self.traceable.add_reference(&mut value.clone());
-        self.captured.insert(name, value);
-    }
-    
-    pub fn call(&self, args: &[super::gc::GCRef]) -> super::gc::GCRef {
-        (self.func)(args)
-    }
-}
-
-impl<F> super::gc::GCObject for GCFunction<F> 
-where 
-    F: Fn(&[super::gc::GCRef]) -> super::gc::GCRef + 'static
-{
-    fn free(&mut self) {
-        // 释放对所有捕获变量的引用
-        for (_, value) in &self.captured {
-            self.traceable.remove_reference(value);
-        }
-        self.captured.clear();
-        self.traceable.offline();
-    }
-
-    fn get_traceable(&mut self) -> &mut GCTraceable {
-        &mut self.traceable
-    }
-}
 
 // Null类型，表示空值
 #[derive(Debug)]
@@ -324,5 +269,20 @@ impl super::gc::GCObject for GCNull {
 
     fn get_traceable(&mut self) -> &mut GCTraceable {
         &mut self.traceable
+    }
+}
+
+#[derive(Debug)]
+pub struct GCIndexOfWrapper {
+    pub index: usize,
+    traceable: GCTraceable,
+}
+
+impl GCIndexOfWrapper {
+    pub fn new() -> Self {
+        GCIndexOfWrapper {
+            index: 0,
+            traceable: GCTraceable::new(None),
+        }
     }
 }

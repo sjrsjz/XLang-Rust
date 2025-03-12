@@ -7,6 +7,10 @@ use self::parser::lexer::{lexer, Token, TokenType};
 use self::vm::gc::gc::GCSystem;
 use self::vm::gc::variable::GCInteger;
 
+use self::vm::ir_generator::ir_generator;
+use self::vm::ir::Functions;
+
+
 
 fn gc_test() {
     let mut gc = GCSystem::new();
@@ -55,7 +59,7 @@ factorial := Z((f => null) -> {
             return n * f(n - 1);
         };
     };
-});0:=
+});
 
 "#;
     let tokens = lexer::reject_comment(lexer::tokenize(code));
@@ -73,5 +77,27 @@ factorial := Z((f => null) -> {
     }
     println!("\n\nAST:\n");
 
-    ast.unwrap().formatted_print(0);
+    ast.as_ref().unwrap().formatted_print(0);
+
+    let namespace = ir_generator::NameSpace::new("Main".to_string(), None);
+    let mut functions = Functions::new();
+    let mut ir_generator = ir_generator::IRGenerator::new(&mut functions, namespace);
+
+    let ir = ir_generator.generate_without_redirect(&ast.unwrap());
+    println!("\n\nIR:\n");
+    for ir in &ir {
+        println!("{:?}", ir);
+    }
+
+    let (built_ins, ips) = functions.build_instructions();
+    println!("\n\nBuilt Ins:\n");
+    for ir in &built_ins {
+        println!("{:?}", ir);
+    }
+    println!("\n\nFunction IPs:\n");
+    for (name, ip) in &ips {
+        println!("{}: {:?}", name, ip);
+    }
+
+
 }
