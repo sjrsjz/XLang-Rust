@@ -137,20 +137,24 @@ fn test_gc_complex_structure() {
     array_ref.as_type::<GCArray>().push(int_ref.clone());
     array_ref.as_type::<GCArray>().push(string_ref.clone());
     dict_ref.as_type::<GCDictionary>().insert("array".to_string(), array_ref.clone());
-    
+    dict_ref.as_type::<GCDictionary>().insert("int".to_string(), int_ref.clone());
+    gc.debug_print();
     // 验证引用关系
     assert_eq!(array_ref.get_traceable().references.len(), 2);
-    assert_eq!(dict_ref.get_traceable().references.len(), 1);
+    assert_eq!(dict_ref.get_traceable().references.len(), 2);
     
     // 将字典设置为离线状态
     dict_ref.offline();
+
+    int_ref.offline();
+    string_ref.offline();
     
     // 执行垃圾回收
     gc.collect();
     
-    // 字典引用了数组，数组引用了整数和字符串
-    // 因此没有对象应该被收集
-    assert_eq!(gc.objects.len(), 4);
+    // 字典引用了数组和整数，而数组引用了整数和字符串，整数和字符串都被离线了
+    // 因此整数和字符串不应该被回收
+    assert_eq!(gc.objects.len(), 3);
     
     // 将数组也设置为离线状态
     array_ref.offline();

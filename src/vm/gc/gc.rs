@@ -155,14 +155,13 @@ impl GCSystem {
             idx_map.insert(obj_ptr.reference, i);
         }
 
-        // 第二步：构建引用图（逆向引用）
+        // 第二步：构建引用图
         let mut ref_graph: Vec<Vec<usize>> = vec![Vec::new(); self.objects.len()];
         for i in 0..self.objects.len() {
             let gc_ref = &self.objects[i];
             for ref_obj in &gc_ref.get_traceable().references {
                 if let Some(&ref_idx) = idx_map.get(&ref_obj.reference) {
-                    // 添加逆向引用：ref_idx 被 i 引用
-                    ref_graph[ref_idx].push(i);
+                    ref_graph[i].push(ref_idx);
                 }
             }
         }
@@ -236,5 +235,14 @@ impl GCSystem {
             let gc_ref = &self.objects[i];
             println!("Object {}: {:?}", i, gc_ref.get_traceable());
         }
+    }
+}
+
+impl Drop for GCSystem {
+    fn drop(&mut self) {
+        for gc_ref in &self.objects {
+            gc_ref.offline();
+        }
+        self.collect();
     }
 }
