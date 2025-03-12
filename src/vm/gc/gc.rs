@@ -1,8 +1,7 @@
 use std::collections::HashSet;
 //typeid
-use std::any::{Any, TypeId};
+use std::any::TypeId;
 use std::hash::{Hash, Hasher};
-use std::path;
 
 pub trait GCObject {
     fn free(&mut self); // free the object
@@ -16,7 +15,7 @@ pub struct GCRef {
 }
 impl PartialEq for GCRef {
     fn eq(&self, other: &Self) -> bool {
-        self.reference == other.reference
+        std::ptr::addr_eq(self.reference, other.reference)
     }
 }
 
@@ -30,18 +29,7 @@ impl Hash for GCRef {
 }
 
 impl GCRef {
-    pub(self) fn new(reference: *mut dyn GCObject) -> GCRef {
-        GCRef {
-            reference,
-            type_id: TypeId::of::<dyn GCObject>(),
-        }
-    }
-
-    pub(self) fn get_type_id(&self) -> TypeId {
-        self.type_id
-    }
-
-    pub(self) fn get_traceable(&self) -> &mut GCTraceable {
+    pub fn get_traceable(&self) -> &mut GCTraceable {
         unsafe {
             let obj = self.reference;
             (*obj).get_traceable()
@@ -52,7 +40,7 @@ impl GCRef {
         unsafe {
             let obj = self.reference as *mut dyn GCObject;
             (*obj).free();
-            Box::from_raw(self.reference);
+            let _ = Box::from_raw(self.reference);
         }
     }
 
@@ -62,6 +50,24 @@ impl GCRef {
             (*obj).get_traceable().offline();
         }
     }
+
+    pub fn as_type<T>(&self) -> &mut T
+    where
+        T: GCObject + 'static,
+    {
+        if !self.isinstance::<T>() {
+            panic!("Type mismatch! Expected type: {:?}", TypeId::of::<T>());
+        }
+        unsafe {
+            let obj = self.reference as *mut T;
+            &mut *obj
+        }
+    }
+
+    pub fn isinstance<T: GCObject + 'static>(&self) -> bool {
+        self.type_id == TypeId::of::<T>()
+    }
+
 }
 
 #[derive(Debug)]
@@ -127,20 +133,6 @@ impl GCSystem {
         };
         self.objects.push(gc_ref.clone()); // add the object to the list of objects
         gc_ref
-    }
-
-    pub fn as_type<T>(obj: &GCRef) -> &T
-    where
-        T: GCObject + 'static,
-    {
-        unsafe {
-            let obj = obj.reference as *const T;
-            &*obj
-        }
-    }
-
-    pub fn check_type<T: GCObject + 'static>(obj: &GCRef) -> bool {
-        obj.type_id == TypeId::of::<T>()
     }
 
     fn mark(&mut self) {
