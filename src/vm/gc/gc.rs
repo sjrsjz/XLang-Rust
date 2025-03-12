@@ -1,19 +1,18 @@
-
 use std::collections::HashSet;
 //typeid
 use std::any::{Any, TypeId};
 use std::hash::{Hash, Hasher};
 use std::path;
 
-pub trait GCObject{
+pub trait GCObject {
     fn free(&mut self); // free the object
     fn get_traceable(&mut self) -> &mut GCTraceable; // get the traceable object
 }
 
 #[derive(Debug, Clone)]
-pub struct GCRef{
-    pub reference: *mut dyn GCObject, // reference to the object
-    pub type_id: TypeId, // type id of the object
+pub struct GCRef {
+    pub(self) reference: *mut dyn GCObject, // reference to the object
+    pub(self) type_id: TypeId,              // type id of the object
 }
 impl PartialEq for GCRef {
     fn eq(&self, other: &Self) -> bool {
@@ -31,21 +30,36 @@ impl Hash for GCRef {
 }
 
 impl GCRef {
-    pub fn new(reference: *mut dyn GCObject) -> GCRef {
+    pub(self) fn new(reference: *mut dyn GCObject) -> GCRef {
         GCRef {
             reference,
             type_id: TypeId::of::<dyn GCObject>(),
         }
     }
 
-    pub fn get_type_id(&self) -> TypeId {
+    pub(self) fn get_type_id(&self) -> TypeId {
         self.type_id
     }
-    
-    pub fn get_traceable(&self) -> &mut GCTraceable {
+
+    pub(self) fn get_traceable(&self) -> &mut GCTraceable {
+        unsafe {
+            let obj = self.reference;
+            (*obj).get_traceable()
+        }
+    }
+
+    pub(self) fn free(&self) {
         unsafe {
             let obj = self.reference as *mut dyn GCObject;
-            (*obj).get_traceable()
+            (*obj).free();
+            Box::from_raw(self.reference);
+        }
+    }
+
+    pub fn offline(&self) {
+        unsafe {
+            let obj = self.reference as *mut dyn GCObject;
+            (*obj).get_traceable().offline();
         }
     }
 }
@@ -58,9 +72,9 @@ pub struct GCTraceable {
     pub references: HashSet<GCRef>,
 }
 
-impl GCTraceable{
-    pub fn new(references: Option<HashSet<GCRef>>) -> GCTraceable{
-        GCTraceable{
+impl GCTraceable {
+    pub fn new(references: Option<HashSet<GCRef>>) -> GCTraceable {
+        GCTraceable {
             ref_count: 0,
             should_free: false,
             online: true,
@@ -68,11 +82,12 @@ impl GCTraceable{
         }
     }
 
-    pub fn offline(&mut self){ // set the object offline, so that it can be collected
+    pub fn offline(&mut self) {
+        // set the object offline, so that it can be collected
         self.online = false;
     }
 
-    pub fn add_reference(&mut self, obj: &mut GCRef){
+    pub fn add_reference(&mut self, obj: &mut GCRef) {
         if self.references.contains(obj) {
             panic!("Reference already exists!");
         }
@@ -82,7 +97,7 @@ impl GCTraceable{
         }
     }
 
-    pub fn remove_reference(&mut self, obj: &GCRef){
+    pub fn remove_reference(&mut self, obj: &GCRef) {
         if !self.references.contains(obj) {
             panic!("Reference does not exist!");
         }
@@ -93,119 +108,141 @@ impl GCTraceable{
     }
 }
 
-
-pub struct GCSystem{
-    pub objects: Vec<*mut GCRef>,
+pub struct GCSystem {
+    pub objects: Vec<GCRef>,
 }
 
-impl GCSystem{
-    pub fn new() -> GCSystem{
-        GCSystem{
+impl GCSystem {
+    pub fn new() -> GCSystem {
+        GCSystem {
             objects: Vec::new(),
         }
     }
 
     pub fn new_object<T: GCObject + 'static>(&mut self, object: T) -> GCRef {
-        let mut obj = Box::new(object);
-        let obj_ref = &mut *obj as *mut dyn GCObject;
+        let obj_ref = Box::leak(Box::new(object)) as *mut dyn GCObject;
         let gc_ref = GCRef {
             reference: obj_ref,
             type_id: TypeId::of::<T>(),
         };
-        self.objects.push(obj_ref as *mut GCRef); // add the object to the list of objects
+        self.objects.push(gc_ref.clone()); // add the object to the list of objects
         gc_ref
     }
 
-    pub fn as_type<T>(obj: &GCRef) -> &T where T: GCObject + 'static {
+    pub fn as_type<T>(obj: &GCRef) -> &T
+    where
+        T: GCObject + 'static,
+    {
         unsafe {
             let obj = obj.reference as *const T;
             &*obj
         }
     }
 
-    pub fn check_type<T:GCObject + 'static>(obj: & GCRef) -> bool {
+    pub fn check_type<T: GCObject + 'static>(obj: &GCRef) -> bool {
         obj.type_id == TypeId::of::<T>()
     }
 
-    pub fn mark(&mut self){
-        let mut alive = Vec::<bool>::new(); // reachable objects
-        let mut accessed = Vec::<bool>::new(); // accessed objects
-        alive.resize(self.objects.len(), false); // initialize the vector to false
-        accessed.resize(self.objects.len(), false); // initialize the vector to false
-        // 重置所有对象的标记状态
+    fn mark(&mut self) {
+        let mut alive = Vec::<bool>::new();
+        alive.resize(self.objects.len(), false);
+
+        // 第一步：标记所有在线对象为活跃
         for i in 0..self.objects.len() {
-            unsafe {
-                let gc_ref = &*self.objects[i];
-                if gc_ref.get_traceable().online {
-                    alive[i] = true; // mark the object as alive
-                }
-                else if gc_ref.get_traceable().ref_count == 0 {
-                    gc_ref.get_traceable().should_free = true; // mark the object as should free
-                    alive[i] = false; // mark the object as dead
-                }
-            }
+            let gc_ref = &self.objects[i];
+            if gc_ref.get_traceable().should_free {
+                panic!("Never set should_free to true! Use offline() instead!");
+            } else if gc_ref.get_traceable().online {
+                alive[i] = true;
+            } 
         }
 
-        // 标记所有引用的对象
-        /*
-        从所有非alive对象开始，使用深度优先搜索算法遍历所有其祖先对象，如果存在alive的祖先对象，将该对象到alive对象的路径上的所有对象标记为alive。并立即返回
-        考虑到递归有可能导致栈溢出，使用栈来实现深度优先搜索算法。
-         */
-
-        let mut path = Vec::<(usize, usize)>::new(); // path for dfs, (idx, ref_idx)
-
-        // map pointer to index
+        // 创建索引映射
         let mut idx_map = std::collections::HashMap::new();
-        for (i, &obj_ptr) in self.objects.iter().enumerate() {
-            unsafe {
-                idx_map.insert((*obj_ptr).reference, i);
+        for (i, obj_ptr) in self.objects.iter().enumerate() {
+            idx_map.insert(obj_ptr.reference, i);
+        }
+
+        // 第二步：构建引用图（逆向引用）
+        let mut ref_graph: Vec<Vec<usize>> = vec![Vec::new(); self.objects.len()];
+        for i in 0..self.objects.len() {
+            let gc_ref = &self.objects[i];
+            for ref_obj in &gc_ref.get_traceable().references {
+                if let Some(&ref_idx) = idx_map.get(&ref_obj.reference) {
+                    // 添加逆向引用：ref_idx 被 i 引用
+                    ref_graph[ref_idx].push(i);
+                }
             }
         }
 
+        // 第三步：从活跃对象出发，标记所有可达对象
+        let mut worklist: Vec<usize> = Vec::new();
+
+        // 初始化工作列表为所有活跃对象
         for i in 0..self.objects.len() {
-            unsafe {
-                let gc_ref = &*self.objects[i];
-                if !alive[i] && !gc_ref.get_traceable().should_free { // if the object is not alive and should not free? then check its references
-                    path.push((i, 0)); // push the object to the path
-                    while !path.is_empty() {
-                        let (idx, ref_idx) = path.pop().unwrap(); // pop the object from the path
-                        accessed[idx] = true; // mark the object as accessed
-                        let gc_ref = &*self.objects[idx]; // get the object
-                        let len = gc_ref.get_traceable().references.len(); // get the number of references
-                        for j in ref_idx..len { // for each reference
-                            let ref_obj = &gc_ref.get_traceable().references.iter().nth(j).unwrap(); // get the reference
-                            let ref_idx = idx_map.get(&ref_obj.reference); // get the index of the reference
-                            if ref_idx.is_none() { // if the reference is not in the map, then panic
-                                panic!("Cannot find reference in map! Is the GCSystem crashing?");
-                            }
-                            let ref_idx = *ref_idx.unwrap(); // get the index of the reference
-                            if alive[ref_idx] { // if the reference is alive, then mark all objects in the path as alive
-                                for k in 0..path.len() {
-                                    let (path_idx, _) = path[k]; // get the index of the object in the path
-                                    alive[path_idx] = true; // mark the object as alive
-                                }
-                                alive[idx] = true; // mark the object as alive
-                                path.clear(); // clear the path
-                                break; // break the loop
-                            } else if !accessed[ref_idx] { // if the reference is not accessed, then mark it as accessed and push it to the path
-                                path.push((ref_idx, 0)); // push the object to the path
-                                break;
-                            } else { // if the reference is accessed, then continue to the next reference
-                                continue; // continue to the next reference                                
-                            }
-                        }
-                    }
+            if alive[i] {
+                worklist.push(i);
+            }
+        }
+
+        // 标记从活跃对象可达的所有对象
+        while let Some(idx) = worklist.pop() {
+            // 遍历引用当前对象的所有对象
+            for &ref_idx in &ref_graph[idx] {
+                if !alive[ref_idx] {
+                    alive[ref_idx] = true;
+                    worklist.push(ref_idx);
                 }
             }
-        }        
+        }
 
+        // 第四步：更新should_free标志
+        for i in 0..self.objects.len() {
+            if !alive[i] {
+                let gc_ref = &self.objects[i];
+                gc_ref.get_traceable().should_free = true;
+            }
+        }
     }
 
-    pub fn sweep(&mut self){
+    fn sweep(&mut self) {
+        let mut alive = Vec::<bool>::new(); // 可达对象
+        alive.resize(self.objects.len(), false);
+
+        // 确定哪些对象是活跃的
+        for i in 0..self.objects.len() {
+            let gc_ref = &self.objects[i];
+            if gc_ref.get_traceable().online || !gc_ref.get_traceable().should_free {
+                alive[i] = true;
+            }
+        }
+
+        // 释放不再活跃的对象
+        let mut i = 0;
+        let mut j = 0;
+        while i < self.objects.len() {
+            if !alive[j] {
+                // 释放对象资源
+                let obj_ptr = &self.objects[i];
+                obj_ptr.free();
+                // 从Vec中移除
+                self.objects.remove(i);
+            } else {
+                i += 1;
+            }
+            j += 1;
+        }
     }
-    
+
     pub fn collect(&mut self) {
         self.mark();
         self.sweep();
+    }
+
+    pub fn debug_print(&self) {
+        for i in 0..self.objects.len() {
+            let gc_ref = &self.objects[i];
+            println!("Object {}: {:?}", i, gc_ref.get_traceable());
+        }
     }
 }

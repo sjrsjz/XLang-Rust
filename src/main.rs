@@ -14,7 +14,38 @@ use self::vm::gc::gc::{GCObject, GCTraceable,GCSystem};
 use self::vm::gc::variable::GCInteger;
 
 fn gc_test() {
+    let mut gc = GCSystem::new();
+    let mut A_i32 = gc.new_object(GCInteger::new(10));
+    let mut B_i32 = gc.new_object(GCInteger::new(20));
+    let mut C_i32 = gc.new_object(GCInteger::new(30));
+    
+    println!("Before offline");
+    gc.debug_print();
 
+    A_i32.offline();
+
+    println!("After offline");
+    gc.debug_print();
+
+    gc.collect();
+
+    println!("After collect");
+    gc.debug_print();
+
+    println!("B: {:?}", GCSystem::as_type::<GCInteger>(&B_i32).value);
+    println!("C: {:?}", GCSystem::as_type::<GCInteger>(&C_i32).value);
+
+    B_i32.offline();
+    C_i32.offline();
+
+    println!("After offline All");
+    gc.debug_print();
+
+    gc.collect();
+
+    println!("After collect All");
+    gc.debug_print();
+    
 }
 
 

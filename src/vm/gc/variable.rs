@@ -4,7 +4,7 @@ use super::gc::{GCObject,GCTraceable,GCSystem};
 #[derive(Debug)]
 pub struct GCInteger {
     pub value: i64,
-    pub traceable: GCTraceable,
+    traceable: GCTraceable,
 }
 
 impl GCInteger {
