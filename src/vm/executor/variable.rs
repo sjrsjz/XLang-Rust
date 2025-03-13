@@ -51,7 +51,7 @@ impl VMVariableWrapper {
 
         VMVariableWrapper {
             value_ref: value.clone(),
-            traceable: GCTraceable::new(Some(HashSet::from([value.clone()]))),
+            traceable: GCTraceable::new(Some(vec![value.clone()])),
         }
     }
 }
@@ -368,7 +368,7 @@ impl VMKeyVal {
         VMKeyVal {
             key: key.clone(),
             value: value.clone(),
-            traceable: GCTraceable::new(Some(HashSet::from([key, value]))),
+            traceable: GCTraceable::new(Some(vec![key, value])),
         }
     }
 
@@ -388,14 +388,14 @@ impl VMKeyVal {
     pub fn eq(&self, other: GCRef) -> bool {
         if other.isinstance::<VMKeyVal>() {
             let other_kv = other.as_const_type::<VMKeyVal>();
-            let key_eq = {
+            let key_eq = (||{
                 try_binary_op_as_type!(self.key, eq, other_kv.key.clone(); VMInt, VMString, VMFloat, VMBoolean, VMNull, VMKeyVal);
                 false
-            };
-            let value_eq = {
+            })();
+            let value_eq = (||{
                 try_binary_op_as_type!(self.value, eq, other_kv.value.clone(); VMInt, VMString, VMFloat, VMBoolean, VMNull, VMKeyVal);
                 false
-            };
+            })();
             return key_eq && value_eq;
         } else {
             false
@@ -420,11 +420,9 @@ impl VMObject for VMKeyVal {
     }
 
     fn assgin(&mut self, value: GCRef) {
-        if value.isinstance::<VMKeyVal>() {
-            self.value = value.as_const_type::<VMKeyVal>().value.clone();
-        } else {
-            panic!("Cannot assign a value of {:?} to VMKeyVal", value);
-        }
+        self.traceable.remove_reference(&self.value);
+        self.value = value.clone();
+        self.traceable.add_reference(&mut self.value);
     }
 
     fn object_ref(&self) -> GCRef {
