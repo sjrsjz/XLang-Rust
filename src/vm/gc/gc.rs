@@ -189,7 +189,7 @@ impl Drop for GCTraceable {
 
 #[derive(Debug)]
 pub struct GCSystem {
-    pub objects: Vec<GCRef>,
+    objects: Vec<GCRef>,
 }
 
 impl GCSystem {
@@ -217,7 +217,8 @@ impl GCSystem {
         for i in 0..self.objects.len() {
             let gc_ref = &self.objects[i];
             if gc_ref.get_traceable().should_free {
-                panic!("Never set should_free to true! Use offline() instead!");
+                let obj = gc_ref.get_traceable();
+                panic!("Never set should_free to true! Use offline() instead! Object: {:?}", obj);
             } else if gc_ref.get_traceable().online {
                 alive[i] = true;
             }
@@ -291,18 +292,16 @@ impl GCSystem {
             }
         }
 
-        let mut i = 0;
-        let mut j = 0;
-        while i < self.objects.len() {
-            if !alive[j] {
-                // 释放对象资源
-                // 从Vec中移除
-                self.objects.remove(i);
-            } else {
-                i += 1;
+        let mut new_objects = Vec::new();
+
+        for i in 0..self.objects.len() {
+            if alive[i] {
+                new_objects.push(self.objects[i].clone());
             }
-            j += 1;
         }
+
+        self.objects.clear();
+        self.objects.extend(new_objects);
 
         for i in 0..self.objects.len() {
             let gc_ref = &self.objects[i];
@@ -330,6 +329,20 @@ impl GCSystem {
         }
         self.collect();
     }
+
+    pub fn is_available(&self, gc_ref: &GCRef) -> bool {
+        for obj in &self.objects {
+            if obj == gc_ref {
+                return true;
+            }
+        }
+        false
+    }
+
+    pub fn count(&self) -> usize {
+        self.objects.len()
+    }
+
 }
 
 impl Drop for GCSystem {
