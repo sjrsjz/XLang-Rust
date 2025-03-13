@@ -64,6 +64,19 @@ impl GCRef {
         }
     }
 
+    pub fn as_const_type<T>(&self) -> &T
+    where
+        T: GCObject + 'static,
+    {
+        if !self.isinstance::<T>() {
+            panic!("Type mismatch! Expected type: {:?}", TypeId::of::<T>());
+        }
+        unsafe {
+            let obj = self.reference as *const T;
+            &*obj
+        }
+    }
+
     pub fn isinstance<T: GCObject + 'static>(&self) -> bool {
         self.type_id == TypeId::of::<T>()
     }
@@ -114,6 +127,7 @@ impl GCTraceable {
     }
 }
 
+#[derive(Debug)]
 pub struct GCSystem {
     pub objects: Vec<GCRef>,
 }

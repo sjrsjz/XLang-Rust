@@ -56,8 +56,8 @@ pub enum IR{
     Return, // pop value from stack and return it
     NewFrame, // create new frame
     PopFrame, // pop frame
-    JumpOffset(i32), // jump to offset
-    JumpIfFalseOffset(i32), // jump to offset if false
+    JumpOffset(isize), // jump to offset
+    JumpIfFalseOffset(isize), // jump to offset if false
     ResetStack, // reset stack
     CopyValue, // copy value
     RefValue, // get reference value

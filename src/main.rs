@@ -5,46 +5,10 @@ use self::parser::ast::ast_token_stream;
 use self::parser::lexer::{lexer, Token, TokenType};
 
 use self::vm::gc::gc::GCSystem;
-use self::vm::gc::variable::GCInteger;
 
 use self::vm::ir_generator::ir_generator;
 use self::vm::ir::Functions;
 
-
-
-fn gc_test() {
-    let mut gc = GCSystem::new();
-    let A_i32 = gc.new_object(GCInteger::new(10));
-    let B_i32 = gc.new_object(GCInteger::new(20));
-    let C_i32 = gc.new_object(GCInteger::new(30));
-
-    println!("Before offline");
-    gc.debug_print();
-
-    A_i32.offline();
-
-    println!("After offline");
-    gc.debug_print();
-
-    gc.collect();
-
-    println!("After collect");
-    gc.debug_print();
-
-    println!("B: {:?}", B_i32.as_type::<GCInteger>().value);
-    println!("C: {:?}", C_i32.as_type::<GCInteger>().value);
-
-    B_i32.offline();
-    C_i32.offline();
-
-    println!("After offline All");
-    gc.debug_print();
-
-    gc.collect();
-
-    println!("After collect All");
-    gc.debug_print();
-}
 
 fn main() {
 
@@ -60,6 +24,8 @@ factorial := Z((f => null) -> {
         };
     };
 });
+
+print(factorial(5));
 
 "#;
     let tokens = lexer::reject_comment(lexer::tokenize(code));
@@ -83,12 +49,13 @@ factorial := Z((f => null) -> {
     let mut functions = Functions::new();
     let mut ir_generator = ir_generator::IRGenerator::new(&mut functions, namespace);
 
-    let ir = ir_generator.generate_without_redirect(&ast.unwrap());
-    println!("\n\nIR:\n");
-    for ir in &ir {
-        println!("{:?}", ir);
+    let ir = ir_generator.generate(&ast.unwrap());
+    if ir.is_err() {
+        println!("Error: {:?}", ir.err().unwrap());
+        return;
     }
-
+    functions.append("__main__".to_string(), ir.unwrap());
+    
     let (built_ins, ips) = functions.build_instructions();
     println!("\n\nBuilt Ins:\n");
     for ir in &built_ins {

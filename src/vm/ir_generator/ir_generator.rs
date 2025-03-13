@@ -17,10 +17,10 @@ pub struct NameSpace {
 impl NameSpace {
     pub fn new(name: String, parent: Option<&NameSpace>) -> Self {
         let mut path = Vec::new();
-        path.push(name);
         if let Some(parent) = parent {
             path.extend(parent.path.clone());
         }
+        path.push(name);
         NameSpace { path }
     }
 
@@ -147,7 +147,7 @@ impl<'t> IRGenerator<'t> {
                 );
 
                 let mut body_instructions =
-                    generator.generate_without_redirect(&ast_node.children[1])?;
+                    generator.generate(&ast_node.children[1])?; // body, compute redirect jump directly
                 body_instructions.push(IR::Return);
 
                 self.functions.append(signature.clone(), body_instructions);
@@ -523,5 +523,107 @@ impl<'t> IRGenerator<'t> {
                 Ok(instructions)
             }
         }
+    }
+    /// 重定向所有跳转指令，将RedirectJump和RedirectJumpIfFalse转换为JumpOffset和JumpIfFalse
+    ///
+    /// # Arguments
+    ///
+    /// * `irs` - IR指令列表
+    ///
+    /// # Returns
+    ///
+    /// 处理后的IR指令列表
+    fn redirect_jump(&self, irs: Vec<IR>) -> Result<Vec<IR>, IRGeneratorError> {
+        let mut reduced_irs = Vec::new();
+        let mut label_map = std::collections::HashMap::new();
+        
+        // 首先收集所有标签的位置
+        for (i, ir) in irs.iter().enumerate() {
+            if let IR::RedirectLabel(label) = ir {
+                label_map.insert(label.clone(), reduced_irs.len());
+            } else {
+                reduced_irs.push(ir.clone());
+            }
+        }
+        
+        // 转换所有跳转指令
+        for i in 0..reduced_irs.len() {
+            match &reduced_irs[i] {
+                IR::RedirectJump(label) => {
+                    if let Some(&target_pos) = label_map.get(label) {
+                        let offset = target_pos as isize - i as isize;
+                        reduced_irs[i] = IR::JumpOffset(offset);
+                    } else {
+                        return Err(IRGeneratorError::InvalidLabel);
+                    }
+                },
+                IR::RedirectJumpIfFalse(label) => {
+                    if let Some(&target_pos) = label_map.get(label) {
+                        let offset = target_pos as isize - i as isize;
+                        reduced_irs[i] = IR::JumpIfFalseOffset(offset);
+                    } else {
+                        return Err(IRGeneratorError::InvalidLabel);
+                    }
+                },
+                _ => {}
+            }
+        }
+        
+        Ok(reduced_irs)
+    }
+    
+    /// 移除相邻的debug_info指令，只保留最新的一个
+    ///
+    /// # Arguments
+    ///
+    /// * `irs` - 原始IR指令列表
+    ///
+    /// # Returns
+    ///
+    /// 处理后的IR指令列表
+    fn retain_latest_debug_info(&self, irs: Vec<IR>) -> Vec<IR> {
+        if irs.is_empty() {
+            return Vec::new();
+        }
+        
+        let mut result = Vec::new();
+        let mut last_was_debug = false;
+        
+        for ir in irs {
+            match ir {
+                IR::DebugInfo(_) => {
+                    if last_was_debug {
+                        // 如果前一条也是DEBUG_INFO，则替换它
+                        *result.last_mut().unwrap() = ir;
+                    } else {
+                        // 否则添加此DEBUG_INFO
+                        result.push(ir);
+                        last_was_debug = true;
+                    }
+                },
+                _ => {
+                    // 非DEBUG_INFO指令直接添加
+                    result.push(ir);
+                    last_was_debug = false;
+                }
+            }
+        }
+        
+        result
+    }
+    
+    /// 生成并优化IR指令
+    ///
+    /// # Arguments
+    ///
+    /// * `ast_node` - AST节点
+    ///
+    /// # Returns
+    ///
+    /// 优化后的IR指令列表
+    pub fn generate(&mut self, ast_node: &ASTNode<'t>) -> Result<Vec<IR>, IRGeneratorError> {
+        let irs = self.generate_without_redirect(ast_node)?;
+        let irs = self.retain_latest_debug_info(irs);
+        self.redirect_jump(irs)
     }
 }
