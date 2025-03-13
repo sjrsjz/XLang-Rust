@@ -81,6 +81,13 @@ impl GCRef {
         self.type_id == TypeId::of::<T>()
     }
 
+    pub fn wrap<T: GCObject + 'static>(obj: &T) -> GCRef {
+        GCRef {
+            reference: obj as *const T as *mut T as *mut dyn GCObject,
+            type_id: TypeId::of::<T>(),
+        }
+    }
+
 }
 
 #[derive(Debug)]
@@ -93,12 +100,18 @@ pub struct GCTraceable {
 
 impl GCTraceable {
     pub fn new(references: Option<HashSet<GCRef>>) -> GCTraceable {
-        GCTraceable {
+        let obj = GCTraceable {
             ref_count: 0,
             should_free: false,
             online: true,
             references: references.unwrap_or(HashSet::new()),
+        };
+        for ref_obj in &obj.references {
+            unsafe {
+                (*ref_obj.reference).get_traceable().ref_count += 1; // increase the reference count of the object
+            }
         }
+        obj
     }
 
     pub fn offline(&mut self) {
@@ -122,6 +135,9 @@ impl GCTraceable {
         }
         self.references.remove(obj);
         unsafe {
+            if (*obj.reference).get_traceable().ref_count == 0 {
+                panic!("Reference count is already zero!");
+            }
             (*obj.reference).get_traceable().ref_count -= 1; // decrease the reference count of the object
         }
     }
