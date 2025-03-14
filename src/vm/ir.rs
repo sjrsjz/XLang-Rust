@@ -33,7 +33,7 @@ pub struct DebugInfo{
 #[derive(Debug, Clone)]
 pub enum IR{
     LoadNull, // load null to stack 
-    LoadInt(i32), // load integer to stack
+    LoadInt(i64), // load integer to stack
     LoadFloat(f64), // load float to stack
     LoadString(String), // load string to stack
     LoadBool(bool), // load bool to stack

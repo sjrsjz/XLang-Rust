@@ -294,7 +294,7 @@ impl<'t> IRGenerator<'t> {
                 // check if number_str is float or int
                 let mut instructions = Vec::new();
                 instructions.push(debug_info);
-                if let Ok(number) = number_str.parse::<i32>() {
+                if let Ok(number) = number_str.parse::<i64>() {
                     instructions.push(IR::LoadInt(number));
                 } else if let Ok(number) = number_str.parse::<f64>() {
                     instructions.push(IR::LoadFloat(number));

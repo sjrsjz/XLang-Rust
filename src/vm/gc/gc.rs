@@ -54,6 +54,13 @@ impl GCRef {
         }
     }
 
+    pub fn is_online(&self) -> bool {
+        unsafe {
+            let obj = self.reference as *mut dyn GCObject;
+            (*obj).get_traceable().online
+        }
+    }
+
     pub fn as_type<T>(&self) -> &mut T
     where
         T: GCObject + 'static,
