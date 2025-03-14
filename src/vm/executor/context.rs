@@ -65,20 +65,19 @@ impl Context {
                 let pointer = self.stack_pointers.pop();
                 stack.truncate(pointer.unwrap_or(0));
             }
-        } else {
-            if self.frames.is_empty() {
-                return Err(ContextError::NoFrame);
-            }
-            for variable in self.frames.last_mut().unwrap().0.values() {
-                if !variable.isinstance::<VMVariableWrapper>() {
-                    return Err(ContextError::InvaildContextVariable(variable.clone()));
-                }
-                variable.offline();
-            }
-            self.frames.pop();
-            let pointer = self.stack_pointers.pop();
-            stack.truncate(pointer.unwrap_or(0));
+        } 
+        if self.frames.is_empty() {
+            return Err(ContextError::NoFrame);
         }
+        for variable in self.frames.last_mut().unwrap().0.values() {
+            if !variable.isinstance::<VMVariableWrapper>() {
+                return Err(ContextError::InvaildContextVariable(variable.clone()));
+            }
+            variable.offline();
+        }
+        self.frames.pop();
+        let pointer = self.stack_pointers.pop();
+        stack.truncate(pointer.unwrap_or(0));        
         Ok(())
     }
 

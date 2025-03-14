@@ -87,8 +87,6 @@ impl IRExecutor {
         //create builtin functions
 
         //run!
-        let mut result = gc_system.new_object(VMNull::new());
-
         while self.lambda_instructions.len() > 0
             && self.ip
                 < self
@@ -106,11 +104,28 @@ impl IRExecutor {
                 .as_const_type::<VMInstructions>()
                 .instructions[self.ip]
                 .clone();
+
+            print!("{}: {:?}", self.ip, instruction); // debug
             self.execute_instruction(instruction, gc_system)?;
+            gc_system.collect(); // debug
+            gc_system.print_reference_graph(); // debug
             self.ip += 1;
         }
-
-        Ok(result)
+        let result = self
+            .stack
+            .pop();
+        if result.is_none() {
+            return Err(VMError::EmptyStack);
+        }
+        let result = result.unwrap();
+        match result {
+            VMStackObject::VMObject(obj) => {
+                return Ok(obj);
+            }
+            _ => {
+                return Err(VMError::NotVMObject(result));
+            }            
+        }
     }
 }
 
@@ -119,7 +134,7 @@ impl IRExecutor {
         &mut self,
         instruction: IR,
         gc_system: &mut GCSystem,
-    ) -> Result<GCRef, VMError> {
+    ) -> Result<(), VMError> {
         match &instruction {
             IR::LoadInt(value) => {
                 let obj = gc_system.new_object(VMInt::new(*value));
@@ -299,10 +314,7 @@ impl IRExecutor {
                     return Err(VMError::UnableToReference(obj));
                 }
                 let obj_ref = obj_ref.unwrap();
-                if !obj_ref.isinstance::<VMVariableWrapper>() {
-                    return Err(VMError::InvaildInstruction(instruction.clone()));
-                }
-                let result = self.context.set_var(name, obj_ref.clone());
+                let result = self.context.let_var(name.clone(), obj_ref.clone(), gc_system);
                 if result.is_err(){
                     return Err(VMError::ContextError(result.unwrap_err()));
                 }
@@ -519,6 +531,6 @@ impl IRExecutor {
 
             _ => return Err(VMError::InvaildInstruction(instruction.clone())),
         }
-        Ok(gc_system.new_object(VMNull::new()))
+        Ok(())
     }
 }

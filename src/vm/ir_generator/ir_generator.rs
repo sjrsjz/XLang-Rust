@@ -345,6 +345,7 @@ impl<'t> IRGenerator<'t> {
                 let mut instructions = Vec::new();
                 instructions.push(debug_info);
                 for child in &ast_node.children {
+                    instructions.push(IR::ResetStack);
                     instructions.extend(self.generate_without_redirect(child)?);
                 }
                 Ok(instructions)

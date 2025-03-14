@@ -4,6 +4,7 @@ use vm::executor;
 use vm::executor::variable::VMInstructions;
 use vm::executor::variable::VMLambda;
 use vm::executor::variable::VMTuple;
+use vm::ir::IR;
 
 use self::parser::ast::build_ast;
 use self::parser::ast::ast_token_stream;
@@ -14,13 +15,26 @@ use self::vm::gc::gc::GCSystem;
 use self::vm::ir_generator::ir_generator;
 use self::vm::ir::Functions;
 use self::vm::executor::vm::*;
+use self::vm::executor::variable::*;
 
 
 fn main() {
 
     let code = r#"
 
-A := 1
+A := 1; {
+    B := 2;
+    C := 3;
+    D := 4;
+    E := 5;
+    F := 6;
+    G := 7;
+    H := 8;
+    I := 9;
+    J := 10;
+};
+
+2 == "2"
 
 "#;
     let tokens = lexer::reject_comment(lexer::tokenize(code));
@@ -49,7 +63,9 @@ A := 1
         println!("Error: {:?}", ir.err().unwrap());
         return;
     }
-    functions.append("__main__".to_string(), ir.unwrap());
+    let mut ir = ir.unwrap();
+    ir.push(IR::Return);
+    functions.append("__main__".to_string(), ir);
     
     let (built_ins, ips) = functions.build_instructions();
     println!("\n\nBuilt Ins:\n");
@@ -84,11 +100,17 @@ A := 1
         return;
     }
     let result = result.unwrap();
-    println!("\n\nResult:\n");
-    println!("{:?}", result);
-    println!("\n\nGC System:\n");
-    gc_system.debug_print();
-    gc_system.drop_all();
+    let repr = try_repr_vmobject(result.clone());
+    if repr.is_ok(){
+        println!("Result: {:?}", repr.unwrap());
+    } else {
+        println!("Error: {:?}", repr.err().unwrap());
+    }
+    print!("\n\nResult GCRef: {:?}\n", result);
+    result.offline();
+    gc_system.collect();
+    println!("Existing GCRef: {:?}", gc_system.count());
+    gc_system.print_reference_graph();
 
 
 }

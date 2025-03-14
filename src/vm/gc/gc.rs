@@ -1,4 +1,4 @@
-use std::collections::{HashSet, HashMap};
+use std::collections::{HashMap, HashSet};
 //typeid
 use std::any::TypeId;
 use std::hash::{Hash, Hasher};
@@ -111,20 +111,20 @@ pub struct GCTraceable {
 impl GCTraceable {
     pub fn new(references: Option<Vec<GCRef>>) -> GCTraceable {
         let mut refs_map = HashMap::new();
-        
+
         if let Some(refs) = references {
             for ref_obj in refs {
                 *refs_map.entry(ref_obj.clone()).or_insert(0) += 1;
             }
         }
-        
+
         let obj = GCTraceable {
             ref_count: 0,
             should_free: false,
             online: true,
             references: refs_map,
         };
-        
+
         // 更新每个引用对象的引用计数
         for (ref_obj, count) in &obj.references {
             unsafe {
@@ -149,19 +149,22 @@ impl GCTraceable {
 
     pub fn remove_reference(&mut self, obj: &GCRef) {
         let count = self.references.get(obj).cloned();
-        
+
         match count {
-            None => panic!("Reference does not exist! existing references: {:?}, but got {:?}", self.references, obj),
+            None => panic!(
+                "Reference does not exist! existing references: {:?}, but got {:?}",
+                self.references, obj
+            ),
             Some(1) => {
                 // 最后一个引用，从HashMap中移除
                 self.references.remove(obj);
-            },
+            }
             Some(c) => {
                 // 减少引用计数
                 self.references.insert(obj.clone(), c - 1);
             }
         }
-        
+
         unsafe {
             if (*obj.reference).get_traceable().ref_count == 0 {
                 panic!("Reference count is already zero!");
@@ -175,9 +178,11 @@ impl Drop for GCTraceable {
     fn drop(&mut self) {
         let total_refs: usize = self.references.values().sum();
         if total_refs > 0 {
-            eprintln!("[GC警告] 对象被销毁时仍有非零引用! 引用计数: {}, 引用详情: {:?}", 
-                     total_refs, self.references);
-            
+            eprintln!(
+                "[GC警告] 对象被销毁时仍有非零引用! 引用计数: {}, 引用详情: {:?}",
+                total_refs, self.references
+            );
+
             // 自动清理引用
             for (ref_obj, count) in std::mem::take(&mut self.references) {
                 unsafe {
@@ -225,7 +230,10 @@ impl GCSystem {
             let gc_ref = &self.objects[i];
             if gc_ref.get_traceable().should_free {
                 let obj = gc_ref.get_traceable();
-                panic!("Never set should_free to true! Use offline() instead! Object: {:?}", obj);
+                panic!(
+                    "Never set should_free to true! Use offline() instead! Object: {:?}",
+                    obj
+                );
             } else if gc_ref.get_traceable().online {
                 alive[i] = true;
             }
@@ -241,7 +249,7 @@ impl GCSystem {
         let mut ref_graph: Vec<Vec<usize>> = vec![Vec::new(); self.objects.len()];
         for i in 0..self.objects.len() {
             let gc_ref = &self.objects[i];
-            for (ref_obj,_) in &gc_ref.get_traceable().references {
+            for (ref_obj, _) in &gc_ref.get_traceable().references {
                 if let Some(&ref_idx) = idx_map.get(&ref_obj.reference) {
                     ref_graph[i].push(ref_idx);
                 }
@@ -313,7 +321,10 @@ impl GCSystem {
         for i in 0..self.objects.len() {
             let gc_ref = &self.objects[i];
             if gc_ref.get_traceable().should_free {
-                panic!("Object should be freed! But it is still in the list! {:?}", gc_ref);
+                panic!(
+                    "Object should be freed! But it is still in the list! {:?}",
+                    gc_ref
+                );
             }
         }
     }
@@ -328,6 +339,54 @@ impl GCSystem {
             let gc_ref = &self.objects[i];
             println!("Object {}: {:?}", i, gc_ref.get_traceable());
         }
+    }
+
+    pub fn print_reference_graph(&self) {
+        println!("\n=== GC Reference Graph ===");
+
+        // 创建对象索引映射，方便查找
+        let mut obj_index_map = HashMap::new();
+        for (i, obj) in self.objects.iter().enumerate() {
+            obj_index_map.insert(obj.reference, i);
+        }
+
+        // 打印每个对象的信息和引用关系
+        for (i, obj) in self.objects.iter().enumerate() {
+            let traceable = obj.get_traceable();
+
+            // 打印对象基本信息
+            println!(
+                "Object #{}: {:?} (RefCount: {}, Online: {}, ShouldFree: {})",
+                i,
+                obj.type_id, // 或者使用自定义的类型名称映射
+                traceable.ref_count,
+                traceable.online,
+                traceable.should_free
+            );
+
+            // 打印引用关系
+            if !traceable.references.is_empty() {
+                println!("  References:");
+                for (ref_obj, count) in &traceable.references {
+                    // 尝试获取被引用对象的索引
+                    if let Some(&ref_idx) = obj_index_map.get(&(ref_obj.reference)) {
+                        println!(
+                            "    -> Object #{} (type: {:?}): {} references",
+                            ref_idx, ref_obj.type_id, count
+                        );
+                    } else {
+                        println!(
+                            "    -> External object {:?}: {} references",
+                            ref_obj.reference, count
+                        );
+                    }
+                }
+            } else {
+                println!("  No outgoing references");
+            }
+        }
+
+        println!("=========================\n");
     }
 
     pub fn drop_all(&mut self) {
@@ -349,7 +408,6 @@ impl GCSystem {
     pub fn count(&self) -> usize {
         self.objects.len()
     }
-
 }
 
 impl Drop for GCSystem {
@@ -359,7 +417,10 @@ impl Drop for GCSystem {
         }
         self.collect();
         if self.objects.len() > 0 {
-            panic!("Memory leak detected! {} objects are not freed!", self.objects.len());
+            panic!(
+                "Memory leak detected! {} objects are not freed!",
+                self.objects.len()
+            );
         }
     }
 }

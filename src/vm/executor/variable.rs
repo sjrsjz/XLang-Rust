@@ -24,6 +24,29 @@ pub enum VMVariableError {
     ReferenceError(GCRef, String),
 }
 
+pub fn try_repr_vmobject(
+    value: GCRef,
+) -> Result<String, VMVariableError> {
+    if value.isinstance::<VMInt>() {
+        let int = value.as_const_type::<VMInt>();
+        return Ok(int.value.to_string());
+    } else if value.isinstance::<VMString>() {
+        let string = value.as_const_type::<VMString>();
+        return Ok(string.value.clone());
+    } else if value.isinstance::<VMFloat>() {
+        let float = value.as_const_type::<VMFloat>();
+        return Ok(float.value.to_string());
+    } else if value.isinstance::<VMBoolean>() {
+        let boolean = value.as_const_type::<VMBoolean>();
+        return Ok(boolean.value.to_string());
+    } else if value.isinstance::<VMNull>() {
+        return Ok("null".to_string());
+    }
+    Err(VMVariableError::TypeError(
+        value.clone(),
+        "Cannot represent a non-representable type".to_string(),
+    ))
+}
 
 pub fn try_get_attr_as_vmobject(
     value: GCRef,
@@ -860,10 +883,13 @@ impl VMLambda {
         VMLambda {
             code_position,
             signature,
-            default_args_tuple,
+            default_args_tuple: default_args_tuple.clone(),
             self_object,
-            lambda_instructions,
-            traceable: GCTraceable::new(None),
+            lambda_instructions: lambda_instructions.clone(),
+            traceable: GCTraceable::new(Some(vec![
+                default_args_tuple,
+                lambda_instructions,
+            ])),
         }
     }
 
