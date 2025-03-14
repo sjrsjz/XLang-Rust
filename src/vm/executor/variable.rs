@@ -4,7 +4,7 @@ use crate::vm::ir::IR;
 
 use super::super::gc::gc::{GCObject, GCRef, GCSystem, GCTraceable};
 
-#[derive(Debug)]
+#[derive(Debug, Clone)]
 pub enum VMStackObject{
     LastIP(usize, bool),
     VMObject(GCRef),
@@ -17,11 +17,75 @@ pub enum VMVariableError {
     TypeError(GCRef, String),
     ValueError(GCRef, String),
     KeyNotFound(GCRef, GCRef), // 键未找到
+    ValueNotFound(GCRef, GCRef), // 值未找到
+    IndexNotFound(GCRef, GCRef), // 索引未找到
     CopyError(GCRef, String),
     AssignError(GCRef, String),
     ReferenceError(GCRef, String),
 }
 
+
+pub fn try_get_attr_as_vmobject(
+    value: GCRef,
+    attr: GCRef,
+) -> Result<GCRef, VMVariableError> {
+    if value.isinstance::<VMNamed>() {
+        let named = value.as_const_type::<VMNamed>();
+        if named.check_key(attr.clone()) {
+            return Ok(named.get_value());
+        }
+    } else if value.isinstance::<VMKeyVal>() {
+        let kv = value.as_const_type::<VMKeyVal>();
+        if kv.check_key(attr.clone()) {
+            return Ok(kv.get_value());
+        }
+    } else if value.isinstance::<VMTuple>() {
+        let tuple = value.as_const_type::<VMTuple>();
+        return tuple.get_member(attr);
+    }
+    Err(VMVariableError::KeyNotFound(attr, value))
+}
+
+pub fn try_index_of_as_vmobject(
+    value: GCRef,
+    index: GCRef,
+) -> Result<GCRef, VMVariableError> {
+    if value.isinstance::<VMTuple>() {
+        let tuple = value.as_const_type::<VMTuple>();
+        return tuple.index_of(index);
+    }
+    Err(VMVariableError::IndexNotFound(index, value))
+}
+
+pub fn try_key_of_as_vmobject(
+    value: GCRef,
+) -> Result<GCRef, VMVariableError> {
+    if value.isinstance::<VMKeyVal>() {
+        let kv = value.as_const_type::<VMKeyVal>();
+        return Ok(kv.get_key());
+    } else if value.isinstance::<VMNamed>() {
+        let named = value.as_const_type::<VMNamed>();
+        return Ok(named.get_key());
+    }
+    Err(VMVariableError::KeyNotFound(value.clone(), value))
+}
+
+pub fn try_value_of_as_vmobject(
+    value: GCRef,
+) -> Result<GCRef, VMVariableError> {
+    if value.isinstance::<VMKeyVal>() {
+        let kv = value.as_const_type::<VMKeyVal>();
+        return Ok(kv.get_value());
+    } else if value.isinstance::<VMNamed>() {
+        let named = value.as_const_type::<VMNamed>();
+        return Ok(named.get_value());
+    }
+    Err(VMVariableError::ValueNotFound(value.clone(), value))
+}
+
+
+
+#[macro_export]
 macro_rules! try_copy_as_type {
     ($value:expr, $gc_system:expr; $($t:ty),+) => {
         $(
@@ -32,8 +96,44 @@ macro_rules! try_copy_as_type {
     };
 }
 
+pub fn try_copy_as_vmobject(
+    value: GCRef,
+    gc_system: &mut GCSystem,
+) -> Result<GCRef, VMVariableError> {
+    try_copy_as_type!(value, gc_system; VMInt, VMString, VMFloat, VMBoolean, VMNull, VMKeyVal, VMTuple, VMNamed, VMLambda, VMInstructions);
+    Err(VMVariableError::CopyError(
+        value.clone(),
+        "Cannot copy a value of non-copyable type".to_string(),
+    ))
+}
+
+#[macro_export]
+macro_rules! try_assgin_as_type {
+    ($value:expr, $other:expr; $($t:ty),+) => {
+        $(
+            if $value.isinstance::<$t>() {
+                return $value.as_type::<$t>().assgin($other);
+            }
+        )+
+    };
+}
+
+pub fn try_assgin_as_vmobject(
+    value: GCRef,
+    other: GCRef
+) -> Result<GCRef, VMVariableError> {
+    try_assgin_as_type!(value, other; VMInt, VMString, VMFloat, VMBoolean, VMNull, VMKeyVal, VMTuple, VMNamed, VMLambda, VMInstructions, VMVariableWrapper);
+    Err(VMVariableError::AssignError(
+        value.clone(),
+        "Cannot assign a value of non-assignable type".to_string(),
+    ))
+}
+
+
+
+#[macro_export]
 macro_rules! try_ref_as_type {
-    ($value:expr,$($t:ty),+) => {
+    ($value:expr; $($t:ty),+) => {
         $(
             if $value.isinstance::<$t>() {
                 return $value.as_const_type::<$t>().object_ref();
@@ -42,6 +142,17 @@ macro_rules! try_ref_as_type {
     };
 }
 
+pub fn try_ref_as_vmobject(
+    value: GCRef,
+) -> Result<GCRef, VMVariableError> {
+    try_ref_as_type!(value; VMInt, VMString, VMFloat, VMBoolean, VMNull, VMKeyVal, VMTuple, VMNamed, VMLambda, VMInstructions);
+    Err(VMVariableError::ReferenceError(
+        value.clone(),
+        "Cannot get reference of a non-referenceable type".to_string(),
+    ))
+}
+
+#[macro_export]
 macro_rules! try_binary_op_as_type {
     ($value:expr, $op:ident, $other:expr; $($t:ty),+) => {
         $(
@@ -51,6 +162,15 @@ macro_rules! try_binary_op_as_type {
         )+
     };
 }
+
+pub fn try_eq_as_vmobject(
+    value: GCRef,
+    other: GCRef,
+) -> bool {
+    try_binary_op_as_type!(value, eq, other; VMInt, VMString, VMFloat, VMBoolean, VMNull, VMKeyVal, VMTuple, VMNamed);
+    false
+}
+
 
 pub trait VMObject {
     fn copy(&self, gc_system: &mut GCSystem) -> Result<GCRef, VMVariableError>;
@@ -89,19 +209,7 @@ impl GCObject for VMVariableWrapper {
 
 impl VMObject for VMVariableWrapper {
     fn copy<'t>(&self, gc_system: &mut GCSystem) -> Result<GCRef, VMVariableError> {
-        try_copy_as_type!(self.value_ref, gc_system; VMInt, VMString, VMFloat, VMBoolean);
-
-        if self.value_ref.isinstance::<VMVariableWrapper>() {
-            return Err(VMVariableError::TypeError(
-                self.value_ref.clone(),
-                "Cannot copy a variable wrapper".to_string(),
-            ));
-        } else {
-            return Err(VMVariableError::TypeError(
-                self.value_ref.clone(),
-                "Cannot copy a variable wrapper".to_string(),
-            ));
-        }
+        try_copy_as_vmobject(self.value_ref.clone(), gc_system)
     }
 
     fn assgin(&mut self, value: GCRef) -> Result<GCRef, VMVariableError> {
@@ -112,12 +220,7 @@ impl VMObject for VMVariableWrapper {
     }
 
     fn object_ref(&self) -> Result<GCRef, VMVariableError> {
-        try_ref_as_type!(self.value_ref, VMInt);
-        
-        Err(VMVariableError::TypeError(
-            self.value_ref.clone(),
-            "Cannot get reference of a variable wrapper".to_string(),
-        ))
+        return try_ref_as_vmobject(self.value_ref.clone());
     }
 }
 
@@ -420,21 +523,14 @@ impl VMKeyVal {
     }
 
     pub fn check_key(&self, other: GCRef) -> bool {
-        try_binary_op_as_type!(self.key, eq, other; VMInt, VMString, VMFloat, VMBoolean, VMNull, VMKeyVal, VMTuple);
-        false
+        try_eq_as_vmobject(self.value.clone(), other)
     }
 
     pub fn eq(&self, other: GCRef) -> bool {
         if other.isinstance::<VMKeyVal>() {
             let other_kv = other.as_const_type::<VMKeyVal>();
-            let key_eq = (||{
-                try_binary_op_as_type!(self.key, eq, other_kv.key.clone(); VMInt, VMString, VMFloat, VMBoolean, VMNull, VMKeyVal, VMTuple);
-                false
-            })();
-            let value_eq = (||{
-                try_binary_op_as_type!(self.value, eq, other_kv.value.clone(); VMInt, VMString, VMFloat, VMBoolean, VMNull, VMKeyVal, VMTuple);
-                false
-            })();
+            let key_eq = try_eq_as_vmobject(self.key.clone(), other_kv.key.clone());
+            let value_eq = try_eq_as_vmobject(self.value.clone(), other_kv.value.clone());
             return key_eq && value_eq;
         } else {
             false
@@ -496,21 +592,14 @@ impl VMNamed {
     }
 
     pub fn check_key(&self, other: GCRef) -> bool {
-        try_binary_op_as_type!(self.key, eq, other; VMInt, VMString, VMFloat, VMBoolean, VMNull, VMKeyVal, VMTuple, VMNamed);
-        false
+        try_eq_as_vmobject(self.key.clone(), other)
     }
 
     pub fn eq(&self, other: GCRef) -> bool {
         if other.isinstance::<VMNamed>() {
             let other_kv = other.as_const_type::<VMNamed>();
-            let key_eq = (||{
-                try_binary_op_as_type!(self.key, eq, other_kv.key.clone(); VMInt, VMString, VMFloat, VMBoolean, VMNull, VMKeyVal, VMTuple, VMNamed);
-                false
-            })();
-            let value_eq = (||{
-                try_binary_op_as_type!(self.value, eq, other_kv.value.clone(); VMInt, VMString, VMFloat, VMBoolean, VMNull, VMKeyVal, VMTuple, VMNamed);
-                false
-            })();
+            let key_eq= try_eq_as_vmobject(self.key.clone(), other_kv.key.clone());
+            let value_eq = try_eq_as_vmobject(self.value.clone(), other_kv.value.clone());
             return key_eq && value_eq;
         } else {
             false
@@ -587,11 +676,7 @@ impl VMTuple {
                 let other_val = &other_tuple.values[i];
                 
                 // 使用元素的eq方法进行比较
-                let eq = (|| {
-                    try_binary_op_as_type!(val.clone(), eq, other_val.clone(); 
-                        VMInt, VMString, VMFloat, VMBoolean, VMNull, VMKeyVal, VMTuple, VMNamed);
-                    false
-                })();
+                let eq = try_eq_as_vmobject(val.clone(), other_val.clone());
                 
                 if !eq {
                     return false;
@@ -665,12 +750,7 @@ impl VMObject for VMTuple {
         let mut new_values = Vec::new();
         for value in &self.values {
             let copied_value = (||{
-                try_copy_as_type!(value.clone(), gc_system; 
-                    VMInt, VMString, VMFloat, VMBoolean, VMNull, VMKeyVal, VMTuple, VMNamed);
-                Err(VMVariableError::CopyError(
-                    value.clone(),
-                    "Cannot copy a value of non-copyable type".to_string(),
-                ))
+                return try_copy_as_vmobject(value.clone(), gc_system);
             })()?;
             new_values.push(copied_value);
         }

@@ -1,5 +1,10 @@
 mod parser;
 pub mod vm;
+use vm::executor;
+use vm::executor::variable::VMInstructions;
+use vm::executor::variable::VMLambda;
+use vm::executor::variable::VMTuple;
+
 use self::parser::ast::build_ast;
 use self::parser::ast::ast_token_stream;
 use self::parser::lexer::{lexer, Token, TokenType};
@@ -8,24 +13,14 @@ use self::vm::gc::gc::GCSystem;
 
 use self::vm::ir_generator::ir_generator;
 use self::vm::ir::Functions;
+use self::vm::executor::vm::*;
 
 
 fn main() {
 
     let code = r#"
 
-
-factorial := Z((f => null) -> {
-    return (n => 0, f => f) -> {
-        if (n <= 1) {
-            return 1;
-        } else {
-            return n * f(n - 1);
-        };
-    };
-});
-
-print(factorial(5));
+A := 1
 
 "#;
     let tokens = lexer::reject_comment(lexer::tokenize(code));
@@ -65,6 +60,35 @@ print(factorial(5));
     for (name, ip) in &ips {
         println!("{}: {:?}", name, ip);
     }
+
+    let mut executor = IRExecutor::new(Some(code.to_string()));
+    let mut gc_system = GCSystem::new();
+
+    let default_args_tuple = gc_system.new_object(VMTuple::new(vec![]));
+    let lambda_instructions = gc_system.new_object(VMInstructions::new(built_ins, ips));
+    
+    let main_lambda = gc_system.new_object(VMLambda::new(
+        0,
+        "__main__".to_string(),
+        default_args_tuple.clone(),
+        None,
+        lambda_instructions.clone(),
+    ));
+    default_args_tuple.offline();
+    lambda_instructions.offline();
+
+    let result = executor.execute(main_lambda, &mut gc_system);
+    if result.is_err() {
+        println!("Error: {:?}", result.err().unwrap());
+        gc_system.debug_print();
+        return;
+    }
+    let result = result.unwrap();
+    println!("\n\nResult:\n");
+    println!("{:?}", result);
+    println!("\n\nGC System:\n");
+    gc_system.debug_print();
+    gc_system.drop_all();
 
 
 }
