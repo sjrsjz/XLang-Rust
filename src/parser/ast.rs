@@ -765,11 +765,7 @@ fn match_named_to<'t>(
     let mut left = left.unwrap();
 
     if let ASTNodeType::Variable(name) = left.node_type {
-        left = ASTNode::new(
-            ASTNodeType::String(name),
-            left.token,
-            Some(left.children),
-        );
+        left = ASTNode::new(ASTNodeType::String(name), left.token, Some(left.children));
     }
 
     let (right, right_offset) = match_all(tokens, current + 2)?;
@@ -1594,45 +1590,33 @@ fn match_member_access_and_call<'t>(
             let args_tokens = unwrap_brace(&tokens[access_pos])?;
             let gathered_args = gather(args_tokens)?;
 
-            if gathered_args.len() == 0 {
-                // 处理无参数情况
-                return Ok((
-                    Some(ASTNode::new(
-                        ASTNodeType::LambdaCall,
-                        Some(&tokens[current][0]),
-                        Some(vec![left]),
-                    )),
-                    (access_pos - current) + 1,
-                ));
-            } else {
-                // 处理有参数情况
-                let (args_node, _) = match_all(&gathered_args, 0)?;
-                if args_node.is_none() {
-                    return Ok((None, 0));
-                }
-
-                let args_node = args_node.unwrap();
-
-                // 如果不是元组类型，将其包装为元组
-                let args = if args_node.node_type != ASTNodeType::Tuple {
-                    ASTNode::new(
-                        ASTNodeType::Tuple,
-                        Some(&tokens[access_pos][0]),
-                        Some(vec![args_node]),
-                    )
-                } else {
-                    args_node
-                };
-
-                return Ok((
-                    Some(ASTNode::new(
-                        ASTNodeType::LambdaCall,
-                        Some(&tokens[current][0]),
-                        Some(vec![left, args]),
-                    )),
-                    (access_pos - current) + 1,
-                ));
+            // 处理有参数情况
+            let (args_node, _) = match_all(&gathered_args, 0)?;
+            if args_node.is_none() {
+                return Ok((None, 0));
             }
+
+            let args_node = args_node.unwrap();
+
+            // 如果不是元组类型，将其包装为元组
+            let args = if args_node.node_type != ASTNodeType::Tuple {
+                ASTNode::new(
+                    ASTNodeType::Tuple,
+                    Some(&tokens[access_pos][0]),
+                    Some(vec![args_node]),
+                )
+            } else {
+                args_node
+            };
+
+            return Ok((
+                Some(ASTNode::new(
+                    ASTNodeType::LambdaCall,
+                    Some(&tokens[current][0]),
+                    Some(vec![left, args]),
+                )),
+                (access_pos - current) + 1,
+            ));
         }
 
         _ => unreachable!(),

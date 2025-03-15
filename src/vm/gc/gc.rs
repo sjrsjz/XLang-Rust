@@ -28,6 +28,12 @@ impl Hash for GCRef {
     }
 }
 
+impl std::fmt::Display for GCRef {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        write!(f, "GCRef({:?}, {:?})", self.reference, self.type_id)
+    }    
+}
+
 impl GCRef {
     pub fn get_reference(&self) -> *mut dyn GCObject {
         self.reference
@@ -202,16 +208,46 @@ impl Drop for GCTraceable {
 #[derive(Debug)]
 pub struct GCSystem {
     objects: Vec<GCRef>,
+    new_objects_count: usize, // 新创建的对象数量
+    new_objects_sum_size: usize,
+    maximum_new_objects_count: usize, // GC触发对象数量限制
+    maximum_allocation_size: usize,   // GC触发内存限制
 }
 
 impl GCSystem {
-    pub fn new() -> GCSystem {
+    pub fn new(trigger: Option<(usize, usize)>) -> GCSystem {
+        let trigger = trigger.unwrap_or((100, 1024 * 1024));
+        let maximum_new_objects_count = trigger.0;
+        let maximum_allocation_size = trigger.1;
         GCSystem {
             objects: Vec::new(),
+            new_objects_count: 0,
+            new_objects_sum_size: 0,
+            maximum_allocation_size: maximum_allocation_size,
+            maximum_new_objects_count: maximum_new_objects_count,
         }
     }
 
     pub fn new_object<T: GCObject + 'static>(&mut self, object: T) -> GCRef {
+        self.new_objects_sum_size += std::mem::size_of::<T>();
+        self.new_objects_count += 1;
+        
+        let trigger_threshold = self.objects.len() / 5;  // 20%的增长率触发GC
+        
+
+        if self.new_objects_sum_size > self.maximum_allocation_size
+            && self.new_objects_count > trigger_threshold
+        {
+            // println!(
+            //     "GC triggered! Allocated memory: {} bytes",
+            //     self.new_objects_sum_size
+            // );
+            //println!("Current object count: {}", self.objects.len());
+            self.collect();
+            //println!("GC completed! Current object count: {}", self.objects.len());
+            self.new_objects_sum_size = 0;
+            self.new_objects_count = 0;
+        }
         let obj_ref = Box::leak(Box::new(object)) as *mut dyn GCObject;
         let gc_ref = GCRef {
             reference: obj_ref,
@@ -222,8 +258,7 @@ impl GCSystem {
     }
 
     fn mark(&mut self) {
-        let mut alive = Vec::<bool>::new();
-        alive.resize(self.objects.len(), false);
+        let mut alive = vec![false; self.objects.len()]; // 可达对象
 
         // 第一步：标记所有在线对象为活跃
         for i in 0..self.objects.len() {
@@ -240,10 +275,12 @@ impl GCSystem {
         }
 
         // 创建索引映射
-        let mut idx_map = std::collections::HashMap::new();
-        for (i, obj_ptr) in self.objects.iter().enumerate() {
-            idx_map.insert(obj_ptr.reference, i);
-        }
+        let idx_map: HashMap<_, _> = self
+            .objects
+            .iter()
+            .enumerate()
+            .map(|(i, obj)| (obj.reference, i))
+            .collect();
 
         // 第二步：构建引用图
         let mut ref_graph: Vec<Vec<usize>> = vec![Vec::new(); self.objects.len()];
@@ -287,8 +324,7 @@ impl GCSystem {
     }
 
     fn sweep(&mut self) {
-        let mut alive = Vec::<bool>::new(); // 可达对象
-        alive.resize(self.objects.len(), false);
+        let mut alive = vec![false; self.objects.len()]; // 活跃对象
 
         // 确定哪些对象是活跃的
         for i in 0..self.objects.len() {
@@ -315,8 +351,7 @@ impl GCSystem {
             }
         }
 
-        self.objects.clear();
-        self.objects.extend(new_objects);
+        self.objects = new_objects;
 
         for i in 0..self.objects.len() {
             let gc_ref = &self.objects[i];
@@ -329,7 +364,29 @@ impl GCSystem {
         }
     }
 
+    pub fn immediate_collect(&mut self) {
+        let mut alive = vec![false; self.objects.len()];
+        for i in 0..self.objects.len() {
+            let gc_ref = &self.objects[i];
+            alive[i] = !(gc_ref.get_traceable().ref_count == 0 && !gc_ref.get_traceable().online);
+        }
+        for i in 0..self.objects.len() {
+            if !alive[i] {
+                let obj_ptr = &self.objects[i];
+                obj_ptr.free();
+            }
+        }
+        let mut new_objects = Vec::new();
+        for i in 0..self.objects.len() {
+            if alive[i] {
+                new_objects.push(self.objects[i].clone());
+            }
+        }
+        self.objects = new_objects;
+    }
+
     pub fn collect(&mut self) {
+        self.immediate_collect();
         self.mark();
         self.sweep();
     }

@@ -147,7 +147,7 @@ impl<'t> IRGenerator<'t> {
                 );
 
                 let mut body_instructions =
-                    generator.generate_without_redirect(&ast_node.children[1])?; // body, compute redirect jump directly
+                    generator.generate(&ast_node.children[1])?; // body, compute redirect jump directly
                 body_instructions.push(IR::Return);
 
                 self.functions
@@ -155,7 +155,7 @@ impl<'t> IRGenerator<'t> {
 
                 instructions.extend(args_instructions);
                 if args.node_type != ASTNodeType::Tuple {
-                    instructions.push(IR::BuildTuple(args.children.len()));
+                    instructions.push(IR::BuildTuple(1));
                 }
                 instructions.push(IR::LoadLambda(
                     full_signature,

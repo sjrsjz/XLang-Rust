@@ -2,6 +2,7 @@ use std::collections::HashMap;
 
 use super::super::gc::gc::GCRef;
 use super::super::gc::gc::GCSystem;
+use super::variable::try_repr_vmobject;
 use super::variable::VMObject;
 use super::variable::VMStackObject;
 use super::variable::VMVariableError;
@@ -22,6 +23,20 @@ pub enum ContextError {
     InvaildContextVariable(GCRef),
     VMVariableError(VMVariableError),
     ContextError(String),
+}
+
+impl ContextError {
+    pub fn to_string(&self) -> String {
+        match self {
+            ContextError::NoFrame => "No frame".to_string(),
+            ContextError::NoVariable(name) => format!("No variable: {}", name),
+            ContextError::ExistingVariable(name) => format!("Existing variable: {}", name),
+            ContextError::OfflinedObject(obj) => format!("Offlined object: {:?}", try_repr_vmobject(obj.clone()).unwrap_or(format!("{:?}", obj))),
+            ContextError::InvaildContextVariable(obj) => format!("Invalid context variable: {:?}", try_repr_vmobject(obj.clone()).unwrap_or(format!("{:?}", obj))),
+            ContextError::VMVariableError(err) => format!("VM variable error: {:?}", err.to_string()),
+            ContextError::ContextError(msg) => format!("Context error: {}", msg),
+        }
+    }
 }
 
 impl Context {

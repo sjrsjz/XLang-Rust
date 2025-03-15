@@ -1,4 +1,4 @@
-use std::{collections::HashMap, f64::consts::E};
+use std::{collections::HashMap, f64::consts::E, fmt::Debug};
 
 use crate::vm::ir::IR;
 
@@ -20,6 +20,54 @@ pub enum VMVariableError {
     CopyError(GCRef, String),
     AssignError(GCRef, String),
     ReferenceError(GCRef, String),
+}
+
+impl VMVariableError {
+    pub fn to_string(&self) -> String {
+        match self {
+            VMVariableError::TypeError(gc_ref, msg) => format!(
+                "TypeError: {}: {}",
+                try_repr_vmobject(gc_ref.clone()).unwrap_or(format!("{:?}", gc_ref)),
+                msg
+            ),
+            VMVariableError::ValueError(gc_ref, msg) => format!(
+                "ValueError: {}: {}",
+                try_repr_vmobject(gc_ref.clone()).unwrap_or(format!("{:?}", gc_ref)),
+                msg
+            ),
+
+            VMVariableError::KeyNotFound(key, gc_ref) => format!(
+                "KeyNotFound: {} in {}",
+                try_repr_vmobject(key.clone()).unwrap_or(format!("{:?}", key)),
+                try_repr_vmobject(gc_ref.clone()).unwrap_or(format!("{:?}", gc_ref))
+            ),
+            VMVariableError::ValueNotFound(value, gc_ref) => format!(
+                "ValueNotFound: {} in {}",
+                try_repr_vmobject(value.clone()).unwrap_or(format!("{:?}", value)),
+                try_repr_vmobject(gc_ref.clone()).unwrap_or(format!("{:?}", gc_ref))
+            ),
+            VMVariableError::IndexNotFound(index, gc_ref) => format!(
+                "IndexNotFound: {} in {}",
+                try_repr_vmobject(index.clone()).unwrap_or(format!("{:?}", index)),
+                try_repr_vmobject(gc_ref.clone()).unwrap_or(format!("{:?}", gc_ref))
+            ),
+            VMVariableError::CopyError(gc_ref, msg) => format!(
+                "CopyError: {}: {}",
+                try_repr_vmobject(gc_ref.clone()).unwrap_or(format!("{:?}", gc_ref)),
+                msg
+            ),
+            VMVariableError::AssignError(gc_ref, msg) => format!(
+                "AssignError: {}: {}",
+                try_repr_vmobject(gc_ref.clone()).unwrap_or(format!("{:?}", gc_ref)),
+                msg
+            ),
+            VMVariableError::ReferenceError(gc_ref, msg) => format!(
+                "ReferenceError: {}: {}",
+                try_repr_vmobject(gc_ref.clone()).unwrap_or(format!("{:?}", gc_ref)),
+                msg
+            ),
+        }
+    }
 }
 
 pub fn try_repr_vmobject(value: GCRef) -> Result<String, VMVariableError> {
@@ -59,16 +107,19 @@ pub fn try_repr_vmobject(value: GCRef) -> Result<String, VMVariableError> {
         return Ok(format!("({})", repr));
     } else if value.isinstance::<VMLambda>() {
         let lambda = value.as_const_type::<VMLambda>();
-        return Ok(format!("lambda {}", lambda.signature));
+        return Ok(format!("VMLambda({})", lambda.signature));
     } else if value.isinstance::<VMInstructions>() {
         return Ok("VMInstructions".to_string());
     } else if value.isinstance::<VMVariableWrapper>() {
         let wrapper = value.as_const_type::<VMVariableWrapper>();
-        return Ok(format!("VMVariableWrapper({})", try_repr_vmobject(wrapper.value_ref.clone())?));
+        return Ok(format!(
+            "VMVariableWrapper({})",
+            try_repr_vmobject(wrapper.value_ref.clone())?
+        ));
     } else if value.isinstance::<VMNativeFunction>() {
         //let native_func = value.as_const_type::<VMNativeFunction>();
         return Ok(format!("VMNativeFunction()"));
-    } 
+    }
     Err(VMVariableError::TypeError(
         value.clone(),
         "Cannot represent a non-representable type".to_string(),
@@ -81,7 +132,6 @@ pub fn debug_print_repr(value: GCRef) {
         Err(err) => println!("Cannot repr: {:?}", err),
     }
 }
-
 
 pub fn try_add_as_vmobject(
     value: GCRef,
@@ -265,10 +315,7 @@ pub fn try_shift_right_as_vmobject(
     ))
 }
 
-pub fn try_less_than_as_vmobject(
-    value: GCRef,
-    other: GCRef,
-) -> Result<bool, VMVariableError> {
+pub fn try_less_than_as_vmobject(value: GCRef, other: GCRef) -> Result<bool, VMVariableError> {
     if value.isinstance::<VMInt>() {
         let int = value.as_const_type::<VMInt>();
         return int.less_than(other);
@@ -282,10 +329,7 @@ pub fn try_less_than_as_vmobject(
     ))
 }
 
-pub fn try_greater_than_as_vmobject(
-    value: GCRef,
-    other: GCRef,
-) -> Result<bool, VMVariableError> {
+pub fn try_greater_than_as_vmobject(value: GCRef, other: GCRef) -> Result<bool, VMVariableError> {
     if value.isinstance::<VMInt>() {
         let int = value.as_const_type::<VMInt>();
         return int.greater_than(other);
@@ -299,11 +343,7 @@ pub fn try_greater_than_as_vmobject(
     ))
 }
 
-
-pub fn try_and_as_vmobject(
-    value: GCRef,
-    other: GCRef,
-) -> Result<bool, VMVariableError> {
+pub fn try_and_as_vmobject(value: GCRef, other: GCRef) -> Result<bool, VMVariableError> {
     if value.isinstance::<VMBoolean>() {
         let boolean = value.as_const_type::<VMBoolean>();
         return boolean.and(other);
@@ -314,10 +354,7 @@ pub fn try_and_as_vmobject(
     ))
 }
 
-pub fn try_or_as_vmobject(
-    value: GCRef,
-    other: GCRef,
-) -> Result<bool, VMVariableError> {
+pub fn try_or_as_vmobject(value: GCRef, other: GCRef) -> Result<bool, VMVariableError> {
     if value.isinstance::<VMBoolean>() {
         let boolean = value.as_const_type::<VMBoolean>();
         return boolean.or(other);
@@ -328,9 +365,7 @@ pub fn try_or_as_vmobject(
     ))
 }
 
-pub fn try_not_as_vmobject(
-    value: GCRef,
-) -> Result<bool, VMVariableError> {
+pub fn try_not_as_vmobject(value: GCRef) -> Result<bool, VMVariableError> {
     if value.isinstance::<VMBoolean>() {
         let boolean = value.as_const_type::<VMBoolean>();
         return boolean.not();
@@ -340,7 +375,6 @@ pub fn try_not_as_vmobject(
         "Cannot not a value of non-notable type".to_string(),
     ))
 }
-
 
 pub fn try_get_attr_as_vmobject(value: GCRef, attr: GCRef) -> Result<GCRef, VMVariableError> {
     if value.isinstance::<VMNamed>() {
@@ -360,10 +394,14 @@ pub fn try_get_attr_as_vmobject(value: GCRef, attr: GCRef) -> Result<GCRef, VMVa
     Err(VMVariableError::KeyNotFound(attr, value))
 }
 
-pub fn try_index_of_as_vmobject(value: GCRef, index: GCRef, gc_system: &mut GCSystem) -> Result<GCRef, VMVariableError> {
+pub fn try_index_of_as_vmobject(
+    value: GCRef,
+    index: GCRef,
+    gc_system: &mut GCSystem,
+) -> Result<GCRef, VMVariableError> {
     if value.isinstance::<VMTuple>() {
         let tuple = value.as_const_type::<VMTuple>();
-        return tuple.index_of(index,gc_system);
+        return tuple.index_of(index, gc_system);
     }
     if value.isinstance::<VMString>() {
         let string = value.as_const_type::<VMString>();
@@ -552,9 +590,7 @@ impl VMInt {
             return Ok(gc_system.new_object(VMInt::new(self.value + other_int.value)));
         } else if other.isinstance::<VMFloat>() {
             let other_float = other.as_const_type::<VMFloat>();
-            return Ok(gc_system.new_object(VMFloat::new(
-                self.value as f64 + other_float.value,
-            )));
+            return Ok(gc_system.new_object(VMFloat::new(self.value as f64 + other_float.value)));
         }
         Err(VMVariableError::TypeError(
             other.clone(),
@@ -568,9 +604,7 @@ impl VMInt {
             return Ok(gc_system.new_object(VMInt::new(self.value - other_int.value)));
         } else if other.isinstance::<VMFloat>() {
             let other_float = other.as_const_type::<VMFloat>();
-            return Ok(gc_system.new_object(VMFloat::new(
-                self.value as f64 - other_float.value,
-            )));
+            return Ok(gc_system.new_object(VMFloat::new(self.value as f64 - other_float.value)));
         }
         Err(VMVariableError::TypeError(
             other.clone(),
@@ -584,9 +618,7 @@ impl VMInt {
             return Ok(gc_system.new_object(VMInt::new(self.value * other_int.value)));
         } else if other.isinstance::<VMFloat>() {
             let other_float = other.as_const_type::<VMFloat>();
-            return Ok(gc_system.new_object(VMFloat::new(
-                self.value as f64 * other_float.value,
-            )));
+            return Ok(gc_system.new_object(VMFloat::new(self.value as f64 * other_float.value)));
         }
         Err(VMVariableError::TypeError(
             other.clone(),
@@ -597,14 +629,12 @@ impl VMInt {
     pub fn div(&self, other: GCRef, gc_system: &mut GCSystem) -> Result<GCRef, VMVariableError> {
         if other.isinstance::<VMInt>() {
             let other_int = other.as_const_type::<VMInt>();
-            return Ok(gc_system.new_object(VMFloat::new(
-                self.value as f64 / other_int.value as f64,
-            )));
+            return Ok(
+                gc_system.new_object(VMFloat::new(self.value as f64 / other_int.value as f64))
+            );
         } else if other.isinstance::<VMFloat>() {
             let other_float = other.as_const_type::<VMFloat>();
-            return Ok(gc_system.new_object(VMFloat::new(
-                self.value as f64 / other_float.value,
-            )));
+            return Ok(gc_system.new_object(VMFloat::new(self.value as f64 / other_float.value)));
         }
         Err(VMVariableError::TypeError(
             other.clone(),
@@ -618,9 +648,7 @@ impl VMInt {
             return Ok(gc_system.new_object(VMInt::new(self.value % other_int.value)));
         } else if other.isinstance::<VMFloat>() {
             let other_float = other.as_const_type::<VMFloat>();
-            return Ok(gc_system.new_object(VMFloat::new(
-                self.value as f64 % other_float.value,
-            )));
+            return Ok(gc_system.new_object(VMFloat::new(self.value as f64 % other_float.value)));
         }
         Err(VMVariableError::TypeError(
             other.clone(),
@@ -673,10 +701,7 @@ impl VMInt {
         ))
     }
 
-    pub fn bitwise_not(
-        &self,
-        gc_system: &mut GCSystem,
-    ) -> Result<GCRef, VMVariableError> {
+    pub fn bitwise_not(&self, gc_system: &mut GCSystem) -> Result<GCRef, VMVariableError> {
         return Ok(gc_system.new_object(VMInt::new(!self.value)));
     }
 
@@ -710,10 +735,7 @@ impl VMInt {
         ))
     }
 
-    pub fn less_than(
-        &self,
-        other: GCRef,
-    ) -> Result<bool, VMVariableError> {
+    pub fn less_than(&self, other: GCRef) -> Result<bool, VMVariableError> {
         if other.isinstance::<VMInt>() {
             let other_int = other.as_const_type::<VMInt>();
             return Ok(self.value < other_int.value);
@@ -727,10 +749,7 @@ impl VMInt {
         ))
     }
 
-    pub fn greater_than(
-        &self,
-        other: GCRef,
-    ) -> Result<bool, VMVariableError> {
+    pub fn greater_than(&self, other: GCRef) -> Result<bool, VMVariableError> {
         if other.isinstance::<VMInt>() {
             let other_int = other.as_const_type::<VMInt>();
             return Ok(self.value > other_int.value);
@@ -758,8 +777,6 @@ impl VMInt {
     pub fn to_int(&self) -> Result<i64, VMVariableError> {
         return Ok(self.value);
     }
-
-
 }
 
 impl GCObject for VMInt {
@@ -838,16 +855,13 @@ impl VMString {
         });
     }
 
-    pub fn add(
-        &self,
-        other: GCRef,
-        gc_system: &mut GCSystem,
-    ) -> Result<GCRef, VMVariableError> {
+    pub fn add(&self, other: GCRef, gc_system: &mut GCSystem) -> Result<GCRef, VMVariableError> {
         if other.isinstance::<VMString>() {
             let other_string = other.as_const_type::<VMString>();
-            return Ok(gc_system.new_object(VMString::new(
-                format!("{}{}", self.value, other_string.value),
-            )));
+            return Ok(gc_system.new_object(VMString::new(format!(
+                "{}{}",
+                self.value, other_string.value
+            ))));
         }
         Err(VMVariableError::TypeError(
             other.clone(),
@@ -855,7 +869,11 @@ impl VMString {
         ))
     }
 
-    pub fn index_of(&self, index: GCRef, gc_system: &mut GCSystem) -> Result<GCRef, VMVariableError> {
+    pub fn index_of(
+        &self,
+        index: GCRef,
+        gc_system: &mut GCSystem,
+    ) -> Result<GCRef, VMVariableError> {
         if index.isinstance::<VMInt>() {
             let index_int = index.as_const_type::<VMInt>();
             if index_int.value < 0 || index_int.value >= self.value.len() as i64 {
@@ -865,7 +883,7 @@ impl VMString {
                 ));
             }
             let char = self.value.chars().nth(index_int.value as usize).unwrap();
-            
+
             return Ok(gc_system.new_object(VMString::new(char.to_string())));
         }
         Err(VMVariableError::TypeError(
@@ -937,9 +955,7 @@ impl VMFloat {
             return Ok(gc_system.new_object(VMFloat::new(self.value + other_float.value)));
         } else if other.isinstance::<VMInt>() {
             let other_int = other.as_const_type::<VMInt>();
-            return Ok(gc_system.new_object(VMFloat::new(
-                self.value + other_int.value as f64,
-            )));
+            return Ok(gc_system.new_object(VMFloat::new(self.value + other_int.value as f64)));
         }
         Err(VMVariableError::TypeError(
             other.clone(),
@@ -953,9 +969,7 @@ impl VMFloat {
             return Ok(gc_system.new_object(VMFloat::new(self.value - other_float.value)));
         } else if other.isinstance::<VMInt>() {
             let other_int = other.as_const_type::<VMInt>();
-            return Ok(gc_system.new_object(VMFloat::new(
-                self.value - other_int.value as f64,
-            )));
+            return Ok(gc_system.new_object(VMFloat::new(self.value - other_int.value as f64)));
         }
         Err(VMVariableError::TypeError(
             other.clone(),
@@ -969,9 +983,7 @@ impl VMFloat {
             return Ok(gc_system.new_object(VMFloat::new(self.value * other_float.value)));
         } else if other.isinstance::<VMInt>() {
             let other_int = other.as_const_type::<VMInt>();
-            return Ok(gc_system.new_object(VMFloat::new(
-                self.value * other_int.value as f64,
-            )));
+            return Ok(gc_system.new_object(VMFloat::new(self.value * other_int.value as f64)));
         }
         Err(VMVariableError::TypeError(
             other.clone(),
@@ -985,9 +997,7 @@ impl VMFloat {
             return Ok(gc_system.new_object(VMFloat::new(self.value / other_float.value)));
         } else if other.isinstance::<VMInt>() {
             let other_int = other.as_const_type::<VMInt>();
-            return Ok(gc_system.new_object(VMFloat::new(
-                self.value / other_int.value as f64,
-            )));
+            return Ok(gc_system.new_object(VMFloat::new(self.value / other_int.value as f64)));
         }
         Err(VMVariableError::TypeError(
             other.clone(),
@@ -1001,9 +1011,7 @@ impl VMFloat {
             return Ok(gc_system.new_object(VMFloat::new(self.value % other_float.value)));
         } else if other.isinstance::<VMInt>() {
             let other_int = other.as_const_type::<VMInt>();
-            return Ok(gc_system.new_object(VMFloat::new(
-                self.value % other_int.value as f64,
-            )));
+            return Ok(gc_system.new_object(VMFloat::new(self.value % other_int.value as f64)));
         }
         Err(VMVariableError::TypeError(
             other.clone(),
@@ -1011,18 +1019,13 @@ impl VMFloat {
         ))
     }
 
-    pub fn less_than(
-        &self,
-        other: GCRef,
-    ) -> Result<bool, VMVariableError> {
+    pub fn less_than(&self, other: GCRef) -> Result<bool, VMVariableError> {
         if other.isinstance::<VMFloat>() {
             let other_float = other.as_const_type::<VMFloat>();
             return Ok(self.value < other_float.value);
         } else if other.isinstance::<VMInt>() {
             let other_int = other.as_const_type::<VMInt>();
-            return Ok(
-                self.value < other_int.value as f64,
-            );
+            return Ok(self.value < other_int.value as f64);
         }
         Err(VMVariableError::TypeError(
             other.clone(),
@@ -1030,18 +1033,13 @@ impl VMFloat {
         ))
     }
 
-    pub fn greater_than(
-        &self,
-        other: GCRef,
-    ) -> Result<bool, VMVariableError> {
+    pub fn greater_than(&self, other: GCRef) -> Result<bool, VMVariableError> {
         if other.isinstance::<VMFloat>() {
             let other_float = other.as_const_type::<VMFloat>();
             return Ok(self.value > other_float.value);
         } else if other.isinstance::<VMInt>() {
             let other_int = other.as_const_type::<VMInt>();
-            return Ok(
-                self.value > other_int.value as f64,
-            );
+            return Ok(self.value > other_int.value as f64);
         }
         Err(VMVariableError::TypeError(
             other.clone(),
@@ -1447,7 +1445,11 @@ impl VMTuple {
         ))
     }
 
-    pub fn index_of(&self, index: GCRef, gc_system: &mut GCSystem) -> Result<GCRef, VMVariableError> {
+    pub fn index_of(
+        &self,
+        index: GCRef,
+        gc_system: &mut GCSystem,
+    ) -> Result<GCRef, VMVariableError> {
         if !index.isinstance::<VMInt>() {
             return Err(VMVariableError::TypeError(
                 index.clone(),
@@ -1474,10 +1476,6 @@ impl VMTuple {
     /// 先尝试将所有 VMNamed 对象按照键进行赋值
     /// 剩下的值按照顺序赋值到非命名位置
     pub fn assgin_members(&mut self, other: GCRef) -> Result<GCRef, VMVariableError> {
-
-        debug_print_repr(self.object_ref()?);
-        debug_print_repr(other.clone());
-
         // 确保参数是元组
         if !other.isinstance::<VMTuple>() {
             return Err(VMVariableError::TypeError(

@@ -21,12 +21,31 @@ use self::vm::executor::variable::*;
 fn main() {
 
     let code = r#"
-i:=0;
 
-while (i < 10) {
-    i = i + 1;
-    print(i);
+
+lazy := (computation => null) -> {
+    result := null;
+    evaluated := false;
+    
+    return (evaluated => evaluated,
+            result => result,
+            computation => computation) -> {
+        if (evaluated == false) {
+            result = computation();
+            evaluated = true;
+        };
+        return result;
+    };
 };
+
+expensiveComputation := lazy(() -> {
+    print("Computing...");
+    return 42;
+});
+
+print(expensiveComputation());
+
+print(expensiveComputation()); 
 
 
 "#;
@@ -71,7 +90,7 @@ while (i < 10) {
     }
 
     let mut executor = IRExecutor::new(Some(code.to_string()));
-    let mut gc_system = GCSystem::new();
+    let mut gc_system = GCSystem::new(None);
 
     let default_args_tuple = gc_system.new_object(VMTuple::new(vec![]));
     let lambda_instructions = gc_system.new_object(VMInstructions::new(built_ins, ips));
@@ -86,9 +105,14 @@ while (i < 10) {
     default_args_tuple.offline();
     lambda_instructions.offline();
 
+    println!("\n[Running main lambda...]\n");
+
     let result = executor.execute(main_lambda, &mut gc_system);
+
+    println!("\n[Finished running main lambda]\n");
+
     if result.is_err() {
-        println!("Error: {:?}", result.err().unwrap());
+        println!("Error: {:?}", result.err().unwrap().to_string());
         gc_system.debug_print();
         return;
     }

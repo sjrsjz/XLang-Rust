@@ -6,7 +6,7 @@ use super::variable::VMObject;
 
 #[test]
 fn test_vm_int_operations() {
-    let mut gc_system = GCSystem::new();
+    let mut gc_system = GCSystem::new(None);
     
     // 创建整数对象
     let int_obj = gc_system.new_object(VMInt::new(42));
@@ -31,7 +31,7 @@ fn test_vm_int_operations() {
 
 #[test]
 fn test_vm_variable_wrapper() {
-    let mut gc_system = GCSystem::new();
+    let mut gc_system = GCSystem::new(None);
     
     // 创建基础值
     let int_obj = gc_system.new_object(VMInt::new(42));
@@ -63,7 +63,7 @@ fn test_vm_variable_wrapper() {
 
 #[test]
 fn test_vm_types_conversion() {
-    let mut gc_system = GCSystem::new();
+    let mut gc_system = GCSystem::new(None);
     
     // 测试布尔值从整数转换
     let int_obj = gc_system.new_object(VMInt::new(1));
@@ -90,7 +90,7 @@ fn test_vm_types_conversion() {
 
 #[test]
 fn test_complex_operations() {
-    let mut gc_system = GCSystem::new();
+    let mut gc_system = GCSystem::new(None);
     
     // 创建各种类型的值
     let int_obj = gc_system.new_object(VMInt::new(42));
@@ -134,7 +134,7 @@ fn test_complex_operations() {
 #[test]
 #[should_panic(expected = "Cannot wrap a variable as a variable")]
 fn test_variable_wrapping_restriction() {
-    let mut gc_system = GCSystem::new();
+    let mut gc_system = GCSystem::new(None);
     
     // 创建一个变量
     let int_obj = gc_system.new_object(VMInt::new(42));
@@ -147,7 +147,7 @@ fn test_variable_wrapping_restriction() {
 
 #[test]
 fn test_keyval_creation_and_access() {
-    let mut gc_system = GCSystem::new();
+    let mut gc_system = GCSystem::new(None);
     
     // 创建键值对元素
     let key = gc_system.new_object(VMString::new("name".to_string()));
@@ -174,7 +174,7 @@ fn test_keyval_creation_and_access() {
 
 #[test]
 fn test_keyval_check_key() {
-    let mut gc_system = GCSystem::new();
+    let mut gc_system = GCSystem::new(None);
     
     // 创建不同类型的键值对
     let int_key = gc_system.new_object(VMInt::new(42));
@@ -197,7 +197,7 @@ fn test_keyval_check_key() {
 
 #[test]
 fn test_keyval_equality() {
-    let mut gc_system = GCSystem::new();
+    let mut gc_system = GCSystem::new(None);
     
     // 创建两个相同的键值对
     let key1 = gc_system.new_object(VMString::new("id".to_string()));
@@ -230,7 +230,7 @@ fn test_keyval_equality() {
 
 #[test]
 fn test_keyval_copy_and_assign() {
-    let mut gc_system = GCSystem::new();
+    let mut gc_system = GCSystem::new(None);
     
     // 创建键值对
     let key = gc_system.new_object(VMString::new("key".to_string()));
@@ -265,7 +265,7 @@ fn test_keyval_copy_and_assign() {
 
 #[test]
 fn test_keyval_with_nested_keyval() {
-    let mut gc_system = GCSystem::new();
+    let mut gc_system = GCSystem::new(None);
     
     // 创建嵌套的键值对
     let inner_key = gc_system.new_object(VMString::new("inner_key".to_string()));
@@ -286,7 +286,7 @@ fn test_keyval_with_nested_keyval() {
 
 #[test]
 fn test_keyval_with_null() {
-    let mut gc_system = GCSystem::new();
+    let mut gc_system = GCSystem::new(None);
     
     // 创建带有 null 值的键值对
     let key = gc_system.new_object(VMString::new("maybe".to_string()));
@@ -304,7 +304,7 @@ fn test_keyval_with_null() {
 
 #[test]
 fn panic_because_hashset_ref(){
-    let mut gc_system = GCSystem::new();
+    let mut gc_system = GCSystem::new(None);
     let key = gc_system.new_object(VMString::new("key".to_string()));
     let keyval = gc_system.new_object(VMKeyVal::new(key.clone(), key.clone()));
     key.offline();
@@ -316,7 +316,7 @@ fn panic_because_hashset_ref(){
 
 #[test]
 fn test_self_referential_objects() {
-    let mut gc_system = GCSystem::new();
+    let mut gc_system = GCSystem::new(None);
     
     // 创建一个键值对
     let key = gc_system.new_object(VMString::new("self".to_string()));
@@ -343,7 +343,7 @@ fn test_self_referential_objects() {
 
 #[test]
 fn test_cyclic_references() {
-    let mut gc_system = GCSystem::new();
+    let mut gc_system = GCSystem::new(None);
     
     // 创建三个键值对，形成循环引用：A -> B -> C -> A
     let key_a = gc_system.new_object(VMString::new("a".to_string()));
@@ -370,7 +370,7 @@ fn test_cyclic_references() {
 
 #[test]
 fn test_same_reference_as_key_and_value() {
-    let mut gc_system = GCSystem::new();
+    let mut gc_system = GCSystem::new(None);
     
     // 创建一个对象同时用作键和值
     let obj = gc_system.new_object(VMString::new("dual_purpose".to_string()));
@@ -389,7 +389,7 @@ fn test_same_reference_as_key_and_value() {
 
 #[test]
 fn test_complex_reference_graph() {
-    let mut gc_system = GCSystem::new();
+    let mut gc_system = GCSystem::new(None);
     
     // 创建一些基础对象
     let str1 = gc_system.new_object(VMString::new("node1".to_string()));
@@ -446,7 +446,7 @@ fn test_gc_stress_test() {
     
     println!("开始GC压力测试，持续{}秒...", TEST_DURATION_SECS);
     
-    let mut gc_system = GCSystem::new();
+    let mut gc_system = GCSystem::new(None);
     let mut rng = thread_rng();
     let mut cycle_count = 0;
     let mut objects_created = 0;
@@ -580,7 +580,7 @@ fn test_gc_circular_reference_stress() {
     let mut rng = thread_rng();
     
     for iter in 0..ITERATIONS {
-        let mut gc_system = GCSystem::new();
+        let mut gc_system = GCSystem::new(None);
         
         // 创建多个循环引用链
         for chain in 0..CHAINS_COUNT {
