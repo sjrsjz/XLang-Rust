@@ -122,7 +122,7 @@ fn get_next_tokens<'a>(
         }
     }
     if stack.len() > 0 {
-        let (last, last_position) = stack.pop().unwrap();
+        let (_, last_position) = stack.pop().unwrap();
         return Err(ParserError::UnmatchedParenthesis(
             &tokens[last_position],
             &tokens[index - 1],
@@ -238,16 +238,15 @@ impl ASTNode<'_> {
 
     pub fn formatted_print(&self, indent: usize) {
         let indent_str = " ".repeat(indent);
-        let mut output = String::new();
-        match &self.node_type {
+        let output = match &self.node_type {
             node_type @ (ASTNodeType::Variable(v)
             | ASTNodeType::Number(v)
             | ASTNodeType::String(v)
             | ASTNodeType::Boolean(v)) => {
-                output = format!("{}{:?}: {:?}", indent_str, node_type, v)
+                format!("{}{:?}: {:?}", indent_str, node_type, v)
             }
-            node_type @ _ => output = format!("{}{:?}", indent_str, node_type),
-        }
+            node_type @ _ => format!("{}{:?}", indent_str, node_type),
+        };
 
         println!("{}", output);
 

@@ -162,7 +162,7 @@ impl IRExecutor {
     pub fn enter_lambda(
         &mut self,
         lambda_object: GCRef,
-        gc_system: &mut GCSystem,
+        _gc_system: &mut GCSystem,
     ) -> Result<(), VMError> {
         if !lambda_object.isinstance::<VMLambda>() {
             return Err(VMError::TryEnterNotLambda(lambda_object));

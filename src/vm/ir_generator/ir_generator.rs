@@ -543,7 +543,7 @@ impl<'t> IRGenerator<'t> {
         let mut label_map = std::collections::HashMap::new();
 
         // 首先收集所有标签的位置
-        for (i, ir) in irs.iter().enumerate() {
+        for (_, ir) in irs.iter().enumerate() {
             if let IR::RedirectLabel(label) = ir {
                 label_map.insert(label.clone(), reduced_irs.len());
             } else {

@@ -1,4 +1,4 @@
-use std::{collections::HashMap, f64::consts::E, fmt::Debug};
+use std::{collections::HashMap,fmt::Debug};
 
 use crate::vm::ir::IR;
 
@@ -1448,7 +1448,7 @@ impl VMTuple {
     pub fn index_of(
         &self,
         index: GCRef,
-        gc_system: &mut GCSystem,
+        _gc_system: &mut GCSystem,
     ) -> Result<GCRef, VMVariableError> {
         if !index.isinstance::<VMInt>() {
             return Err(VMVariableError::TypeError(
@@ -1646,7 +1646,7 @@ impl VMObject for VMInstructions {
         )))
     }
 
-    fn assgin(&mut self, value: GCRef) -> Result<GCRef, VMVariableError> {
+    fn assgin(&mut self, _value: GCRef) -> Result<GCRef, VMVariableError> {
         panic!("Cannot assign a value to VMInstructions");
     }
 
@@ -1731,7 +1731,7 @@ impl VMObject for VMLambda {
         )))
     }
 
-    fn assgin(&mut self, value: GCRef) -> Result<GCRef, VMVariableError> {
+    fn assgin(&mut self, _value: GCRef) -> Result<GCRef, VMVariableError> {
         panic!("Cannot assign a value to VMLambda");
     }
 
@@ -1774,7 +1774,7 @@ impl VMObject for VMNativeFunction {
         Ok(gc_system.new_object(VMNativeFunction::new(self.function)))
     }
 
-    fn assgin(&mut self, value: GCRef) -> Result<GCRef, VMVariableError> {
+    fn assgin(&mut self, _value: GCRef) -> Result<GCRef, VMVariableError> {
         panic!("Cannot assign a value to VMNativeFunction");
     }
 

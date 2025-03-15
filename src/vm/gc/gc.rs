@@ -1,4 +1,4 @@
-use std::collections::{HashMap, HashSet};
+use std::collections::HashMap;
 //typeid
 use std::any::TypeId;
 use std::hash::{Hash, Hasher};
@@ -210,7 +210,7 @@ pub struct GCSystem {
     objects: Vec<GCRef>,
     new_objects_count: usize, // 新创建的对象数量
     new_objects_sum_size: usize,
-    maximum_new_objects_count: usize, // GC触发对象数量限制
+    _maximum_new_objects_count: usize, // GC触发对象数量限制
     maximum_allocation_size: usize,   // GC触发内存限制
 }
 
@@ -224,7 +224,7 @@ impl GCSystem {
             new_objects_count: 0,
             new_objects_sum_size: 0,
             maximum_allocation_size: maximum_allocation_size,
-            maximum_new_objects_count: maximum_new_objects_count,
+            _maximum_new_objects_count: maximum_new_objects_count,
         }
     }
 
