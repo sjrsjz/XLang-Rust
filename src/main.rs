@@ -21,20 +21,13 @@ use self::vm::executor::variable::*;
 fn main() {
 
     let code = r#"
+i:=0;
 
-A := 1; {
-    B := 2;
-    C := 3;
-    D := 4;
-    E := 5;
-    F := 6;
-    G := 7;
-    H := 8;
-    I := 9;
-    J := 10;
+while (i < 10) {
+    i = i + 1;
+    print(i);
 };
 
-2 == "2"
 
 "#;
     let tokens = lexer::reject_comment(lexer::tokenize(code));

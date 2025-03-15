@@ -32,6 +32,21 @@ impl Context {
         }
     }
 
+    fn is_variable(&self, object: &GCRef) -> bool{
+        if object.isinstance::<VMVariableWrapper>() {
+            return true;
+        }
+        return false;
+    }
+
+    fn offline_if_not_variable(&self, object: &GCRef) {
+        if !self.is_variable(object) {
+            object.offline();
+        }
+    }
+
+
+
     pub fn new_frame(
         &mut self,
         stack: &Vec<VMStackObject>,
@@ -63,6 +78,13 @@ impl Context {
                 }
                 self.frames.pop();
                 let pointer = self.stack_pointers.pop();
+
+                for i in pointer.unwrap_or(0)..stack.len() {
+                    if let VMStackObject::VMObject(obj_ref) = &mut stack[i] {
+                        self.offline_if_not_variable(obj_ref);
+                    }
+                }
+
                 stack.truncate(pointer.unwrap_or(0));
             }
         } 
@@ -77,6 +99,11 @@ impl Context {
         }
         self.frames.pop();
         let pointer = self.stack_pointers.pop();
+        for i in pointer.unwrap_or(0)..stack.len() {
+            if let VMStackObject::VMObject(obj_ref) = &mut stack[i] {
+                self.offline_if_not_variable(obj_ref);
+            }
+        }
         stack.truncate(pointer.unwrap_or(0));        
         Ok(())
     }
@@ -147,7 +174,7 @@ impl Context {
             // 离线栈中的所有对象
             for stack_obj in stack.iter_mut() {
                 if let VMStackObject::VMObject(obj_ref) = stack_obj {
-                    obj_ref.offline();
+                    self.offline_if_not_variable(obj_ref);
                 }
             }
 
@@ -190,7 +217,7 @@ impl Context {
             if stack.len() > stack_pointer {
                 for stack_obj in stack.iter_mut().skip(stack_pointer) {
                     if let VMStackObject::VMObject(obj_ref) = stack_obj {
-                        obj_ref.offline();
+                        self.offline_if_not_variable(obj_ref);
                     }
                 }
             }

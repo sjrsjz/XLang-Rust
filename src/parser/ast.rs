@@ -603,7 +603,7 @@ fn match_tuple<'t>(
     let mut separated = Vec::<ASTNode>::new();
     while current + offset < tokens.len() {
         if is_symbol(&tokens[current + offset], ",") {
-            let (node, node_offset) = match_all(tokens, current + offset + 1)?;
+            let (node, node_offset) = match_all(&left_tokens, 0)?;
             if node.is_none() {
                 return Ok((None, 0));
             }
@@ -632,7 +632,7 @@ fn match_tuple<'t>(
     separated.push(node.unwrap());
     return Ok((
         Some(ASTNode::new(
-            ASTNodeType::Expressions,
+            ASTNodeType::Tuple,
             Some(&tokens[current][0]),
             Some(separated),
         )),
@@ -762,7 +762,15 @@ fn match_named_to<'t>(
             &tokens[current][tokens[current].len() - 1],
         ));
     }
-    let left = left.unwrap();
+    let mut left = left.unwrap();
+
+    if let ASTNodeType::Variable(name) = left.node_type {
+        left = ASTNode::new(
+            ASTNodeType::String(name),
+            left.token,
+            Some(left.children),
+        );
+    }
 
     let (right, right_offset) = match_all(tokens, current + 2)?;
     if right.is_none() {
