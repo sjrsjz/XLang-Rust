@@ -41,11 +41,13 @@ pub enum IR{
     BuildTuple(usize), // number of elements
     BuildKeyValue, // pop key and value from stack and build key value pair
     BuildNamed, // pop key and value from stack and build named argument
+    BuildRange, // pop start and end from stack and build range
     BinaryOp(IROperation), // pop two values from stack and perform binary operation
     UnaryOp(IROperation), // pop one value from stack and perform unary operation
     Let(String), // pop value from stack and store it in variable
     Get(String), // get value from context and push the reference to stack
     Set, // pop value and reference from stack and set value
+    Wrap, // wrap value to object
     GetAttr, // pop object and attribute from stack and push the reference to attribute to stack
     IndexOf, // pop object and index from stack and push the reference to index to stack
     KeyOf, // pop object and get the key of the object
@@ -68,6 +70,7 @@ pub enum IR{
     RedirectJump(String), // redirect ir, not for vm just for ir generation
     RedirectJumpIfFalse(String), 
     RedirectLabel(String),
+    In
 }
 
 #[derive(Debug)]

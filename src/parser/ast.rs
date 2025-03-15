@@ -171,6 +171,8 @@ pub enum ASTNodeType {
     NamedTo, // x => y (x is name of y)
     Break, // break
     Continue, // continue
+    Range, // x..y
+    In
 }
 
 #[derive(Debug, PartialEq, Eq, Clone)]
@@ -208,6 +210,7 @@ pub enum ASTNodeModifier {
     Assert,  // Assert
     Import,  // Import
     TypeOf,  // TypeOf
+    Wrap,  // Wrap
 }
 
 #[derive(Debug)]
@@ -500,6 +503,18 @@ fn match_all<'t>(
 
     node_matcher.add_matcher(Box::new(
         |tokens, current| -> Result<(Option<ASTNode<'t>>, usize), ParserError<'t>> {
+            match_range(tokens, current)
+        },
+    ));
+
+    node_matcher.add_matcher(Box::new(
+        |tokens, current| -> Result<(Option<ASTNode<'t>>, usize), ParserError<'t>> {
+            match_in(tokens, current)
+        },
+    ));
+
+    node_matcher.add_matcher(Box::new(
+        |tokens, current| -> Result<(Option<ASTNode<'t>>, usize), ParserError<'t>> {
             match_modifier(tokens, current)
         },
     ));
@@ -509,6 +524,7 @@ fn match_all<'t>(
             match_member_access_and_call(tokens, current)
         },
     ));
+
 
     node_matcher.add_matcher(Box::new(
         |tokens, current| -> Result<(Option<ASTNode<'t>>, usize), ParserError<'t>> {
@@ -692,40 +708,51 @@ fn match_assign<'t>(
     tokens: &Vec<GatheredTokens<'t>>,
     current: usize,
 ) -> Result<(Option<ASTNode<'t>>, usize), ParserError<'t>> {
-    if current + 2 >= tokens.len() {
-        return Ok((None, 0));
-    }
-    if !is_symbol(&tokens[current + 1], "=") {
-        // x = expression
+    // 确保有足够的 token 来处理赋值
+    if current >= tokens.len() {
         return Ok((None, 0));
     }
 
-    let left_tokens = gather(&tokens[current])?;
+    // 向右搜索 = 符号
+    let mut offset = 0;
+    let mut left_tokens = Vec::new();
 
-    let (right, right_offset) = match_all(tokens, current + 2)?;
-    if right.is_none() {
+    while current + offset < tokens.len() {
+        // 找到 = 符号
+        if tokens[current + offset].len() == 1 
+            && tokens[current + offset][0].token_type == TokenType::SYMBOL
+            && tokens[current + offset][0].token == "=" {
+            break;
+        }
+        
+        left_tokens.push(tokens[current + offset]);
+        offset += 1;
+    }
+
+    // 没找到 = 符号
+    if current + offset >= tokens.len() || !is_symbol(&tokens[current + offset], "=") {
         return Ok((None, 0));
     }
-    let right = right.unwrap();
 
+    // 解析左侧表达式
     let (left, left_offset) = match_all(&left_tokens, 0)?;
     if left.is_none() {
         return Ok((None, 0));
     }
     if left_offset != left_tokens.len() {
         return Err(ParserError::NotFullyMatched(
-            &tokens[current][0],
-            &tokens[current][tokens[current].len() - 1],
+            &left_tokens[0][0],
+            &left_tokens[left_tokens.len() - 1][left_tokens[left_tokens.len() - 1].len() - 1],
         ));
     }
     let left = left.unwrap();
 
-    if !matches!(
-        left.node_type,
-        ASTNodeType::Variable(_) | ASTNodeType::String(_)
-    ) {
-        return Err(ParserError::InvalidVariableName(&tokens[current][0]));
+    // 解析右侧表达式
+    let (right, right_offset) = match_all(tokens, current + offset + 1)?;
+    if right.is_none() {
+        return Ok((None, 0));
     }
+    let right = right.unwrap();
 
     return Ok((
         Some(ASTNode::new(
@@ -733,10 +760,9 @@ fn match_assign<'t>(
             Some(&tokens[current][0]),
             Some(vec![left, right]),
         )),
-        right_offset + 2,
+        offset + right_offset + 1, // +1 是因为 = 符号
     ));
 }
-
 fn match_named_to<'t>(
     tokens: &Vec<GatheredTokens<'t>>,
     current: usize,
@@ -1439,7 +1465,7 @@ fn match_modifier<'t>(
     }
     if tokens[current].len() == 1
         && vec![
-            "copy", "ref", "deref", "keyof", "valueof", "selfof", "assert", "import",
+            "copy", "ref", "deref", "keyof", "valueof", "selfof", "assert", "import", "wrap",
         ]
         .contains(&tokens[current][0].token)
     {
@@ -1458,6 +1484,7 @@ fn match_modifier<'t>(
             "selfof" => ASTNodeModifier::SelfOf,
             "assert" => ASTNodeModifier::Assert,
             "import" => ASTNodeModifier::Import,
+            "wrap" => ASTNodeModifier::Wrap,
             _ => return Ok((None, 0)),
         };
         return Ok((
@@ -1621,6 +1648,88 @@ fn match_member_access_and_call<'t>(
         _ => unreachable!(),
     }
 }
+
+
+fn match_range<'t>(
+    tokens: &Vec<GatheredTokens<'t>>,
+    current: usize,
+) -> Result<(Option<ASTNode<'t>>, usize), ParserError<'t>> {
+    if current + 2 >= tokens.len() {
+        return Ok((None, 0));
+    }
+    if !is_symbol(&tokens[current + 1], "..") {
+        // x..y
+        return Ok((None, 0));
+    }
+
+    let left_tokens = gather(&tokens[current])?;
+    let (left, left_offset) = match_all(&left_tokens, 0)?;
+    if left.is_none() {
+        return Ok((None, 0));
+    }
+    let left = left.unwrap();
+    if left_offset != left_tokens.len() {
+        return Err(ParserError::NotFullyMatched(
+            &tokens[current][0],
+            &tokens[current][tokens[current].len() - 1],
+        ));
+    }
+    let (right, right_offset) = match_all(tokens, current + 2)?;
+    if right.is_none() {
+        return Ok((None, 0));
+    }
+    let right = right.unwrap();
+
+    return Ok((
+        Some(ASTNode::new(
+            ASTNodeType::Range,
+            Some(&tokens[current][0]),
+            Some(vec![left, right]),
+        )),
+        right_offset + 2,
+    ));
+}
+
+fn match_in<'t>(
+    tokens: &Vec<GatheredTokens<'t>>,
+    current: usize,
+) -> Result<(Option<ASTNode<'t>>, usize), ParserError<'t>> {
+    if current + 2 >= tokens.len() {
+        return Ok((None, 0));
+    }
+    if !is_identifier(&tokens[current + 1], "in") {
+        return Ok((None, 0));
+    }
+
+    let left_tokens = gather(&tokens[current])?;
+    let (left, left_offset) = match_all(&left_tokens, 0)?;
+    if left.is_none() {
+        return Ok((None, 0));
+    }
+    let left = left.unwrap();
+    if left_offset != left_tokens.len() {
+        return Err(ParserError::NotFullyMatched(
+            &tokens[current][0],
+            &tokens[current][tokens[current].len() - 1],
+        ));
+    }
+    let (right, right_offset) = match_all(tokens, current + 2)?;
+    if right.is_none() {
+        return Ok((None, 0));
+    }
+    let right = right.unwrap();
+
+    return Ok((
+        Some(ASTNode::new(
+            ASTNodeType::In,
+            Some(&tokens[current][0]),
+            Some(vec![left, right]),
+        )),
+        right_offset + 2,
+    ));
+}
+
+
 
 fn match_variable<'t>(
     tokens: &Vec<GatheredTokens<'t>>,

@@ -1,6 +1,5 @@
 mod parser;
 pub mod vm;
-use vm::executor;
 use vm::executor::variable::VMInstructions;
 use vm::executor::variable::VMLambda;
 use vm::executor::variable::VMTuple;
@@ -21,20 +20,18 @@ use self::vm::executor::variable::*;
 fn main() {
 
     let code = r#"
-
-
 lazy := (computation => null) -> {
     result := null;
     evaluated := false;
     
     return (evaluated => evaluated,
-            result => result,
+            result => wrap result, // wrap because we don't know the type of result
             computation => computation) -> {
         if (evaluated == false) {
             result = computation();
             evaluated = true;
         };
-        return result;
+        return valueof result;
     };
 };
 
@@ -48,6 +45,73 @@ print(expensiveComputation());
 print(expensiveComputation()); 
 
 
+"#;
+    let code = r#"
+
+    createCounter := (start => 0) -> {
+        return (count => start) -> {
+            count = count + 1;
+            return count;
+        };
+    };
+    counter := createCounter(0);
+    print(counter());
+    print(counter());
+    print(counter());
+
+    arr := (1, 2, 3, 4, 5);
+    print(arr);
+    arr[0] = 100;
+    print(arr);
+
+    kv:= "key" : arr;
+    print(kv);
+    print(keyof kv);
+    print(valueof kv);
+
+
+
+    mutistr := (str => "", n => 0) -> {
+        result := "";
+
+        i := 0; while (i = i + 1; i <= n) {
+            result = result + str;
+        };
+
+        return result;
+    };
+    print(mutistr("a", 5)); 
+
+
+    loop := (func => (n => 0) -> {return false}) -> {
+        return (n => 0, func => func) -> {
+            while (func(n)) {
+                n = n + 1;
+            };
+        };
+    };
+
+
+    iter := (container => ('T' : null), n => 0) -> {
+        n = n + 1;
+        E := valueof container;
+        T := keyof container;
+        if (n <= len(T)) {
+            valueof E = T[n - 1];
+            return true;
+        } else {
+            return false;
+        };
+    };
+
+    arr := (1, 2, 3, 4, 5);
+    elem := 0;
+    while (iter(arr: wrap(elem))) {
+        print(elem);
+    };
+    
+    print(1 in 1..2);
+    
 "#;
     let tokens = lexer::reject_comment(lexer::tokenize(code));
     for token in &tokens {
@@ -112,16 +176,15 @@ print(expensiveComputation());
     println!("\n[Finished running main lambda]\n");
 
     if result.is_err() {
-        println!("Error: {:?}", result.err().unwrap().to_string());
-        gc_system.debug_print();
+        println!("Error: {}", result.err().unwrap().to_string());
         return;
     }
     let result = result.unwrap();
     let repr = try_repr_vmobject(result.clone());
     if repr.is_ok(){
-        println!("Result: {:?}", repr.unwrap());
+        println!("Result: {}", repr.unwrap());
     } else {
-        println!("Error: {:?}", repr.err().unwrap());
+        println!("Error: {}", repr.err().unwrap().to_string());
     }
     print!("\n\nResult GCRef: {:?}\n", result);
     result.offline();

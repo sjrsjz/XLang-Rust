@@ -20,12 +20,12 @@ fn test_vm_int_operations() {
     
     // 测试赋值
     let mut mutable_int = VMInt::new(10);
-    mutable_int.assgin(int_obj);
+    mutable_int.assign(int_obj);
     assert_eq!(mutable_int.value, 42);
     
     // 测试从浮点数赋值
     let float_obj = gc_system.new_object(VMFloat::new(3.14));
-    mutable_int.assgin(float_obj);
+    mutable_int.assign(float_obj);
     assert_eq!(mutable_int.value, 3);
 }
 
@@ -50,7 +50,7 @@ fn test_vm_variable_wrapper() {
     let string_obj = gc_system.new_object(VMString::new("Hello".to_string()));
     {
         let mut var = var_wrapper.as_type::<VMVariableWrapper>();
-        var.assgin(string_obj.clone());
+        var.assign(string_obj.clone());
     }
     
     // 验证变量现在持有的是字符串
@@ -68,23 +68,23 @@ fn test_vm_types_conversion() {
     // 测试布尔值从整数转换
     let int_obj = gc_system.new_object(VMInt::new(1));
     let mut bool_obj = VMBoolean::new(false);
-    bool_obj.assgin(int_obj);
+    bool_obj.assign(int_obj);
     assert_eq!(bool_obj.value, true);
     
     let int_zero = gc_system.new_object(VMInt::new(0));
-    bool_obj.assgin(int_zero);
+    bool_obj.assign(int_zero);
     assert_eq!(bool_obj.value, false);
     
     // 测试整数从浮点数转换
     let float_obj = gc_system.new_object(VMFloat::new(3.99));
     let mut int_val = VMInt::new(0);
-    int_val.assgin(float_obj);
+    int_val.assign(float_obj);
     assert_eq!(int_val.value, 3); // 应该截断小数部分
     
     // 测试浮点数从整数转换
     let int_obj = gc_system.new_object(VMInt::new(5));
     let mut float_val = VMFloat::new(0.0);
-    float_val.assgin(int_obj);
+    float_val.assign(int_obj);
     assert_eq!(float_val.value, 5.0);
 }
 
@@ -103,13 +103,13 @@ fn test_complex_operations() {
     
     {
         let mut var_mut = var.as_type::<VMVariableWrapper>();
-        var_mut.assgin(float_obj.clone());
+        var_mut.assign(float_obj.clone());
         assert!(var_mut.value_ref.isinstance::<VMFloat>());
         
-        var_mut.assgin(string_obj.clone());
+        var_mut.assign(string_obj.clone());
         assert!(var_mut.value_ref.isinstance::<VMString>());
         
-        var_mut.assgin(bool_obj.clone());
+        var_mut.assign(bool_obj.clone());
         assert!(var_mut.value_ref.isinstance::<VMBoolean>());
     }
     
@@ -122,7 +122,7 @@ fn test_complex_operations() {
     
     // 通过变量包装器复制
     {
-        var.as_type::<VMVariableWrapper>().assgin(int_obj.clone());
+        var.as_type::<VMVariableWrapper>().assign(int_obj.clone());
         
         // 当包装器包含整数时，应该能从变量正确地复制整数值
         let copy_result = var.as_const_type::<VMVariableWrapper>().copy(&mut gc_system).unwrap();
@@ -253,7 +253,7 @@ fn test_keyval_copy_and_assign() {
     
     {
         let mutable_keyval = keyval.as_type::<VMKeyVal>();
-        mutable_keyval.assgin(new_keyval.as_const_type::<VMKeyVal>().get_value().clone());
+        mutable_keyval.assign(new_keyval.as_const_type::<VMKeyVal>().get_value().clone());
         
         // 赋值只修改 value，不修改 key
         assert!(mutable_keyval.get_key().as_const_type::<VMString>().value == "key");
@@ -326,7 +326,7 @@ fn test_self_referential_objects() {
     // 创建自循环引用 - keyval引用自身作为值
     {
         let mutable_keyval = keyval.as_type::<VMKeyVal>();
-        mutable_keyval.assgin(keyval.clone());
+        mutable_keyval.assign(keyval.clone());
     }
     
     // 验证现在keyval的value是它自己
@@ -410,7 +410,7 @@ fn test_complex_reference_graph() {
     // 修改kv1使其引用kv3，创建循环: kv1 -> kv3 -> kv1
     {
         let mut mutable_kv1 = kv1.as_type::<VMKeyVal>();
-        mutable_kv1.assgin(kv3.clone());
+        mutable_kv1.assign(kv3.clone());
     }
     
     // 验证我们创建了循环引用
@@ -517,11 +517,11 @@ fn test_gc_stress_test() {
                         
                         {
                             let mut mutable_kv1 = kv1.as_type::<VMKeyVal>();
-                            mutable_kv1.assgin(kv2.clone());
+                            mutable_kv1.assign(kv2.clone());
                         }
                         {
                             let mut mutable_kv2 = kv2.as_type::<VMKeyVal>();
-                            mutable_kv2.assgin(kv1.clone());
+                            mutable_kv2.assign(kv1.clone());
                         }
                     }
                 }
@@ -606,7 +606,7 @@ fn test_gc_circular_reference_stress() {
                 let first = chain_objects[0].clone();
                 let last = chain_objects[CHAIN_LENGTH-1].clone();
                 let mut mutable_first = first.as_type::<VMKeyVal>();
-                mutable_first.assgin(last.clone());
+                mutable_first.assign(last.clone());
             }
             
             // 随机中断一些链以测试部分回收

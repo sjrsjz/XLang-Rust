@@ -72,22 +72,27 @@ pub struct IRExecutor {
 mod native_functions {
     use crate::vm::{
         executor::variable::{
-            try_ref_as_vmobject, try_repr_vmobject, VMNull, VMTuple, VMVariableError,
+            try_repr_vmobject, try_value_ref_as_vmobject, VMInt, VMNull, VMString, VMTuple, VMVariableError
         },
         gc::gc::{GCRef, GCSystem},
     };
 
-    pub fn print(tuple: GCRef, gc_system: &mut GCSystem) -> Result<GCRef, VMVariableError> {
+    fn check_if_tuple(tuple: GCRef) -> Result<(), VMVariableError> {
         if !tuple.isinstance::<VMTuple>() {
             return Err(VMVariableError::TypeError(
                 tuple,
-                "print's argument must be a tuple".to_string(),
+                "native function's input must be a tuple".to_string(),
             ));
         }
+        Ok(())
+    }
+
+    pub fn print(tuple: GCRef, gc_system: &mut GCSystem) -> Result<GCRef, VMVariableError> {
+        check_if_tuple(tuple.clone())?;
         let tuple = tuple.as_type::<VMTuple>();
         let mut result = String::new();
         for obj in tuple.values.iter() {
-            let obj_ref = try_ref_as_vmobject(obj.clone())?;
+            let obj_ref = try_value_ref_as_vmobject(obj.clone())?;
             let repr = try_repr_vmobject(obj_ref)?;
             result.push_str(&format!("{} ", repr));
         }
@@ -95,6 +100,31 @@ mod native_functions {
         println!("{}", result);
         let obj = gc_system.new_object(VMNull::new());
         return Ok(obj);
+    }
+
+    pub fn len(tuple: GCRef, gc_system: &mut GCSystem) -> Result<GCRef, VMVariableError> {
+        check_if_tuple(tuple.clone())?;
+        let tuple_obj = tuple.as_type::<VMTuple>();
+        if tuple_obj.values.len() != 1 {
+            return Err(VMVariableError::TypeError(
+                tuple.clone(),
+                "len function's input should be one element".to_string(),
+            ));
+        }
+        if tuple_obj.values[0].isinstance::<VMTuple>() {
+            let inner_tuple = tuple_obj.values[0].as_type::<VMTuple>();
+            let obj = gc_system.new_object(VMInt::new(inner_tuple.values.len() as i64));
+            return Ok(obj);
+        } else if tuple_obj.values[0].isinstance::<VMString>() {
+            let inner_string = tuple_obj.values[0].as_type::<VMString>();
+            let obj = gc_system.new_object(VMInt::new(inner_string.value.len() as i64));
+            return Ok(obj);
+        } else {
+            return Err(VMVariableError::TypeError(
+                tuple.clone(),
+                "len function's input should be a string or a tuple".to_string(),
+            ));
+        }
     }
 }
 
@@ -129,8 +159,12 @@ impl IRExecutor {
             "print".to_string(),
             gc_system.new_object(VMNativeFunction::new(native_functions::print)),
         );
+        built_in_functions.insert(
+            "len".to_string(),
+            gc_system.new_object(VMNativeFunction::new(native_functions::len)),
+        );
         for (name, func) in built_in_functions.iter() {
-            let result = context.let_var(name.clone(), func.clone(), gc_system);
+            let result = context.let_var(name.clone(), func.clone(), true, gc_system);
             func.offline();
             if result.is_err() {
                 return Err(VMError::ContextError(result.unwrap_err()));
@@ -225,7 +259,7 @@ impl IRExecutor {
                 .instructions[self.ip as usize]
                 .clone();
 
-            //println!("# {}: {:?}", self.ip, instruction); // debug
+            // println!("# {}: {:?}", self.ip, instruction); // debug
 
             self.execute_instruction(instruction, gc_system)?;
             //self.debug_output_stack(); // debug
@@ -295,7 +329,7 @@ impl IRExecutor {
             IR::LoadLambda(signature, code_position) => {
                 let default_args = self.pop_object()?;
                 if let VMStackObject::VMObject(default_args_tuple) = default_args {
-                    let default_args_tuple_ref = try_ref_as_vmobject(default_args_tuple.clone());
+                    let default_args_tuple_ref = try_value_ref_as_vmobject(default_args_tuple.clone());
                     if default_args_tuple_ref.is_err() {
                         return Err(VMError::UnableToReference(default_args_tuple));
                     }
@@ -324,7 +358,7 @@ impl IRExecutor {
                     let obj = self.pop_object()?;
                     if let VMStackObject::VMObject(obj) = obj {
                         tuple_original.insert(0, obj.clone());
-                        let obj_ref = try_ref_as_vmobject(obj.clone());
+                        let obj_ref = try_value_ref_as_vmobject(obj.clone());
                         if obj_ref.is_err() {
                             return Err(VMError::UnableToReference(obj));
                         }
@@ -350,12 +384,12 @@ impl IRExecutor {
                     return Err(VMError::NotVMObject(key_original));
                 };
 
-                let value_ref = try_ref_as_vmobject(value_original.clone());
+                let value_ref = try_value_ref_as_vmobject(value_original.clone());
                 if value_ref.is_err() {
                     return Err(VMError::UnableToReference(value_original));
                 }
                 let value = value_ref.unwrap();
-                let key_ref = try_ref_as_vmobject(key_original.clone());
+                let key_ref = try_value_ref_as_vmobject(key_original.clone());
                 if key_ref.is_err() {
                     return Err(VMError::UnableToReference(key_original));
                 }
@@ -376,12 +410,12 @@ impl IRExecutor {
                     return Err(VMError::NotVMObject(key_original));
                 };
 
-                let value_ref = try_ref_as_vmobject(value_original.clone());
+                let value_ref = try_value_ref_as_vmobject(value_original.clone());
                 if value_ref.is_err() {
                     return Err(VMError::UnableToReference(value_original));
                 }
                 let value = value_ref.unwrap();
-                let key_ref = try_ref_as_vmobject(key_original.clone());
+                let key_ref = try_value_ref_as_vmobject(key_original.clone());
                 if key_ref.is_err() {
                     return Err(VMError::UnableToReference(key_original));
                 }
@@ -404,12 +438,12 @@ impl IRExecutor {
                     VMStackObject::VMObject(left_original) => left_original,
                     _ => return Err(VMError::NotVMObject(left_original)),
                 };
-                let left_ref = try_ref_as_vmobject(left_original.clone());
+                let left_ref = try_value_ref_as_vmobject(left_original.clone());
                 if left_ref.is_err() {
                     return Err(VMError::UnableToReference(left_original));
                 }
                 let left = left_ref.unwrap();
-                let right_ref = try_ref_as_vmobject(right_original.clone());
+                let right_ref = try_value_ref_as_vmobject(right_original.clone());
                 if right_ref.is_err() {
                     return Err(VMError::UnableToReference(right_original));
                 }
@@ -550,7 +584,7 @@ impl IRExecutor {
                     VMStackObject::VMObject(original) => original,
                     _ => return Err(VMError::NotVMObject(original)),
                 };
-                let ref_obj = try_ref_as_vmobject(original.clone());
+                let ref_obj = try_value_ref_as_vmobject(original.clone());
                 if ref_obj.is_err() {
                     return Err(VMError::UnableToReference(original));
                 }
@@ -586,14 +620,14 @@ impl IRExecutor {
                     VMStackObject::VMObject(obj) => obj,
                     _ => return Err(VMError::NotVMObject(obj)),
                 };
-                let obj_ref = try_ref_as_vmobject(obj.clone());
+                let obj_ref = try_value_ref_as_vmobject(obj.clone());
                 if obj_ref.is_err() {
                     return Err(VMError::UnableToReference(obj));
                 }
                 let obj_ref = obj_ref.unwrap();
                 let result = self
                     .context
-                    .let_var(name.clone(), obj_ref.clone(), gc_system);
+                    .let_var(name.clone(), obj_ref.clone(), true, gc_system);
                 if result.is_err() {
                     return Err(VMError::ContextError(result.unwrap_err()));
                 }
@@ -615,7 +649,7 @@ impl IRExecutor {
                     VMStackObject::VMObject(value) => value,
                     _ => return Err(VMError::NotVMObject(value)),
                 };
-                let value_ref = try_ref_as_vmobject(value.clone());
+                let value_ref = try_value_ref_as_vmobject(value.clone());
                 if value_ref.is_err() {
                     return Err(VMError::UnableToReference(value));
                 }
@@ -625,7 +659,11 @@ impl IRExecutor {
                     VMStackObject::VMObject(reference) => reference,
                     _ => return Err(VMError::NotVMObject(reference)),
                 };
-                let result = try_assgin_as_vmobject(reference, value_ref);
+                // print!("#set {} ", reference.clone());
+                // debug_print_repr(reference.clone());
+                // print!("    to ");
+                // debug_print_repr(value_ref.clone());
+                let result = try_assign_as_vmobject(reference, value_ref);
                 if result.is_err() {
                     return Err(VMError::VMVariableError(result.unwrap_err()));
                 }
@@ -678,7 +716,7 @@ impl IRExecutor {
                     VMStackObject::VMObject(obj) => obj,
                     _ => return Err(VMError::NotVMObject(obj)),
                 };
-                let ref_obj = try_ref_as_vmobject(obj.clone());
+                let ref_obj = try_value_ref_as_vmobject(obj.clone());
                 if ref_obj.is_err() {
                     return Err(VMError::UnableToReference(obj));
                 }
@@ -702,27 +740,29 @@ impl IRExecutor {
                     .truncate(*self.context.stack_pointers.last().unwrap());
             }
             IR::GetAttr => {
-                let obj = self.pop_object()?;
-                let obj = match obj {
-                    VMStackObject::VMObject(obj) => obj,
-                    _ => return Err(VMError::NotVMObject(obj)),
-                };
-                let ref_obj = try_ref_as_vmobject(obj.clone());
-                if ref_obj.is_err() {
-                    return Err(VMError::UnableToReference(obj));
-                }
-                let ref_obj = ref_obj.unwrap();
 
                 let attr = self.pop_object()?;
                 let attr = match attr {
                     VMStackObject::VMObject(attr) => attr,
                     _ => return Err(VMError::NotVMObject(attr)),
                 };
-                let attr_ref = try_ref_as_vmobject(attr.clone());
+                let attr_ref = try_value_ref_as_vmobject(attr.clone());
                 if attr_ref.is_err() {
                     return Err(VMError::UnableToReference(attr));
                 }
                 let attr_ref = attr_ref.unwrap();
+
+                let obj = self.pop_object()?;
+                let obj = match obj {
+                    VMStackObject::VMObject(obj) => obj,
+                    _ => return Err(VMError::NotVMObject(obj)),
+                };
+                let ref_obj = try_value_ref_as_vmobject(obj.clone());
+                if ref_obj.is_err() {
+                    return Err(VMError::UnableToReference(obj));
+                }
+                let ref_obj = ref_obj.unwrap();
+
                 let result = try_get_attr_as_vmobject(ref_obj, attr_ref);
                 if result.is_err() {
                     return Err(VMError::VMVariableError(result.unwrap_err()));
@@ -734,27 +774,29 @@ impl IRExecutor {
             }
 
             IR::IndexOf => {
-                let obj = self.pop_object()?;
-                let obj = match obj {
-                    VMStackObject::VMObject(obj) => obj,
-                    _ => return Err(VMError::NotVMObject(obj)),
-                };
-                let ref_obj = try_ref_as_vmobject(obj.clone());
-                if ref_obj.is_err() {
-                    return Err(VMError::UnableToReference(obj));
-                }
-                let ref_obj = ref_obj.unwrap();
 
                 let index = self.pop_object()?;
                 let index = match index {
                     VMStackObject::VMObject(index) => index,
                     _ => return Err(VMError::NotVMObject(index)),
                 };
-                let index_ref = try_ref_as_vmobject(index.clone());
+                let index_ref = try_value_ref_as_vmobject(index.clone());
                 if index_ref.is_err() {
                     return Err(VMError::UnableToReference(index));
                 }
                 let index_ref = index_ref.unwrap();
+
+                let obj = self.pop_object()?;
+                let obj = match obj {
+                    VMStackObject::VMObject(obj) => obj,
+                    _ => return Err(VMError::NotVMObject(obj)),
+                };
+                let ref_obj = try_value_ref_as_vmobject(obj.clone());
+                if ref_obj.is_err() {
+                    return Err(VMError::UnableToReference(obj));
+                }
+                let ref_obj = ref_obj.unwrap();
+
                 let result = try_index_of_as_vmobject(ref_obj, index_ref, gc_system);
                 if result.is_err() {
                     return Err(VMError::VMVariableError(result.unwrap_err()));
@@ -771,7 +813,7 @@ impl IRExecutor {
                     VMStackObject::VMObject(obj) => obj,
                     _ => return Err(VMError::NotVMObject(obj)),
                 };
-                let ref_obj = try_ref_as_vmobject(obj.clone());
+                let ref_obj = try_value_ref_as_vmobject(obj.clone());
                 if ref_obj.is_err() {
                     return Err(VMError::UnableToReference(obj));
                 }
@@ -791,7 +833,7 @@ impl IRExecutor {
                     VMStackObject::VMObject(obj) => obj,
                     _ => return Err(VMError::NotVMObject(obj)),
                 };
-                let ref_obj = try_ref_as_vmobject(obj.clone());
+                let ref_obj = try_value_ref_as_vmobject(obj.clone());
                 if ref_obj.is_err() {
                     return Err(VMError::UnableToReference(obj));
                 }
@@ -811,7 +853,7 @@ impl IRExecutor {
                     VMStackObject::VMObject(obj) => obj,
                     _ => return Err(VMError::NotVMObject(obj)),
                 };
-                let ref_obj = try_ref_as_vmobject(obj.clone());
+                let ref_obj = try_value_ref_as_vmobject(obj.clone());
                 if ref_obj.is_err() {
                     return Err(VMError::UnableToReference(obj));
                 }
@@ -832,7 +874,7 @@ impl IRExecutor {
                     _ => return Err(VMError::NotVMObject(obj)),
                 };
 
-                let ref_obj = try_ref_as_vmobject(obj.clone());
+                let ref_obj = try_value_ref_as_vmobject(obj.clone());
                 if ref_obj.is_err() {
                     return Err(VMError::UnableToReference(obj));
                 }
@@ -845,7 +887,7 @@ impl IRExecutor {
                 let self_obj = lambda.self_object.clone();
                 match self_obj {
                     Some(self_obj) => {
-                        let self_obj_ref = try_ref_as_vmobject(self_obj.clone());
+                        let self_obj_ref = try_value_ref_as_vmobject(self_obj.clone());
                         if self_obj_ref.is_err() {
                             return Err(VMError::UnableToReference(self_obj));
                         }
@@ -867,7 +909,7 @@ impl IRExecutor {
                     _ => return Err(VMError::NotVMObject(obj)),
                 };
 
-                let ref_obj = try_ref_as_vmobject(obj.clone());
+                let ref_obj = try_value_ref_as_vmobject(obj.clone());
                 if ref_obj.is_err() {
                     return Err(VMError::UnableToReference(obj));
                 }
@@ -907,7 +949,7 @@ impl IRExecutor {
                     VMStackObject::VMObject(lambda) => lambda,
                     _ => return Err(VMError::NotVMObject(lambda)),
                 };
-                let arg_tuple_ref = try_ref_as_vmobject(arg_tuple.clone());
+                let arg_tuple_ref = try_value_ref_as_vmobject(arg_tuple.clone());
                 if arg_tuple_ref.is_err() {
                     return Err(VMError::UnableToReference(arg_tuple));
                 }
@@ -915,9 +957,8 @@ impl IRExecutor {
                 if !arg_tuple_ref.isinstance::<VMTuple>() {
                     return Err(VMError::ArgumentIsNotTuple(arg_tuple_ref));
                 }
-                let lambda_ref = try_ref_as_vmobject(lambda.clone());
+                let lambda_ref = try_value_ref_as_vmobject(lambda.clone());
                 if lambda_ref.is_err() {
-                    debug_print_repr(lambda.clone());
                     return Err(VMError::UnableToReference(lambda));
                 }
                 let lambda_ref = lambda_ref.unwrap();
@@ -945,15 +986,17 @@ impl IRExecutor {
                 let signature = lambda_ref.signature.clone();
                 let default_args = lambda_ref.default_args_tuple.clone();
 
+                // debug_print_repr(default_args.clone());
+
                 let result = default_args
                     .as_type::<VMTuple>()
-                    .assgin_members(arg_tuple.clone());
+                    .assign_members(arg_tuple_ref.clone());
                 if result.is_err() {
                     return Err(VMError::VMVariableError(result.unwrap_err()));
                 }
 
                 for v in default_args.as_type::<VMTuple>().values.iter() {
-                    let v_ref = try_ref_as_vmobject(v.clone());
+                    let v_ref = try_value_ref_as_vmobject(v.clone());
                     if v_ref.is_err() {
                         return Err(VMError::UnableToReference(v.clone()));
                     }
@@ -974,14 +1017,16 @@ impl IRExecutor {
                     }
                     let name = name.as_const_type::<VMString>();
                     let name = name.value.clone();
-                    let value_ref = try_ref_as_vmobject(value.clone());
+                    let value_ref = try_value_ref_as_vmobject(value.clone());
                     if value_ref.is_err() {
                         return Err(VMError::UnableToReference(value));
                     }
                     let value_ref = value_ref.unwrap();
+                    // print!("{} := {} ", name, value_ref);
+                    // debug_print_repr(value_ref.clone());
                     let result = self
                         .context
-                        .let_var(name.clone(), value_ref.clone(), gc_system);
+                        .let_var(name.clone(), value_ref.clone(), false, gc_system);
                     if result.is_err() {
                         return Err(VMError::ContextError(result.unwrap_err()));
                     }
@@ -989,14 +1034,14 @@ impl IRExecutor {
 
                 if lambda_ref.self_object.is_some() {
                     let self_obj = lambda_ref.self_object.clone().unwrap();
-                    let self_obj_ref = try_ref_as_vmobject(self_obj.clone());
+                    let self_obj_ref = try_value_ref_as_vmobject(self_obj.clone());
                     if self_obj_ref.is_err() {
                         return Err(VMError::UnableToReference(self_obj));
                     }
                     let self_obj_ref = self_obj_ref.unwrap();
                     let result =
                         self.context
-                            .let_var("self".to_string(), self_obj_ref.clone(), gc_system);
+                            .let_var("self".to_string(), self_obj_ref.clone(), false, gc_system);
                     if result.is_err() {
                         return Err(VMError::ContextError(result.unwrap_err()));
                     }
@@ -1014,6 +1059,106 @@ impl IRExecutor {
                 self.offline_if_not_variable(&lambda);
             }
 
+            IR::Wrap => {
+                let obj = self.pop_object()?;
+                let obj = match obj {
+                    VMStackObject::VMObject(obj) => obj,
+                    _ => return Err(VMError::NotVMObject(obj)),
+                };
+                let ref_obj = try_value_ref_as_vmobject(obj.clone());
+                if ref_obj.is_err() {
+                    return Err(VMError::UnableToReference(obj));
+                }
+                let ref_obj = ref_obj.unwrap();
+                let wrapped = VMWrapper::new(
+                    ref_obj.clone(),
+                );
+                let wrapped = gc_system.new_object(wrapped);
+                self.stack.push(VMStackObject::VMObject(wrapped));
+                self.offline_if_not_variable(&obj);
+            }
+
+            IR::In => {
+                let container = self.pop_object()?;
+                let container = match container {
+                    VMStackObject::VMObject(container) => container,
+                    _ => return Err(VMError::NotVMObject(container)),
+                };
+                let container_ref = try_value_ref_as_vmobject(container.clone());
+                if container_ref.is_err() {
+                    return Err(VMError::UnableToReference(container));
+                }
+                let container_ref = container_ref.unwrap();
+
+
+                let obj = self.pop_object()?;
+                let obj = match obj {
+                    VMStackObject::VMObject(obj) => obj,
+                    _ => return Err(VMError::NotVMObject(obj)),
+                };
+                let ref_obj = try_value_ref_as_vmobject(obj.clone());
+                if ref_obj.is_err() {
+                    return Err(VMError::UnableToReference(obj));
+                }
+                let ref_obj = ref_obj.unwrap();
+
+                let result = try_contains_as_vmobject(container_ref.clone(), ref_obj.clone());
+                if result.is_err() {
+                    return Err(VMError::VMVariableError(result.unwrap_err()));
+                }
+                let result = result.unwrap();
+                self.stack.push(VMStackObject::VMObject(
+                    gc_system.new_object(VMBoolean::new(result)),
+                ));
+                self.offline_if_not_variable(&obj);
+                self.offline_if_not_variable(&container);
+            }
+
+            IR::BuildRange => {
+                let end = self.pop_object()?;
+                let start = self.pop_object()?;
+
+                let end = match end {
+                    VMStackObject::VMObject(end) => end,
+                    _ => return Err(VMError::NotVMObject(end)),
+                };
+                let start = match start {
+                    VMStackObject::VMObject(start) => start,
+                    _ => return Err(VMError::NotVMObject(start)),
+                };
+
+                let end_ref = try_value_ref_as_vmobject(end.clone());
+                if end_ref.is_err() {
+                    return Err(VMError::UnableToReference(end));
+                }
+                let end_ref = end_ref.unwrap();
+                let start_ref = try_value_ref_as_vmobject(start.clone());
+                if start_ref.is_err() {
+                    return Err(VMError::UnableToReference(start));
+                }
+                let start_ref = start_ref.unwrap();
+
+
+                if !start_ref.isinstance::<VMInt>() {
+                    return Err(VMError::InvaildArgument(start_ref.clone(),
+                        "Start of range is not a VMInt".to_string(),
+                    ));
+                }
+                if !end_ref.isinstance::<VMInt>() {
+                    return Err(VMError::InvaildArgument(end_ref.clone(),
+                        "End of range is not a VMInt".to_string(),
+                    ));
+                }
+                let start_ref = start_ref.as_const_type::<VMInt>();
+                let end_ref = end_ref.as_const_type::<VMInt>();
+
+                let result = gc_system.new_object(
+                    VMRange::new(start_ref.value, end_ref.value),
+                );
+                self.stack.push(VMStackObject::VMObject(result));
+                self.offline_if_not_variable(&start);
+                self.offline_if_not_variable(&end);
+            }
             _ => return Err(VMError::InvaildInstruction(instruction.clone())),
         }
         Ok(())

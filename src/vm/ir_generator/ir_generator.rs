@@ -496,6 +496,7 @@ impl<'t> IRGenerator<'t> {
             ASTNodeType::Modifier(modifier) => {
                 let mut instructions = Vec::new();
                 instructions.push(debug_info);
+                instructions.extend(self.generate_without_redirect(&ast_node.children[0])?);
                 match modifier {
                     ASTNodeModifier::SelfOf => {
                         instructions.push(IR::SelfOf);
@@ -524,7 +525,26 @@ impl<'t> IRGenerator<'t> {
                     ASTNodeModifier::TypeOf => {
                         instructions.push(IR::TypeOf);
                     }
+                    ASTNodeModifier::Wrap => {
+                        instructions.push(IR::Wrap);
+                    }
                 }
+                Ok(instructions)
+            }
+            ASTNodeType::Range => {
+                let mut instructions = Vec::new();
+                instructions.push(debug_info);
+                instructions.extend(self.generate_without_redirect(&ast_node.children[0])?);
+                instructions.extend(self.generate_without_redirect(&ast_node.children[1])?);
+                instructions.push(IR::BuildRange);
+                Ok(instructions)
+            }
+            ASTNodeType::In => {
+                let mut instructions = Vec::new();
+                instructions.push(debug_info);
+                instructions.extend(self.generate_without_redirect(&ast_node.children[0])?);
+                instructions.extend(self.generate_without_redirect(&ast_node.children[1])?);
+                instructions.push(IR::In);
                 Ok(instructions)
             }
         }

@@ -2,8 +2,8 @@ use std::collections::HashMap;
 
 use super::super::gc::gc::GCRef;
 use super::super::gc::gc::GCSystem;
+use super::variable::try_assign_as_vmobject;
 use super::variable::try_repr_vmobject;
-use super::variable::VMObject;
 use super::variable::VMStackObject;
 use super::variable::VMVariableError;
 use super::variable::VMVariableWrapper;
@@ -31,9 +31,17 @@ impl ContextError {
             ContextError::NoFrame => "No frame".to_string(),
             ContextError::NoVariable(name) => format!("No variable: {}", name),
             ContextError::ExistingVariable(name) => format!("Existing variable: {}", name),
-            ContextError::OfflinedObject(obj) => format!("Offlined object: {:?}", try_repr_vmobject(obj.clone()).unwrap_or(format!("{:?}", obj))),
-            ContextError::InvaildContextVariable(obj) => format!("Invalid context variable: {:?}", try_repr_vmobject(obj.clone()).unwrap_or(format!("{:?}", obj))),
-            ContextError::VMVariableError(err) => format!("VM variable error: {:?}", err.to_string()),
+            ContextError::OfflinedObject(obj) => format!(
+                "Offlined object: {:?}",
+                try_repr_vmobject(obj.clone()).unwrap_or(format!("{:?}", obj))
+            ),
+            ContextError::InvaildContextVariable(obj) => format!(
+                "Invalid context variable: {:?}",
+                try_repr_vmobject(obj.clone()).unwrap_or(format!("{:?}", obj))
+            ),
+            ContextError::VMVariableError(err) => {
+                format!("VM variable error: {:?}", err.to_string())
+            }
             ContextError::ContextError(msg) => format!("Context error: {}", msg),
         }
     }
@@ -47,7 +55,7 @@ impl Context {
         }
     }
 
-    fn is_variable(&self, object: &GCRef) -> bool{
+    fn is_variable(&self, object: &GCRef) -> bool {
         if object.isinstance::<VMVariableWrapper>() {
             return true;
         }
@@ -59,8 +67,6 @@ impl Context {
             object.offline();
         }
     }
-
-
 
     pub fn new_frame(
         &mut self,
@@ -86,9 +92,6 @@ impl Context {
         if exit_function {
             while self.frames.len() > 0 && !self.frames[self.frames.len() - 1].1 {
                 for variable in self.frames.last_mut().unwrap().0.values() {
-                    if !variable.isinstance::<VMVariableWrapper>() {
-                        return Err(ContextError::InvaildContextVariable(variable.clone()));
-                    }
                     variable.offline();
                 }
                 self.frames.pop();
@@ -102,14 +105,11 @@ impl Context {
 
                 stack.truncate(pointer.unwrap_or(0));
             }
-        } 
+        }
         if self.frames.is_empty() {
             return Err(ContextError::NoFrame);
         }
         for variable in self.frames.last_mut().unwrap().0.values() {
-            if !variable.isinstance::<VMVariableWrapper>() {
-                return Err(ContextError::InvaildContextVariable(variable.clone()));
-            }
             variable.offline();
         }
         self.frames.pop();
@@ -119,7 +119,7 @@ impl Context {
                 self.offline_if_not_variable(obj_ref);
             }
         }
-        stack.truncate(pointer.unwrap_or(0));        
+        stack.truncate(pointer.unwrap_or(0));
         Ok(())
     }
 
@@ -127,13 +127,21 @@ impl Context {
         &mut self,
         name: String,
         value: GCRef,
+        wrap: bool,
         gc_system: &mut GCSystem,
     ) -> Result<(), ContextError> {
         if let Some((vars, _, _, _)) = self.frames.last_mut() {
             if vars.contains_key(&name) {
-                return Err(ContextError::ExistingVariable(name));
+                let var = vars.get(&name).unwrap();
+                var.offline();
+                vars.insert(name.clone(), value.clone());
+                return Ok(());
             }
-            let wrapped_value = gc_system.new_object(VMVariableWrapper::new(value));
+            let wrapped_value = if wrap {
+                gc_system.new_object(VMVariableWrapper::new(value))
+            } else {
+                value
+            };
             vars.insert(name, wrapped_value);
             Ok(())
         } else {
@@ -153,17 +161,8 @@ impl Context {
     pub fn set_var(&mut self, name: &str, value: GCRef) -> Result<(), ContextError> {
         for (vars, _, _, _) in self.frames.iter_mut().rev() {
             if let Some(var) = vars.get_mut(name) {
-                if !var.isinstance::<VMVariableWrapper>() {
-                    return Err(ContextError::InvaildContextVariable(var.clone()));
-                }
-                match var.as_type::<VMVariableWrapper>().assgin(value) {
-                    Ok(_) => {
-                        return Ok(());
-                    }
-                    Err(e) => {
-                        return Err(ContextError::VMVariableError(e));
-                    }
-                }
+                try_assign_as_vmobject(var.clone(), value.clone())
+                    .map_err(|e| ContextError::VMVariableError(e))?;
             }
         }
         Err(ContextError::NoVariable(name.to_string()))
@@ -179,9 +178,6 @@ impl Context {
             // 离线所有帧中的变量
             for (vars, _, _, _) in &mut self.frames {
                 for variable in vars.values() {
-                    if !variable.isinstance::<VMVariableWrapper>() {
-                        return Err(ContextError::InvaildContextVariable(variable.clone()));
-                    }
                     variable.offline();
                 }
             }
@@ -221,9 +217,6 @@ impl Context {
             for i in size..self.frames.len() {
                 let (vars, _, _, _) = &mut self.frames[i];
                 for variable in vars.values() {
-                    if !variable.isinstance::<VMVariableWrapper>() {
-                        return Err(ContextError::InvaildContextVariable(variable.clone()));
-                    }
                     variable.offline();
                 }
             }
