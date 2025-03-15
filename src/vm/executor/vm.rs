@@ -702,10 +702,18 @@ impl IRExecutor {
                 self.context.new_frame(&mut self.stack, false, 0, false);
             }
             IR::PopFrame => {
+                let obj = self.pop_object()?;
+                let obj = match obj {
+                    VMStackObject::VMObject(obj) => obj,
+                    _ => return Err(VMError::NotVMObject(obj)),
+                };
+                
                 let result = self.context.pop_frame(&mut self.stack, false);
                 if result.is_err() {
                     return Err(VMError::ContextError(result.unwrap_err()));
                 }
+                self.stack.push(VMStackObject::VMObject(obj));
+
             }
             IR::JumpOffset(offset) => {
                 self.ip += offset;

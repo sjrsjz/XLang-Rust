@@ -48,7 +48,7 @@ print(expensiveComputation());
 "#;
     let code = r#"
 
-    createCounter := (start => 0) -> {
+    /*createCounter := (start => 0) -> {
         return (count => start) -> {
             count = count + 1;
             return count;
@@ -91,6 +91,12 @@ print(expensiveComputation());
         };
     };
 
+    loop_func := loop((n => 0) -> {
+        print(n);
+        return n < 50;
+    });
+
+    loop_func();
 
     iter := (container => ('T' : null), n => 0) -> {
         n = n + 1;
@@ -110,7 +116,19 @@ print(expensiveComputation());
         print(elem);
     };
     
-    print(1 in 1..2);
+
+    lambda := (A => 1, B => 2) -> print(A+B);
+    lambda();*/
+
+    classA := (
+        "value": 0,
+        inc => ()->{
+            self.value = self.value + 1;
+        }
+    );
+    classA.inc();
+    print(classA.value);
+
     
 "#;
     let tokens = lexer::reject_comment(lexer::tokenize(code));

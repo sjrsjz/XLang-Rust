@@ -1399,7 +1399,7 @@ impl VMKeyVal {
     }
 
     pub fn check_key(&self, other: GCRef) -> bool {
-        try_eq_as_vmobject(self.value.clone(), other)
+        try_eq_as_vmobject(self.key.clone(), other)
     }
 
     pub fn eq(&self, other: GCRef) -> bool {
