@@ -841,11 +841,6 @@ impl IRExecutor {
                     return Err(VMError::ContextError(result.unwrap_err()));
                 }
                 self.stack.push(VMStackObject::VMObject(obj.clone()));
-                if !obj.is_online() {
-                    return Err(VMError::UnableToReference(
-                        obj.clone()
-                    ));
-                } // gc may delete the object
             }
 
             IR::Get(name) => {
