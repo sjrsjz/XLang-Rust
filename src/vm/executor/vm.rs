@@ -450,9 +450,11 @@ impl IRExecutor {
                 .instructions[self.ip as usize]
                 .clone();
 
+            //println!("# {} {}: {:?}", gc_system.count(), self.ip, instruction); // debug
+            //self.context.debug_print_all_vars();
+            //self.debug_output_stack();
             self.execute_instruction(instruction.clone(), gc_system)?;
 
-            //println!("# {} {}: {:?}", gc_system.count(), self.ip, instruction); // debug
 
             //self.debug_output_stack(); // debug
             //println!("");
@@ -838,7 +840,12 @@ impl IRExecutor {
                 if result.is_err() {
                     return Err(VMError::ContextError(result.unwrap_err()));
                 }
-                self.stack.push(VMStackObject::VMObject(obj));
+                self.stack.push(VMStackObject::VMObject(obj.clone()));
+                if !obj.is_online() {
+                    return Err(VMError::UnableToReference(
+                        obj.clone()
+                    ));
+                } // gc may delete the object
             }
 
             IR::Get(name) => {

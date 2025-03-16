@@ -31,7 +31,7 @@ impl Hash for GCRef {
 impl std::fmt::Display for GCRef {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         write!(f, "GCRef({:?}, {:?})", self.reference, self.type_id)
-    }    
+    }
 }
 
 impl GCRef {
@@ -211,7 +211,7 @@ pub struct GCSystem {
     new_objects_count: usize, // 新创建的对象数量
     new_objects_sum_size: usize,
     _maximum_new_objects_count: usize, // GC触发对象数量限制
-    maximum_allocation_size: usize,   // GC触发内存限制
+    maximum_allocation_size: usize,    // GC触发内存限制
 }
 
 impl GCSystem {
@@ -231,24 +231,17 @@ impl GCSystem {
     pub fn new_object<T: GCObject + 'static>(&mut self, object: T) -> GCRef {
         self.new_objects_sum_size += std::mem::size_of::<T>();
         self.new_objects_count += 1;
-        
-        let trigger_threshold = self.objects.len() / 5;  // 20%的增长率触发GC
-        
+
+        let trigger_threshold = self.objects.len() / 5; // 20%的增长率触发GC
 
         if self.new_objects_sum_size > self.maximum_allocation_size
             && self.new_objects_count > trigger_threshold
         {
-            // println!(
-            //     "GC triggered! Allocated memory: {} bytes",
-            //     self.new_objects_sum_size
-            // );
-            //println!("Current object count: {}", self.objects.len());
             self.collect();
-            //println!("GC completed! Current object count: {}", self.objects.len());
             self.new_objects_sum_size = 0;
             self.new_objects_count = 0;
         }
-        let obj_ref = Box::leak(Box::new(object)) as *mut dyn GCObject;
+        let obj_ref = Box::into_raw(Box::new(object)) as *mut dyn GCObject;
         let gc_ref = GCRef {
             reference: obj_ref,
             type_id: TypeId::of::<T>(),
@@ -279,7 +272,7 @@ impl GCSystem {
             .objects
             .iter()
             .enumerate()
-            .map(|(i, obj)| (obj.reference, i))
+            .map(|(i, obj)| (obj.reference as *const () as usize, i))
             .collect();
 
         // 第二步：构建引用图
@@ -287,11 +280,78 @@ impl GCSystem {
         for i in 0..self.objects.len() {
             let gc_ref = &self.objects[i];
             for (ref_obj, _) in &gc_ref.get_traceable().references {
-                if let Some(&ref_idx) = idx_map.get(&ref_obj.reference) {
-                    ref_graph[i].push(ref_idx);
+                let ref_usize = ref_obj.reference as *const () as usize;
+                match idx_map.get(&ref_usize) {
+                    Some(ref_idx) => ref_graph[i].push(*ref_idx),
+                    None => {
+                        // Build comprehensive diagnostics message
+                        let mut error_msg = String::new();
+
+                        error_msg.push_str(&format!(
+                            "\n===== FATAL ERROR: INVALID REFERENCE DETECTED =====\n"
+                        ));
+                        error_msg.push_str(&format!(
+                            "Object #{} (Type: {:?}) references an object not managed by the GC\n",
+                            i, gc_ref.type_id
+                        ));
+                        error_msg.push_str(&format!("Reference target: {:?}\n", ref_obj));
+                        error_msg.push_str(&format!("Reference address: 0x{:x}\n\n", ref_usize));
+
+                        // Include index mapping for diagnostics
+                        error_msg.push_str(&format!("Current GC object map:\n"));
+                        for (&addr, &idx) in &idx_map {
+                            error_msg.push_str(&format!("  0x{:x} -> Object #{}\n", addr, idx));
+                        }
+
+                        // Include partial reference graph for context
+                        error_msg.push_str(&format!("\nCurrent reference graph (partial):\n"));
+                        for (idx, refs) in ref_graph.iter().enumerate().take(i) {
+                            if !refs.is_empty() {
+                                error_msg.push_str(&format!(
+                                    "  Object #{} references -> {:?}\n",
+                                    idx, refs
+                                ));
+                            }
+                        }
+
+                        error_msg.push_str(&format!("\n======= PROGRAM TERMINATING =======\n"));
+
+                        // Panic with the complete error message
+                        panic!("{}", error_msg);
+                    }
                 }
             }
         }
+
+        // let mut ref_graph: Vec<Vec<usize>> = vec![Vec::new(); self.objects.len()];
+        // for i in 0..self.objects.len() {
+        //     let gc_ref = &self.objects[i];
+        //     for (ref_obj, _) in &gc_ref.get_traceable().references {
+        //         // 线性搜索而非使用HashMap
+        //         let mut found = false;
+        //         let mut ref_idx = 0;
+        //         for (j, obj) in self.objects.iter().enumerate() {
+        //             if std::ptr::addr_eq(obj.reference, ref_obj.reference) {
+        //                 found = true;
+        //                 ref_idx = j;
+        //                 break;
+        //             }
+        //         }
+
+        //         if !found {
+        //             println!("Mapping: {:?}", idx_map);
+        //             println!("Reference graph: {:?}", ref_graph);
+
+        //             panic!("警告：对象 #{} 引用了不在GC管理下的对象: {:?}", i, ref_obj);
+
+        //             // 可以在这里继续处理
+        //             // 如果想要严格行为，可以保留panic
+        //             // panic!("Reference object not found in index map! Object: {:?}", ref_obj);
+        //         } else {
+        //             ref_graph[i].push(ref_idx);
+        //         }
+        //     }
+        // }
 
         // 第三步：从活跃对象出发，标记所有可达对象
         let mut worklist: Vec<usize> = Vec::new();
@@ -324,9 +384,9 @@ impl GCSystem {
     }
 
     fn sweep(&mut self) {
-        let mut alive = vec![false; self.objects.len()]; // 活跃对象
+        let mut alive = vec![false; self.objects.len()];
 
-        // 确定哪些对象是活跃的
+        // 标记存活对象
         for i in 0..self.objects.len() {
             let gc_ref = &self.objects[i];
             if gc_ref.get_traceable().online || !gc_ref.get_traceable().should_free {
@@ -334,61 +394,72 @@ impl GCSystem {
             }
         }
 
-        // 释放不再活跃的对象
-        for i in 0..self.objects.len() {
-            if !alive[i] {
-                // 释放对象资源
-                let obj_ptr = &self.objects[i];
-                obj_ptr.free();
-            }
-        }
-
-        let mut new_objects = Vec::new();
-
+        // 重要变化：我们先复制存活对象到新列表，再释放死亡对象
+        // 这样可以避免在释放过程中引用已经被释放的对象
+        let mut new_objects = Vec::with_capacity(self.objects.len());
         for i in 0..self.objects.len() {
             if alive[i] {
                 new_objects.push(self.objects[i].clone());
             }
         }
 
+        // 收集要释放的对象
+        let dead_objects: Vec<GCRef> = self
+            .objects
+            .iter()
+            .enumerate()
+            .filter(|&(i, _)| !alive[i])
+            .map(|(_, obj)| obj.clone())
+            .collect();
+
+        // 替换对象列表
         self.objects = new_objects;
 
-        for i in 0..self.objects.len() {
-            let gc_ref = &self.objects[i];
-            if gc_ref.get_traceable().should_free {
-                panic!(
-                    "Object should be freed! But it is still in the list! {:?}",
-                    gc_ref
-                );
-            }
+        // 现在安全地释放对象，因为它们已经从列表中移除
+        for obj in dead_objects {
+            obj.free();
         }
     }
 
     pub fn immediate_collect(&mut self) {
         let mut alive = vec![false; self.objects.len()];
+
+        // 标记活对象
         for i in 0..self.objects.len() {
             let gc_ref = &self.objects[i];
             alive[i] = !(gc_ref.get_traceable().ref_count == 0 && !gc_ref.get_traceable().online);
         }
-        for i in 0..self.objects.len() {
-            if !alive[i] {
-                let obj_ptr = &self.objects[i];
-                obj_ptr.free();
-            }
-        }
-        let mut new_objects = Vec::new();
+
+        // 先创建新的对象列表，仅包含活对象
+        let mut new_objects = Vec::with_capacity(self.objects.len());
         for i in 0..self.objects.len() {
             if alive[i] {
                 new_objects.push(self.objects[i].clone());
             }
         }
-        self.objects = new_objects;
-    }
 
+        // 收集要释放的对象
+        let dead_objects: Vec<GCRef> = self
+            .objects
+            .iter()
+            .enumerate()
+            .filter(|&(i, _)| !alive[i])
+            .map(|(_, obj)| obj.clone())
+            .collect();
+
+        // 更新对象列表
+        self.objects = new_objects;
+
+        // 最后释放死亡对象
+        for obj in dead_objects {
+            obj.free();
+        }
+    }
     pub fn collect(&mut self) {
         self.immediate_collect();
         self.mark();
         self.sweep();
+        
     }
 
     pub fn debug_print(&self) {

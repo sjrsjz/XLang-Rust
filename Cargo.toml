@@ -9,3 +9,11 @@ regex = "1.11.1"
 serde = { version = "1.0.219", features = ["derive"] }
 bincode = "1.3"
 clap = { version = "4.5.32", features = ["derive"] }
+
+[profile.release]
+# 保留一些调试信息，帮助排查问题
+debug = 1
+# 避免激进优化
+opt-level = 2
+# 启用溢出检查
+overflow-checks = true

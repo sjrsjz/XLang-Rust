@@ -240,4 +240,13 @@ impl Context {
 
         Ok(())
     }
+
+    pub fn debug_print_all_vars(&self) {
+        for (vars, _, _, _) in self.frames.iter().rev() {
+            for (name, var) in vars.iter() {
+                println!("{}: {:?}, refs: {:?}", name, try_repr_vmobject(var.clone()), var.get_traceable().references);
+            }
+        }
+    }
+
 }
