@@ -3,6 +3,8 @@ pub mod vm;
 use vm::executor::variable::VMInstructions;
 use vm::executor::variable::VMLambda;
 use vm::executor::variable::VMTuple;
+use vm::gc::gc::GCRef;
+use vm::ir::IRPackage;
 use vm::ir::IR;
 
 use self::parser::ast::build_ast;
@@ -16,166 +18,92 @@ use self::vm::ir::Functions;
 use self::vm::executor::vm::*;
 use self::vm::executor::variable::*;
 
+use clap::{Parser, Subcommand};
+use std::fs;
+use std::io::Write;
+use std::path::PathBuf;
 
-fn main() {
+#[derive(Parser)]
+#[command(author, version, about, long_about = None)]
+struct Cli {
+    #[command(subcommand)]
+    command: Commands,
+}
 
-    let code = r#"
-lazy := (computation => null) -> {
-    result := null;
-    evaluated := false;
+#[derive(Subcommand)]
+enum Commands {
+    /// 编译源代码到 XLang IR 文件
+    Compile {
+        /// 输入源代码文件路径
+        #[arg(required = true)]
+        input: PathBuf,
+        
+        /// 输出 IR 文件路径 (默认为与输入同名但扩展名为 .xir)
+        #[arg(short, long)]
+        output: Option<PathBuf>,
+    },
     
-    return (evaluated => evaluated,
-            result => wrap result, // wrap because we don't know the type of result
-            computation => computation) -> {
-        if (evaluated == false) {
-            result = computation();
-            evaluated = true;
-        };
-        return valueof result;
-    };
-};
-
-expensiveComputation := lazy(() -> {
-    print("Computing...");
-    return 42;
-});
-
-print(expensiveComputation());
-
-print(expensiveComputation()); 
-
-
-"#;
-    let code = r#"
-
-    /*createCounter := (start => 0) -> {
-        return (count => start) -> {
-            count = count + 1;
-            return count;
-        };
-    };
-    counter := createCounter(0);
-    print(counter());
-    print(counter());
-    print(counter());
-
-    arr := (1, 2, 3, 4, 5);
-    print(arr);
-    arr[0] = 100;
-    print(arr);
-
-    kv:= "key" : arr;
-    print(kv);
-    print(keyof kv);
-    print(valueof kv);
-
-
-
-    mutistr := (str => "", n => 0) -> {
-        result := "";
-
-        i := 0; while (i = i + 1; i <= n) {
-            result = result + str;
-        };
-
-        return result;
-    };
-    print(mutistr("a", 5)); 
-
-
-    loop := (func => (n => 0) -> {return false}) -> {
-        return (n => 0, func => func) -> {
-            while (func(n)) {
-                n = n + 1;
-            };
-        };
-    };
-
-    loop_func := loop((n => 0) -> {
-        print(n);
-        return n < 50;
-    });
-
-    loop_func();
-
-    iter := (container => ('T' : null), n => 0) -> {
-        n = n + 1;
-        E := valueof container;
-        T := keyof container;
-        if (n <= len(T)) {
-            valueof E = T[n - 1];
-            return true;
-        } else {
-            return false;
-        };
-    };
-
-    arr := (1, 2, 3, 4, 5);
-    elem := 0;
-    while (iter(arr: wrap(elem))) {
-        print(elem);
-    };
+    /// 执行 XLang 源代码或编译后的 IR 文件
+    Run {
+        /// 输入文件路径 (源代码或 .xir 文件)
+        #[arg(required = true)]
+        input: PathBuf,
+    },
     
+    /// 交互式解释器模式
+    Repl {},
+}
 
-    lambda := (A => 1, B => 2) -> print(A+B);
-    lambda();*/
-
-    classA := (
-        "value": 0,
-        inc => ()->{
-            self.value = self.value + 1;
-        }
-    );
-    classA.inc();
-    print(classA.value);
-
-    
-"#;
+// 编译代码，生成中间表示
+fn build_code(code: &str) -> Result<IRPackage, String> {
     let tokens = lexer::reject_comment(lexer::tokenize(code));
-    for token in &tokens {
-        print!("{:?} ", token.to_string());
-    }
+    // 可选：打印tokens
+    // for token in &tokens {
+    //     print!("{:?} ", token.to_string());
+    // }
 
     let gathered = ast_token_stream::from_stream(&tokens);
-    let ast = build_ast(&gathered);
-    if ast.is_err() {
-        println!("");
-        let err_token = ast.err().unwrap();
-        println!("Error token: {:?}", err_token.format(&tokens));
-        return;
-    }
-    println!("\n\nAST:\n");
+    let ast = match build_ast(&gathered) {
+        Ok(ast) => ast,
+        Err(err_token) => {
+            return Err(format!("Error token: {:?}", err_token.format(&tokens)));
+        }
+    };
 
-    ast.as_ref().unwrap().formatted_print(0);
+    // 可选：打印AST
+    // println!("\n\nAST:\n");
+    // ast.formatted_print(0);
 
     let namespace = ir_generator::NameSpace::new("Main".to_string(), None);
     let mut functions = Functions::new();
     let mut ir_generator = ir_generator::IRGenerator::new(&mut functions, namespace);
 
-    let ir = ir_generator.generate(&ast.unwrap());
-    if ir.is_err() {
-        println!("Error: {:?}", ir.err().unwrap());
-        return;
-    }
-    let mut ir = ir.unwrap();
+    let ir = match ir_generator.generate(&ast) {
+        Ok(ir) => ir,
+        Err(err) => {
+            return Err(format!("Error: {:?}", err));
+        }
+    };
+    
+    let mut ir = ir;
     ir.push(IR::Return);
     functions.append("__main__".to_string(), ir);
     
-    let (built_ins, ips) = functions.build_instructions();
-    println!("\n\nBuilt Ins:\n");
-    for ir in &built_ins {
-        println!("{:?}", ir);
-    }
-    println!("\n\nFunction IPs:\n");
-    for (name, ip) in &ips {
-        println!("{}: {:?}", name, ip);
-    }
+    return Ok(functions.build_instructions());
+        
+}
 
-    let mut executor = IRExecutor::new(Some(code.to_string()));
+// 执行编译后的代码
+fn execute_ir(package: IRPackage, source_code: Option<String>) 
+    -> Result<GCRef, VMError> {
+    
+    let IRPackage { instructions, function_ips } = package;
+
+    let mut executor = IRExecutor::new(source_code);
     let mut gc_system = GCSystem::new(None);
 
     let default_args_tuple = gc_system.new_object(VMTuple::new(vec![]));
-    let lambda_instructions = gc_system.new_object(VMInstructions::new(built_ins, ips));
+    let lambda_instructions = gc_system.new_object(VMInstructions::new(instructions, function_ips));
     
     let main_lambda = gc_system.new_object(VMLambda::new(
         0,
@@ -187,28 +115,174 @@ print(expensiveComputation());
     default_args_tuple.offline();
     lambda_instructions.offline();
 
-    println!("\n[Running main lambda...]\n");
+    //println!("\n[Running main lambda...]\n");
 
     let result = executor.execute(main_lambda, &mut gc_system);
+    //println!("\n[Finished running main lambda]\n");
 
-    println!("\n[Finished running main lambda]\n");
+    match &result {
+        Ok(res) => {
+            if !res.isinstance::<VMNull>() {
+                match try_repr_vmobject(res.clone()) {
+                    Ok(value) => {
+                        println!("{}", value);
+                    },
+                    Err(err) => {
+                        println!("Unable to repr: {}", err.to_string());
+                    }
+                }
+            }
+        },
+        Err(err) => {
+            println!("Execution error: {}", err.to_string());
+        }
+    }
 
-    if result.is_err() {
-        println!("Error: {}", result.err().unwrap().to_string());
-        return;
+    // 清理GC
+    if let Ok(ref result_ref) = result {
+        result_ref.clone().offline();
     }
-    let result = result.unwrap();
-    let repr = try_repr_vmobject(result.clone());
-    if repr.is_ok(){
-        println!("Result: {}", repr.unwrap());
-    } else {
-        println!("Error: {}", repr.err().unwrap().to_string());
-    }
-    print!("\n\nResult GCRef: {:?}\n", result);
-    result.offline();
     gc_system.collect();
-    println!("Existing GCRef: {:?}", gc_system.count());
-    gc_system.print_reference_graph();
+    // println!("Existing GCRef: {:?}", gc_system.count());
+    
+    result
+}
 
+fn run_file(path: &PathBuf) -> Result<(), String> {
+    let extension = path.extension().and_then(|e| e.to_str()).unwrap_or("");
+    
+    if extension == "xir" {
+        // 执行 IR 文件
+        match IRPackage::read_from_file(path.to_str().unwrap()) {
+            Ok(package) => {
+                match execute_ir(package, None) {
+                    Ok(_) => Ok(()),
+                    Err(e) => Err(format!("执行错误: {}", e.to_string()))
+                }
+            },
+            Err(e) => Err(format!("读取 IR 文件错误: {}", e))
+        }
+    } else {
+        // 假设是源码文件，先编译再执行
+        match fs::read_to_string(path) {
+            Ok(code) => {
+                match build_code(&code) {
+                    Ok(package) => {
+                        match execute_ir(package, Some(code)) {
+                            Ok(_) => Ok(()),
+                            Err(e) => Err(format!("执行错误: {}", e.to_string()))
+                        }
+                    },
+                    Err(e) => Err(format!("编译错误: {}", e))
+                }
+            },
+            Err(e) => Err(format!("读取文件错误: {}", e))
+        }
+    }
+}
 
+fn compile_file(input: &PathBuf, output: Option<PathBuf>) -> Result<(), String> {
+    // 读取源代码
+    let code = match fs::read_to_string(input) {
+        Ok(content) => content,
+        Err(e) => return Err(format!("读取源文件错误: {}", e))
+    };
+    
+    // 编译源代码
+    let package = match build_code(&code) {
+        Ok(p) => p,
+        Err(e) => return Err(format!("编译错误: {}", e))
+    };
+    
+    // 确定输出路径
+    let output_path = match output {
+        Some(path) => path,
+        None => {
+            let mut path = input.clone();
+            path.set_extension("xir");
+            path
+        }
+    };
+    
+    // 创建目录（如果需要）
+    if let Some(parent) = output_path.parent() {
+        if !parent.exists() {
+            if let Err(e) = fs::create_dir_all(parent) {
+                return Err(format!("创建输出目录错误: {}", e));
+            }
+        }
+    }
+    
+    // 写入编译后的 IR 到文件
+    match package.write_to_file(output_path.to_str().unwrap()) {
+        Ok(_) => {
+            println!("成功将编译后的 IR 保存到: {}", output_path.display());
+            Ok(())
+        },
+        Err(e) => Err(format!("保存 IR 到文件错误: {}", e))
+    }
+}
+
+fn run_repl() -> Result<(), String> {
+    println!("XLang 交互式解释器");
+    println!("输入 'exit' 或 'quit' 退出");
+    
+    let mut gc_system = GCSystem::new(None);
+    
+    loop {
+        print!("> ");
+        std::io::stdout().flush().unwrap();
+        
+        let mut input = String::new();
+        if std::io::stdin().read_line(&mut input).is_err() {
+            println!("读取输入错误");
+            continue;
+        }
+        
+        let input = input.trim();
+        if input == "exit" || input == "quit" {
+            break;
+        }
+        
+        if input.is_empty() {
+            continue;
+        }
+        
+        match build_code(input) {
+            Ok(package) => {
+                match execute_ir(package, Some(input.to_string())) {
+                    Ok(_) => {},
+                    Err(e) => println!("执行错误: {}", e.to_string())
+                }
+            },
+            Err(e) => println!("编译错误: {}", e)
+        }
+    }
+    
+    Ok(())
+}
+
+fn main() {
+    let cli = Cli::parse();
+    
+    match cli.command {
+        Commands::Compile { input, output } => {
+            if let Err(e) = compile_file(&input, output) {
+                eprintln!("错误: {}", e);
+                std::process::exit(1);
+            }
+        },
+        Commands::Run { input } => {
+            if let Err(e) = run_file(&input) {
+                eprintln!("错误: {}", e);
+                std::process::exit(1);
+            }
+        },
+        Commands::Repl {} => {
+            if let Err(e) = run_repl() {
+                eprintln!("REPL 错误: {}", e);
+                std::process::exit(1);
+            }
+        },
+    }
 }

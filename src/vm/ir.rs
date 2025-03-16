@@ -1,6 +1,6 @@
 use std::collections::HashMap;
-
-#[derive(Debug, Clone)]
+use serde::{Serialize, Deserialize};
+#[derive(Debug, Clone, Serialize, Deserialize)]
 pub enum IROperation {
     Add,          // +
     Subtract,     // -
@@ -24,13 +24,13 @@ pub enum IROperation {
     LessEqual,    // <=
 }
 
-#[derive(Debug, Clone)]
+#[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct DebugInfo{
     pub code_position: usize,
 }
 
 
-#[derive(Debug, Clone)]
+#[derive(Debug, Clone, Serialize, Deserialize)]
 pub enum IR{
     LoadNull, // load null to stack 
     LoadInt(i64), // load integer to stack
@@ -73,6 +73,73 @@ pub enum IR{
     In
 }
 
+#[derive(Serialize, Deserialize, Debug)]
+pub struct IRPackage {
+    pub instructions: Vec<IR>,
+    pub function_ips: HashMap<String, usize>,
+}
+impl IRPackage {
+    pub fn read_from_file(file_path: &str) -> Result<IRPackage, String> {
+        use std::fs::File;
+        use std::io::Read;
+        use std::path::Path;
+        
+        // Check if file exists
+        if !Path::new(file_path).exists() {
+            return Err(format!("File not found: {}", file_path));
+        }
+        
+        // Open and read file
+        let mut file = match File::open(file_path) {
+            Ok(file) => file,
+            Err(e) => return Err(format!("Failed to open file: {}", e)),
+        };
+        
+        let mut buffer = Vec::new();
+        if let Err(e) = file.read_to_end(&mut buffer) {
+            return Err(format!("Failed to read file content: {}", e));
+        }
+        
+        // Deserialize data
+        match bincode::deserialize::<IRPackage>(&buffer) {
+            Ok(package) => Ok(package),
+            Err(e) => Err(format!("Failed to deserialize IR package: {}", e)),
+        }
+    }
+
+    pub fn write_to_file(&self, file_path: &str) -> Result<(), String> {
+        use std::fs::File;
+        use std::io::Write;
+        use std::path::Path;
+        
+        // Ensure directory exists
+        if let Some(parent) = Path::new(file_path).parent() {
+            if !parent.exists() {
+                if let Err(e) = std::fs::create_dir_all(parent) {
+                    return Err(format!("Failed to create directory: {}", e));
+                }
+            }
+        }
+        
+        // Serialize data
+        let serialized = match bincode::serialize(self) {
+            Ok(data) => data,
+            Err(e) => return Err(format!("Failed to serialize IR package: {}", e)),
+        };
+        
+        // Write to file
+        let mut file = match File::create(file_path) {
+            Ok(file) => file,
+            Err(e) => return Err(format!("Failed to create file: {}", e)),
+        };
+        
+        match file.write_all(&serialized) {
+            Ok(_) => Ok(()),
+            Err(e) => Err(format!("Failed to write to file: {}", e)),
+        }
+    }
+}
+
 #[derive(Debug)]
 pub struct Functions{
     function_instructions: HashMap<String, Vec<IR>>, // function name and instructions
@@ -88,13 +155,13 @@ impl Functions {
         self.function_instructions.insert(function_name, instructions);
     }
 
-    pub fn build_instructions(&mut self) -> (Vec<IR>, HashMap<String, usize>) {
+    pub fn build_instructions(&mut self) -> (IRPackage) {
         let mut func_ips = HashMap::new();
         let mut instructions = Vec::<IR>::new();
         for (func_name, func_instructions) in self.function_instructions.iter() {
             func_ips.insert(func_name.clone(), instructions.len());
             instructions.extend(func_instructions.clone());
         }
-        return (instructions, func_ips);
+        return IRPackage{instructions, function_ips:func_ips};
     }
 }

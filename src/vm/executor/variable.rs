@@ -593,10 +593,7 @@ impl VMObject for VMVariableWrapper {
     }
 
     fn assign(&mut self, value: GCRef) -> Result<GCRef, VMVariableError> {
-        self.traceable.remove_reference(&self.value_ref);
-        self.value_ref = value;
-        self.traceable.add_reference(&mut self.value_ref);
-        Ok(self.value_ref.clone())
+        try_assign_as_vmobject(self.value_ref.clone(), value)
     }
 
     fn value_ref(&self) -> Result<GCRef, VMVariableError> {
@@ -1174,7 +1171,7 @@ impl VMFloat {
     pub fn to_string(&self) -> Result<String, VMVariableError> {
         return Ok(self.value.to_string());
     }
-    pub fn to_boolean(&self) -> Result<bool, VMVariableError> {
+    pub fn to_bool(&self) -> Result<bool, VMVariableError> {
         return Ok(self.value != 0.0);
     }
     pub fn to_float(&self) -> Result<f64, VMVariableError> {
@@ -1278,7 +1275,7 @@ impl VMBoolean {
     pub fn to_string(&self) -> Result<String, VMVariableError> {
         return Ok(self.value.to_string());
     }
-    pub fn to_boolean(&self) -> Result<bool, VMVariableError> {
+    pub fn to_bool(&self) -> Result<bool, VMVariableError> {
         return Ok(self.value);
     }
 }
@@ -1577,6 +1574,11 @@ impl VMTuple {
                 let kv = val.as_const_type::<VMKeyVal>();
                 if kv.check_key(key.clone()) {
                     return Ok(kv.get_value());
+                }
+            } else if val.isinstance::<VMNamed>() {
+                let named = val.as_const_type::<VMNamed>();
+                if named.check_key(key.clone()) {
+                    return Ok(named.get_value());
                 }
             }
         }

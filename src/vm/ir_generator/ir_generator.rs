@@ -429,6 +429,7 @@ impl<'t> IRGenerator<'t> {
             ASTNodeType::Break => {
                 let mut instructions = Vec::new();
                 instructions.push(debug_info);
+                instructions.extend(self.generate_without_redirect(&ast_node.children[0])?);
                 let mut frames_to_pop = 0;
                 let mut found_loop = false;
                 let mut loop_label = None;
@@ -458,6 +459,7 @@ impl<'t> IRGenerator<'t> {
             ASTNodeType::Continue => {
                 let mut instructions = Vec::new();
                 instructions.push(debug_info);
+                instructions.extend(self.generate_without_redirect(&ast_node.children[0])?);
                 let mut found_loop = false;
                 let mut loop_label = None;
                 for scope in self.scope_stack.iter().rev() {
@@ -576,7 +578,7 @@ impl<'t> IRGenerator<'t> {
             match &reduced_irs[i] {
                 IR::RedirectJump(label) => {
                     if let Some(&target_pos) = label_map.get(label) {
-                        let offset = target_pos as isize - i as isize;
+                        let offset = target_pos as isize - i as isize - 1;
                         reduced_irs[i] = IR::JumpOffset(offset);
                     } else {
                         return Err(IRGeneratorError::InvalidLabel);
@@ -584,7 +586,7 @@ impl<'t> IRGenerator<'t> {
                 }
                 IR::RedirectJumpIfFalse(label) => {
                     if let Some(&target_pos) = label_map.get(label) {
-                        let offset = target_pos as isize - i as isize;
+                        let offset = target_pos as isize - i as isize - 1;
                         reduced_irs[i] = IR::JumpIfFalseOffset(offset);
                     } else {
                         return Err(IRGeneratorError::InvalidLabel);
@@ -649,10 +651,6 @@ impl<'t> IRGenerator<'t> {
     pub fn generate(&mut self, ast_node: &ASTNode<'t>) -> Result<Vec<IR>, IRGeneratorError> {
         let irs = self.generate_without_redirect(ast_node)?;
         let irs = self.retain_latest_debug_info(irs);
-
-        for ir in &irs {
-            println!("{:?}", ir);
-        }
         self.redirect_jump(irs)
     }
 }
