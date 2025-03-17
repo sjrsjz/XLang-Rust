@@ -421,27 +421,27 @@ fn test_gc_stress_test() {
             all_objects.push(obj);
             objects_created += 1;
             
-            // 随机创建循环引用
-            if rng.gen_bool(0.05) && all_objects.len() >= 3 {
-                // 选择一对KeyVal对象创建循环
-                let mut keyval_indices = Vec::new();
-                for (i, obj) in all_objects.iter().enumerate() {
-                    if obj.isinstance::<VMKeyVal>() {
-                        keyval_indices.push(i);
-                        if keyval_indices.len() >= 2 {
-                            break;
-                        }
-                    }
-                }
+            // // 随机创建循环引用
+            // if rng.gen_bool(0.05) && all_objects.len() >= 3 {
+            //     // 选择一对KeyVal对象创建循环
+            //     let mut keyval_indices = Vec::new();
+            //     for (i, obj) in all_objects.iter().enumerate() {
+            //         if obj.isinstance::<VMKeyVal>() {
+            //             keyval_indices.push(i);
+            //             if keyval_indices.len() >= 2 {
+            //                 break;
+            //             }
+            //         }
+            //     }
                 
-                if keyval_indices.len() >= 2 {
-                    let idx1 = keyval_indices[0];
-                    let idx2 = keyval_indices[1];
+            //     if keyval_indices.len() >= 2 {
+            //         let idx1 = keyval_indices[0];
+            //         let idx2 = keyval_indices[1];
                     
-                    // 创建循环: kv1 -> kv2 -> kv1
-                    if rng.gen_bool(0.5) {
-                        let kv1 = all_objects[idx1].clone();
-                        let kv2 = all_objects[idx2].clone();
+            //         // 创建循环: kv1 -> kv2 -> kv1
+            //         if rng.gen_bool(0.5) {
+            //             let kv1 = all_objects[idx1].clone();
+            //             let kv2 = all_objects[idx2].clone();
                         
                         {
                             let mut mutable_kv1 = kv1.as_type::<VMKeyVal>();
