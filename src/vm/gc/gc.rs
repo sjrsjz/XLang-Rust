@@ -217,7 +217,7 @@ impl GCSystem {
         for i in 0..self.objects.len() {
             let gc_ref = &self.objects[i];
             if gc_ref.get_traceable().should_free {
-                panic!("Never set should_free to true! Use offline() instead!");
+                panic!("Never set should_free to true! Use offline() instead! Object index: {}", i);
             } else if gc_ref.get_traceable().online {
                 alive[i] = true;
             }
