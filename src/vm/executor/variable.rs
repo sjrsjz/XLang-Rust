@@ -1,4 +1,4 @@
-use std::{collections::HashMap,fmt::Debug};
+use std::{collections::HashMap, fmt::Debug};
 
 use crate::vm::ir::IR;
 
@@ -70,10 +70,7 @@ impl VMVariableError {
     }
 }
 
-pub fn try_contains_as_vmobject(
-    value: GCRef,
-    other: GCRef,
-) -> Result<bool, VMVariableError> {
+pub fn try_contains_as_vmobject(value: GCRef, other: GCRef) -> Result<bool, VMVariableError> {
     if value.isinstance::<VMString>() {
         let string = value.as_const_type::<VMString>();
         return string.contains(other);
@@ -127,7 +124,7 @@ pub fn try_repr_vmobject(value: GCRef) -> Result<String, VMVariableError> {
         return Ok(format!("({})", repr));
     } else if value.isinstance::<VMLambda>() {
         let lambda = value.as_const_type::<VMLambda>();
-        return Ok(format!("VMLambda({})", lambda.signature));
+        return Ok(format!("VMLambda({}, default_args={}, result={})", lambda.signature, try_repr_vmobject(lambda.default_args_tuple.clone())?, try_repr_vmobject(lambda.result.clone())?));
     } else if value.isinstance::<VMInstructions>() {
         return Ok("VMInstructions".to_string());
     } else if value.isinstance::<VMVariableWrapper>() {
@@ -139,13 +136,13 @@ pub fn try_repr_vmobject(value: GCRef) -> Result<String, VMVariableError> {
     } else if value.isinstance::<VMNativeFunction>() {
         //let native_func = value.as_const_type::<VMNativeFunction>();
         return Ok(format!("VMNativeFunction()"));
-    } else if value.isinstance::<VMWrapper>(){
+    } else if value.isinstance::<VMWrapper>() {
         let wrapper = value.as_const_type::<VMWrapper>();
         return Ok(format!(
             "VMWrapper({})",
             try_repr_vmobject(wrapper.value_ref.clone())?
         ));
-    } 
+    }
     Err(VMVariableError::TypeError(
         value.clone(),
         "Cannot represent a non-representable type".to_string(),
@@ -179,7 +176,6 @@ pub fn try_add_as_vmobject(
     } else if value.isinstance::<VMRange>() {
         let named = value.as_const_type::<VMRange>();
         return named.add(other, gc_system);
-        
     }
     Err(VMVariableError::TypeError(
         value.clone(),
@@ -201,7 +197,6 @@ pub fn try_sub_as_vmobject(
     } else if value.isinstance::<VMRange>() {
         let named = value.as_const_type::<VMRange>();
         return named.sub(other, gc_system);
-        
     }
     Err(VMVariableError::TypeError(
         value.clone(),
@@ -454,6 +449,9 @@ pub fn try_key_of_as_vmobject(value: GCRef) -> Result<GCRef, VMVariableError> {
     } else if value.isinstance::<VMNamed>() {
         let named = value.as_const_type::<VMNamed>();
         return Ok(named.get_key());
+    } else if value.isinstance::<VMLambda>() {
+        let wrapper = value.as_const_type::<VMLambda>();
+        return Ok(wrapper.get_key());
     }
     Err(VMVariableError::KeyNotFound(value.clone(), value))
 }
@@ -467,6 +465,9 @@ pub fn try_value_of_as_vmobject(value: GCRef) -> Result<GCRef, VMVariableError> 
         return Ok(named.get_value());
     } else if value.isinstance::<VMWrapper>() {
         let wrapper = value.as_const_type::<VMWrapper>();
+        return Ok(wrapper.get_value());
+    } else if value.isinstance::<VMLambda>() {
+        let wrapper = value.as_const_type::<VMLambda>();
         return Ok(wrapper.get_value());
     }
     Err(VMVariableError::ValueNotFound(value.clone(), value))
@@ -606,7 +607,8 @@ impl VMObject for VMVariableWrapper {
 // 用于实现值的引用和解包
 // 通过valueof运算符解包
 #[derive(Debug)]
-pub struct VMWrapper { // 变体包装
+pub struct VMWrapper {
+    // 变体包装
     pub value_ref: GCRef,
     traceable: GCTraceable,
 }
@@ -993,10 +995,7 @@ impl VMString {
         ))
     }
 
-    pub fn contains(
-        &self,
-        other: GCRef,
-    ) -> Result<bool, VMVariableError> {
+    pub fn contains(&self, other: GCRef) -> Result<bool, VMVariableError> {
         if other.isinstance::<VMString>() {
             let other_string = other.as_const_type::<VMString>();
             return Ok(self.value.contains(&other_string.value));
@@ -1178,7 +1177,6 @@ impl VMFloat {
         return Ok(self.value);
     }
 }
-
 
 impl GCObject for VMFloat {
     fn free(&mut self) {
@@ -1365,7 +1363,6 @@ impl VMObject for VMNull {
         Ok(GCRef::wrap(self))
     }
 }
-
 
 // 键值对类型
 // 存储单个键值对，用于字典和对象属性
@@ -1582,10 +1579,7 @@ impl VMTuple {
                 }
             }
         }
-        Err(VMVariableError::KeyNotFound(
-            key.clone(),
-            self.value_ref()?,
-        ))
+        Err(VMVariableError::KeyNotFound(key.clone(), self.value_ref()?))
     }
 
     pub fn index_of(
@@ -1697,11 +1691,7 @@ impl VMTuple {
         Ok(GCRef::wrap(self))
     }
 
-    pub fn add(
-        &self,
-        other: GCRef,
-        gc_system: &mut GCSystem,
-    ) -> Result<GCRef, VMVariableError> {
+    pub fn add(&self, other: GCRef, gc_system: &mut GCSystem) -> Result<GCRef, VMVariableError> {
         if other.isinstance::<VMTuple>() {
             let other_tuple = other.as_const_type::<VMTuple>();
             let mut new_values = self.values.clone();
@@ -1714,10 +1704,7 @@ impl VMTuple {
         ))
     }
 
-    pub fn contains(
-        &self,
-        other: GCRef,
-    ) -> Result<bool, VMVariableError> {
+    pub fn contains(&self, other: GCRef) -> Result<bool, VMVariableError> {
         for value in &self.values {
             if try_eq_as_vmobject(value.clone(), other.clone()) {
                 return Ok(true);
@@ -1784,7 +1771,6 @@ impl VMObject for VMTuple {
     }
 }
 
-
 // 指令集类型
 // 存储IR指令和函数入口点映射
 // 由编译器生成，不可直接修改
@@ -1839,6 +1825,13 @@ impl VMObject for VMInstructions {
 // 存储可执行代码、默认参数和环境(self对象)
 // 支持函数调用，可保留闭包上下文
 // 由 (params) -> { body } 语法创建
+#[derive(Debug, PartialEq)]
+pub enum VMCoroutineStatus {
+    Running,
+    Pending,
+    Finished,
+}
+
 #[derive(Debug)]
 pub struct VMLambda {
     pub code_position: usize,
@@ -1846,7 +1839,10 @@ pub struct VMLambda {
     pub default_args_tuple: GCRef,
     pub self_object: Option<GCRef>,
     pub lambda_instructions: GCRef,
+    pub result: GCRef,
     traceable: GCTraceable,
+
+    pub coroutine_status: VMCoroutineStatus,
 }
 
 impl VMLambda {
@@ -1856,6 +1852,7 @@ impl VMLambda {
         default_args_tuple: GCRef,
         self_object: Option<GCRef>,
         lambda_instructions: GCRef,
+        result: GCRef,
     ) -> Self {
         if !lambda_instructions.isinstance::<VMInstructions>() {
             panic!("lambda_instructions must be a VMInstructions");
@@ -1869,8 +1866,20 @@ impl VMLambda {
             default_args_tuple: default_args_tuple.clone(),
             self_object,
             lambda_instructions: lambda_instructions.clone(),
-            traceable: GCTraceable::new(Some(vec![default_args_tuple, lambda_instructions])),
+            traceable: GCTraceable::new(Some(vec![
+                default_args_tuple,
+                lambda_instructions,
+                result.clone(),
+            ])),
+            result: result,
+            coroutine_status: VMCoroutineStatus::Running,
         }
+    }
+
+    pub fn set_result(&mut self, result_object: GCRef) {
+        self.traceable.remove_reference(&self.result);
+        self.result = result_object;
+        self.traceable.add_reference(&mut self.result);
     }
 
     pub fn set_self_object(&mut self, self_object: GCRef) {
@@ -1882,6 +1891,14 @@ impl VMLambda {
         self.traceable
             .add_reference(&mut self.self_object.clone().unwrap());
     }
+
+    pub fn get_value(&self) -> GCRef {
+        self.result.clone()
+    }
+
+    pub fn get_key(&self) -> GCRef {
+        self.default_args_tuple.clone()
+    }
 }
 
 impl GCObject for VMLambda {
@@ -1892,6 +1909,7 @@ impl GCObject for VMLambda {
         }
         self.traceable.remove_reference(&self.default_args_tuple);
         self.traceable.remove_reference(&self.lambda_instructions);
+        self.traceable.remove_reference(&self.result);
     }
 
     fn get_traceable(&mut self) -> &mut GCTraceable {
@@ -1906,12 +1924,15 @@ impl VMObject for VMLambda {
             .as_const_type::<VMTuple>()
             .copy(gc_system)?;
 
+        let new_result = self.result.as_const_type::<VMNull>().copy(gc_system)?;
+
         Ok(gc_system.new_object(VMLambda::new(
             self.code_position,
             self.signature.clone(),
             new_default_args_tuple,
             self.self_object.clone(),
             self.lambda_instructions.clone(),
+            new_result,
         )))
     }
 
@@ -1976,7 +1997,6 @@ impl VMObject for VMNativeFunction {
     }
 }
 
-
 #[derive(Debug)]
 pub struct VMRange {
     pub start: i64,
@@ -1996,11 +2016,7 @@ impl VMRange {
         self.end - self.start
     }
 
-    pub fn add(
-        &self,
-        other: GCRef,
-        gc_system: &mut GCSystem,
-    ) -> Result<GCRef, VMVariableError> {
+    pub fn add(&self, other: GCRef, gc_system: &mut GCSystem) -> Result<GCRef, VMVariableError> {
         if other.isinstance::<VMInt>() {
             let other_int = other.as_const_type::<VMInt>();
             return Ok(gc_system.new_object(VMRange::new(
@@ -2019,11 +2035,7 @@ impl VMRange {
             "Cannot add a value of non-integer type".to_string(),
         ))
     }
-    pub fn sub(
-        &self,
-        other: GCRef,
-        gc_system: &mut GCSystem,
-    ) -> Result<GCRef, VMVariableError> {
+    pub fn sub(&self, other: GCRef, gc_system: &mut GCSystem) -> Result<GCRef, VMVariableError> {
         if other.isinstance::<VMInt>() {
             let other_int = other.as_const_type::<VMInt>();
             return Ok(gc_system.new_object(VMRange::new(
@@ -2056,7 +2068,6 @@ impl VMRange {
             "Cannot check containment with a non-integer type".to_string(),
         ))
     }
-
 }
 impl GCObject for VMRange {
     fn free(&mut self) {

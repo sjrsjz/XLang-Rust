@@ -1,3 +1,5 @@
+use std::ascii::AsciiExt;
+use std::cell::RefCell;
 use std::collections::HashMap;
 use std::default;
 use std::fs::File;
@@ -5,6 +7,7 @@ use std::io::Read;
 
 use rand::seq::index;
 
+use crate::vm::gc;
 use crate::vm::ir::DebugInfo;
 use crate::vm::ir::IROperation;
 use crate::vm::ir::IRPackage;
@@ -68,6 +71,93 @@ impl VMError {
 }
 
 #[derive(Debug)]
+// 协程池
+pub struct VMCoroutinePool {
+    executors: Vec<(IRExecutor, isize)>, // executor, id
+    gen_id: isize,
+}
+
+impl VMCoroutinePool {
+    pub fn new() -> Self {
+        VMCoroutinePool {
+            executors: Vec::new(),
+            gen_id: 0,
+        }
+    }
+
+    pub fn new_coroutine(
+        &mut self,
+        lambda_object: GCRef,
+        original_code: Option<String>,
+        gc_system: &mut GCSystem,
+    ) -> Result<isize, VMError> {
+        let mut executor = IRExecutor::new(original_code);
+        executor.entry_lambda = Some(lambda_object.clone());
+        executor.init(lambda_object, gc_system)?;
+        self.executors.push((executor, self.gen_id));
+        let id = self.gen_id;
+        self.gen_id += 1;
+        Ok(id)
+    }
+
+    pub fn get_coroutine(&self, id: isize) -> Option<&IRExecutor> {
+        for (executor, executor_id) in &self.executors {
+            if *executor_id == id {
+                return Some(executor);
+            }
+        }
+        None
+    }
+
+    pub fn step_all(
+        &mut self,
+        gc_system: &mut GCSystem,
+    ) -> Result<Option<Vec<SpawnedCoroutine>>, VMError> {
+        let mut spawned_coroutines = None;
+        for (e, _id) in &mut self.executors {
+            spawned_coroutines = e.step(gc_system)?;
+        }
+        Ok(spawned_coroutines)
+    }
+
+    pub fn sweep_finished(&mut self) {
+        self.executors.retain(|(executor, _)| {
+            let coroutine_status = &executor
+                .entry_lambda
+                .as_ref()
+                .unwrap()
+                .as_type::<VMLambda>()
+                .coroutine_status;
+            *coroutine_status != VMCoroutineStatus::Finished
+        });
+    }
+
+    pub fn run_until_finished(&mut self, gc_system: &mut GCSystem) -> Result<(), VMError> {
+        loop {
+            let spawned_coroutines = self.step_all(gc_system)?;
+            self.sweep_finished();
+            if let Some(coroutines) = spawned_coroutines {
+                for coroutine in coroutines {
+                    let lambda_object = coroutine.lambda_ref;
+                    let source_code = coroutine.source_code;
+                    println!("spawn coroutine: {}", try_repr_vmobject(lambda_object.clone()).unwrap_or(format!("{:?}", lambda_object.clone())));
+                    self.new_coroutine(lambda_object, source_code, gc_system)?;
+                }
+            }
+            if self.executors.len() == 0 {
+                break;
+            }
+        }
+        Ok(())
+    }
+}
+#[derive(Debug)]
+pub struct SpawnedCoroutine {
+    lambda_ref: GCRef,
+    source_code: Option<String>,
+}
+
+#[derive(Debug)]
 pub struct IRExecutor {
     context: Context,
     stack: Vec<VMStackObject>,
@@ -75,6 +165,7 @@ pub struct IRExecutor {
     lambda_instructions: Vec<GCRef>,
     original_code: Option<String>,
     debug_info: Option<DebugInfo>,
+    entry_lambda: Option<GCRef>,
 }
 
 mod native_functions {
@@ -310,6 +401,7 @@ impl IRExecutor {
             lambda_instructions: Vec::new(),
             original_code: original_code,
             debug_info: None,
+            entry_lambda: None,
         }
     }
     pub fn set_debug_info(&mut self, debug_info: DebugInfo) {
@@ -478,11 +570,7 @@ impl IRExecutor {
         return Ok(());
     }
 
-    pub fn execute(
-        &mut self,
-        lambda_object: GCRef,
-        gc_system: &mut GCSystem,
-    ) -> Result<GCRef, VMError> {
+    pub fn init(&mut self, lambda_object: GCRef, gc_system: &mut GCSystem) -> Result<(), VMError> {
         self.enter_lambda(lambda_object.clone(), gc_system)?;
 
         self.ip = self
@@ -497,9 +585,24 @@ impl IRExecutor {
 
         //create builtin functions
         IRExecutor::inject_builtin_functions(&mut self.context, gc_system)?;
+        Ok(())
+    }
 
-        //run!
-        while self.lambda_instructions.len() > 0
+    pub fn step(
+        &mut self,
+        gc_system: &mut GCSystem,
+    ) -> Result<Option<Vec<SpawnedCoroutine>>, VMError> {
+        // spawned new coroutine, error
+
+        let coroutine_status = &self
+            .entry_lambda
+            .as_ref()
+            .unwrap()
+            .as_type::<VMLambda>()
+            .coroutine_status;
+
+        let mut spawned_coroutines = None;
+        if self.lambda_instructions.len() > 0
             && self.ip
                 < self
                     .lambda_instructions
@@ -508,6 +611,7 @@ impl IRExecutor {
                     .as_const_type::<VMInstructions>()
                     .instructions
                     .len() as isize
+            && *coroutine_status != VMCoroutineStatus::Finished
         {
             let instruction = self
                 .lambda_instructions
@@ -520,7 +624,7 @@ impl IRExecutor {
             //println!("# {} {}: {:?}", gc_system.count(), self.ip, instruction); // debug
             //self.context.debug_print_all_vars();
             //self.debug_output_stack();
-            self.execute_instruction(instruction.clone(), gc_system)?;
+            spawned_coroutines = self.execute_instruction(instruction, gc_system)?;
 
             //self.debug_output_stack(); // debug
             //println!("");
@@ -529,20 +633,30 @@ impl IRExecutor {
             //println!("GC Count: {}", gc_system.count()); // debug
             //gc_system.print_reference_graph(); // debug
             self.ip += 1;
-        }
-        let result = self.stack.pop();
-        if result.is_none() {
-            return Err(VMError::EmptyStack);
-        }
-        let result = result.unwrap();
-        match result {
-            VMStackObject::VMObject(obj) => {
-                return Ok(obj);
+        } else if *coroutine_status != VMCoroutineStatus::Finished {
+            let lambda_obj = self.entry_lambda.as_ref().unwrap().as_type::<VMLambda>();
+
+            lambda_obj.coroutine_status = VMCoroutineStatus::Finished;
+
+            let result = self.stack.pop();
+            if result.is_none() {
+                return Err(VMError::EmptyStack);
             }
-            _ => {
-                return Err(VMError::NotVMObject(result));
+            let result = result.unwrap();
+            match result {
+                VMStackObject::VMObject(result_obj) => {
+                    let old = lambda_obj.result.clone();
+                    lambda_obj.set_result(result_obj);
+                    self.offline_if_not_variable(&old);
+                    return Ok(None);
+                }
+                _ => {
+                    return Err(VMError::NotVMObject(result));
+                }
             }
         }
+
+        Ok(spawned_coroutines)
     }
 }
 
@@ -564,7 +678,7 @@ impl IRExecutor {
         &mut self,
         instruction: IR,
         gc_system: &mut GCSystem,
-    ) -> Result<(), VMError> {
+    ) -> Result<Option<Vec<SpawnedCoroutine>>, VMError> {
         match &instruction {
             IR::LoadInt(value) => {
                 let obj = gc_system.new_object(VMInt::new(*value));
@@ -592,13 +706,18 @@ impl IRExecutor {
                     return Err(VMError::ArgumentIsNotTuple(default_args_tuple_ref));
                 }
 
+                let lambda_result = gc_system.new_object(VMNull::new());
+
                 let obj = gc_system.new_object(VMLambda::new(
                     *code_position,
                     signature.clone(),
                     default_args_tuple_ref.clone(),
                     None,
                     self.lambda_instructions.last().unwrap().clone(),
+                    lambda_result.clone(),
                 ));
+                lambda_result.offline();
+
                 self.stack.push(VMStackObject::VMObject(obj));
                 self.offline_if_not_variable(&default_args_tuple);
             }
@@ -807,7 +926,37 @@ impl IRExecutor {
                 self.stack.push(VMStackObject::VMObject(obj_ref));
                 self.offline_if_not_variable(&obj);
             }
-
+            IR::Yield => {
+                if self.stack.len() < *self.context.stack_pointers.last().unwrap() {
+                    return Err(VMError::EmptyStack);
+                }
+                let (obj, obj_ref) = self.pop_and_ref()?;
+                self.entry_lambda
+                    .as_mut()
+                    .unwrap()
+                    .as_type::<VMLambda>()
+                    .set_result(obj_ref.clone());
+                self.stack.push(VMStackObject::VMObject(obj_ref));
+                self.offline_if_not_variable(&obj);
+            }
+            IR::Await => {
+                if self.stack.len() < *self.context.stack_pointers.last().unwrap() {
+                    return Err(VMError::EmptyStack);
+                }
+                let (obj, obj_ref) = self.pop_and_ref()?;
+                if !obj_ref.isinstance::<VMLambda>() {
+                    return Err(VMError::InvaildArgument(
+                        obj_ref,
+                        "Await: Not a lambda".to_string(),
+                    ));
+                }
+                let lambda = obj_ref.as_const_type::<VMLambda>();
+                let is_finished = lambda.coroutine_status == VMCoroutineStatus::Finished;
+                self.stack.push(VMStackObject::VMObject(
+                    gc_system.new_object(VMBoolean::new(is_finished)),
+                ));
+                self.offline_if_not_variable(&obj);
+            }
             IR::NewFrame => {
                 self.context.new_frame(&mut self.stack, false, 0, false);
             }
@@ -964,7 +1113,7 @@ impl IRExecutor {
                     self.stack.push(VMStackObject::VMObject(result));
                     self.offline_if_not_variable(&arg_tuple);
                     self.offline_if_not_variable(&lambda);
-                    return Ok(());
+                    return Ok(None);
                 }
 
                 if !lambda_ref.isinstance::<VMLambda>() {
@@ -997,7 +1146,42 @@ impl IRExecutor {
                 self.offline_if_not_variable(&arg_tuple);
                 self.offline_if_not_variable(&lambda);
             }
+            IR::AsyncCallLambda => {
+                let (arg_tuple, arg_tuple_ref) = self.pop_and_ref()?;
+                let (lambda, lambda_ref) = self.pop_and_ref()?;
 
+                if lambda_ref.isinstance::<VMNativeFunction>() {
+                    return Err(VMError::InvaildArgument(
+                        lambda_ref,
+                        "Native Function doesn't support async".to_string(),
+                    ));
+                }
+
+                if !lambda_ref.isinstance::<VMLambda>() {
+                    return Err(VMError::TryEnterNotLambda(lambda_ref));
+                }
+
+                let lambda_obj = lambda_ref.as_const_type::<VMLambda>();
+                let default_args = lambda_obj.default_args_tuple.clone();
+
+                let result = default_args
+                    .as_type::<VMTuple>()
+                    .assign_members(arg_tuple_ref.clone());
+                if result.is_err() {
+                    return Err(VMError::VMVariableError(result.unwrap_err()));
+                }
+
+                let spawned_coroutines = vec![SpawnedCoroutine {
+                    lambda_ref: lambda_ref.clone(),
+                    source_code: self.original_code.clone(),
+                }];
+                self.stack.push(VMStackObject::VMObject(lambda_ref));
+
+                self.offline_if_not_variable(&arg_tuple);
+                self.offline_if_not_variable(&lambda);
+
+                return Ok(Some(spawned_coroutines));
+            }
             IR::Wrap => {
                 let (obj, ref_obj) = self.pop_and_ref()?;
                 let wrapped = VMWrapper::new(ref_obj);
@@ -1175,15 +1359,19 @@ impl IRExecutor {
                     function_ips.clone(),
                 ));
 
+                let lambda_result = gc_system.new_object(VMNull::new());
+
                 let lambda = VMLambda::new(
                     *code_position,
                     "__main__".to_string(),
                     arg_tuple_ref,
                     None,
                     vm_instructions.clone(),
+                    lambda_result.clone(),
                 );
 
                 let lambda = gc_system.new_object(lambda);
+                lambda_result.offline();
 
                 self.stack.push(VMStackObject::VMObject(lambda));
                 self.offline_if_not_variable(&path_arg_named);
@@ -1193,6 +1381,6 @@ impl IRExecutor {
             _ => return Err(VMError::InvaildInstruction(instruction.clone())),
         }
 
-        Ok(())
+        Ok(None)
     }
 }

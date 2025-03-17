@@ -146,8 +146,7 @@ impl<'t> IRGenerator<'t> {
                     NameSpace::new(signature.clone(), Some(&self.namespace)),
                 );
 
-                let mut body_instructions =
-                    generator.generate(&ast_node.children[1])?; // body, compute redirect jump directly
+                let mut body_instructions = generator.generate(&ast_node.children[1])?; // body, compute redirect jump directly
                 body_instructions.push(IR::Return);
 
                 self.functions
@@ -191,6 +190,15 @@ impl<'t> IRGenerator<'t> {
                     instructions.extend(self.generate_without_redirect(child)?);
                 }
                 instructions.push(IR::CallLambda);
+                Ok(instructions)
+            }
+            ASTNodeType::AsyncLambdaCall => {
+                let mut instructions = Vec::new();
+                instructions.push(debug_info);
+                for child in &ast_node.children {
+                    instructions.extend(self.generate_without_redirect(child)?);
+                }
+                instructions.push(IR::AsyncCallLambda);
                 Ok(instructions)
             }
             ASTNodeType::Operation(opeartion) => {
@@ -292,6 +300,13 @@ impl<'t> IRGenerator<'t> {
                 instructions.push(debug_info);
                 instructions.extend(self.generate_without_redirect(&ast_node.children[0])?);
                 instructions.push(IR::Return);
+                Ok(instructions)
+            }
+            ASTNodeType::Yield => {
+                let mut instructions = Vec::new();
+                instructions.push(debug_info);
+                instructions.extend(self.generate_without_redirect(&ast_node.children[0])?);
+                instructions.push(IR::Yield);
                 Ok(instructions)
             }
             ASTNodeType::Number(number_str) => {
@@ -483,14 +498,17 @@ impl<'t> IRGenerator<'t> {
                 let mut instructions = Vec::new();
                 instructions.push(debug_info);
                 let (head_label, _) = self.new_label();
+                let (med_label, _) = self.new_label();
                 let (end_label, _) = self.new_label();
                 self.scope_stack
                     .push(Scope::Loop(head_label.clone(), end_label.clone()));
                 instructions.push(IR::RedirectLabel(head_label.clone()));
                 instructions.extend(self.generate_without_redirect(&ast_node.children[0])?);
-                instructions.push(IR::RedirectJumpIfFalse(end_label.clone()));
+                instructions.push(IR::RedirectJumpIfFalse(med_label.clone()));
                 instructions.extend(self.generate_without_redirect(&ast_node.children[1])?);
                 instructions.push(IR::RedirectJump(head_label.clone()));
+                instructions.push(IR::RedirectLabel(med_label.clone()));
+                instructions.push(IR::LoadNull);
                 instructions.push(IR::RedirectLabel(end_label.clone()));
                 self.scope_stack.pop();
                 Ok(instructions)
@@ -498,37 +516,54 @@ impl<'t> IRGenerator<'t> {
             ASTNodeType::Modifier(modifier) => {
                 let mut instructions = Vec::new();
                 instructions.push(debug_info);
-                instructions.extend(self.generate_without_redirect(&ast_node.children[0])?);
                 match modifier {
                     ASTNodeModifier::SelfOf => {
+                        instructions.extend(self.generate_without_redirect(&ast_node.children[0])?);
                         instructions.push(IR::SelfOf);
                     }
                     ASTNodeModifier::KeyOf => {
+                        instructions.extend(self.generate_without_redirect(&ast_node.children[0])?);
                         instructions.push(IR::KeyOf);
                     }
                     ASTNodeModifier::ValueOf => {
+                        instructions.extend(self.generate_without_redirect(&ast_node.children[0])?);
                         instructions.push(IR::ValueOf);
                     }
                     ASTNodeModifier::Ref => {
+                        instructions.extend(self.generate_without_redirect(&ast_node.children[0])?);
                         instructions.push(IR::RefValue);
                     }
                     ASTNodeModifier::Deref => {
+                        instructions.extend(self.generate_without_redirect(&ast_node.children[0])?);
                         instructions.push(IR::DerefValue);
                     }
                     ASTNodeModifier::Assert => {
+                        instructions.extend(self.generate_without_redirect(&ast_node.children[0])?);
                         instructions.push(IR::Assert);
                     }
                     ASTNodeModifier::Copy => {
+                        instructions.extend(self.generate_without_redirect(&ast_node.children[0])?);
                         instructions.push(IR::CopyValue);
                     }
                     ASTNodeModifier::Import => {
+                        instructions.extend(self.generate_without_redirect(&ast_node.children[0])?);
                         instructions.push(IR::Import(ast_node.children[0].token.unwrap().position));
                     }
                     ASTNodeModifier::TypeOf => {
+                        instructions.extend(self.generate_without_redirect(&ast_node.children[0])?);
                         instructions.push(IR::TypeOf);
                     }
                     ASTNodeModifier::Wrap => {
+                        instructions.extend(self.generate_without_redirect(&ast_node.children[0])?);
                         instructions.push(IR::Wrap);
+                    }
+                    ASTNodeModifier::Await => {
+                        let (label, _) = self.new_label();
+                        instructions.push(IR::RedirectLabel(label.clone()));
+                        instructions.extend(self.generate_without_redirect(&ast_node.children[0])?);
+                        instructions.push(IR::Await);
+                        instructions.push(IR::RedirectJumpIfFalse(label));
+                        instructions.push(IR::LoadNull);
                     }
                 }
                 Ok(instructions)
