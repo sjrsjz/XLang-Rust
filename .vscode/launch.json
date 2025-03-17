@@ -16,7 +16,10 @@
                     "kind": "bin"
                 }
             },
-            "args": [],
+            "args": [
+                "run",
+                "modules/test.x"
+            ],
             "cwd": "${workspaceFolder}",
             "env": {
                 "RUST_BACKTRACE": "1",

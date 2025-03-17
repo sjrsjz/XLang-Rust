@@ -139,7 +139,7 @@ impl<'t> IRGenerator<'t> {
                 instructions.push(debug_info);
                 let args = &ast_node.children[0];
                 let args_instructions = self.generate_without_redirect(&args)?;
-                let ( full_signature,signature) = self.new_function_signature();
+                let (full_signature, signature) = self.new_function_signature();
 
                 let mut generator = IRGenerator::new(
                     self.functions,
@@ -150,13 +150,17 @@ impl<'t> IRGenerator<'t> {
                     generator.generate(&ast_node.children[1])?; // body, compute redirect jump directly
                 body_instructions.push(IR::Return);
 
-                self.functions.append(signature.clone(), body_instructions);
+                self.functions
+                    .append(full_signature.clone(), body_instructions);
 
                 instructions.extend(args_instructions);
                 if args.node_type != ASTNodeType::Tuple {
-                    instructions.push(IR::BuildTuple(args.children.len()));
+                    instructions.push(IR::BuildTuple(1));
                 }
-                instructions.push(IR::LoadLambda(full_signature, ast_node.token.unwrap().position));
+                instructions.push(IR::LoadLambda(
+                    full_signature,
+                    ast_node.token.unwrap().position,
+                ));
                 Ok(instructions)
             }
             ASTNodeType::Assign => {
@@ -294,7 +298,7 @@ impl<'t> IRGenerator<'t> {
                 // check if number_str is float or int
                 let mut instructions = Vec::new();
                 instructions.push(debug_info);
-                if let Ok(number) = number_str.parse::<i32>() {
+                if let Ok(number) = number_str.parse::<i64>() {
                     instructions.push(IR::LoadInt(number));
                 } else if let Ok(number) = number_str.parse::<f64>() {
                     instructions.push(IR::LoadFloat(number));
@@ -345,6 +349,7 @@ impl<'t> IRGenerator<'t> {
                 let mut instructions = Vec::new();
                 instructions.push(debug_info);
                 for child in &ast_node.children {
+                    instructions.push(IR::ResetStack);
                     instructions.extend(self.generate_without_redirect(child)?);
                 }
                 Ok(instructions)
@@ -424,6 +429,7 @@ impl<'t> IRGenerator<'t> {
             ASTNodeType::Break => {
                 let mut instructions = Vec::new();
                 instructions.push(debug_info);
+                instructions.extend(self.generate_without_redirect(&ast_node.children[0])?);
                 let mut frames_to_pop = 0;
                 let mut found_loop = false;
                 let mut loop_label = None;
@@ -453,6 +459,7 @@ impl<'t> IRGenerator<'t> {
             ASTNodeType::Continue => {
                 let mut instructions = Vec::new();
                 instructions.push(debug_info);
+                instructions.extend(self.generate_without_redirect(&ast_node.children[0])?);
                 let mut found_loop = false;
                 let mut loop_label = None;
                 for scope in self.scope_stack.iter().rev() {
@@ -481,7 +488,7 @@ impl<'t> IRGenerator<'t> {
                     .push(Scope::Loop(head_label.clone(), end_label.clone()));
                 instructions.push(IR::RedirectLabel(head_label.clone()));
                 instructions.extend(self.generate_without_redirect(&ast_node.children[0])?);
-                instructions.push(IR::RedirectJumpIfFalse(head_label.clone()));
+                instructions.push(IR::RedirectJumpIfFalse(end_label.clone()));
                 instructions.extend(self.generate_without_redirect(&ast_node.children[1])?);
                 instructions.push(IR::RedirectJump(head_label.clone()));
                 instructions.push(IR::RedirectLabel(end_label.clone()));
@@ -491,6 +498,7 @@ impl<'t> IRGenerator<'t> {
             ASTNodeType::Modifier(modifier) => {
                 let mut instructions = Vec::new();
                 instructions.push(debug_info);
+                instructions.extend(self.generate_without_redirect(&ast_node.children[0])?);
                 match modifier {
                     ASTNodeModifier::SelfOf => {
                         instructions.push(IR::SelfOf);
@@ -519,7 +527,26 @@ impl<'t> IRGenerator<'t> {
                     ASTNodeModifier::TypeOf => {
                         instructions.push(IR::TypeOf);
                     }
+                    ASTNodeModifier::Wrap => {
+                        instructions.push(IR::Wrap);
+                    }
                 }
+                Ok(instructions)
+            }
+            ASTNodeType::Range => {
+                let mut instructions = Vec::new();
+                instructions.push(debug_info);
+                instructions.extend(self.generate_without_redirect(&ast_node.children[0])?);
+                instructions.extend(self.generate_without_redirect(&ast_node.children[1])?);
+                instructions.push(IR::BuildRange);
+                Ok(instructions)
+            }
+            ASTNodeType::In => {
+                let mut instructions = Vec::new();
+                instructions.push(debug_info);
+                instructions.extend(self.generate_without_redirect(&ast_node.children[0])?);
+                instructions.extend(self.generate_without_redirect(&ast_node.children[1])?);
+                instructions.push(IR::In);
                 Ok(instructions)
             }
         }
@@ -536,42 +563,42 @@ impl<'t> IRGenerator<'t> {
     fn redirect_jump(&self, irs: Vec<IR>) -> Result<Vec<IR>, IRGeneratorError> {
         let mut reduced_irs = Vec::new();
         let mut label_map = std::collections::HashMap::new();
-        
+
         // 首先收集所有标签的位置
-        for (i, ir) in irs.iter().enumerate() {
+        for (_, ir) in irs.iter().enumerate() {
             if let IR::RedirectLabel(label) = ir {
                 label_map.insert(label.clone(), reduced_irs.len());
             } else {
                 reduced_irs.push(ir.clone());
             }
         }
-        
+
         // 转换所有跳转指令
         for i in 0..reduced_irs.len() {
             match &reduced_irs[i] {
                 IR::RedirectJump(label) => {
                     if let Some(&target_pos) = label_map.get(label) {
-                        let offset = target_pos as isize - i as isize;
+                        let offset = target_pos as isize - i as isize - 1;
                         reduced_irs[i] = IR::JumpOffset(offset);
                     } else {
                         return Err(IRGeneratorError::InvalidLabel);
                     }
-                },
+                }
                 IR::RedirectJumpIfFalse(label) => {
                     if let Some(&target_pos) = label_map.get(label) {
-                        let offset = target_pos as isize - i as isize;
+                        let offset = target_pos as isize - i as isize - 1;
                         reduced_irs[i] = IR::JumpIfFalseOffset(offset);
                     } else {
                         return Err(IRGeneratorError::InvalidLabel);
                     }
-                },
+                }
                 _ => {}
             }
         }
-        
+
         Ok(reduced_irs)
     }
-    
+
     /// 移除相邻的debug_info指令，只保留最新的一个
     ///
     /// # Arguments
@@ -585,10 +612,10 @@ impl<'t> IRGenerator<'t> {
         if irs.is_empty() {
             return Vec::new();
         }
-        
+
         let mut result = Vec::new();
         let mut last_was_debug = false;
-        
+
         for ir in irs {
             match ir {
                 IR::DebugInfo(_) => {
@@ -600,7 +627,7 @@ impl<'t> IRGenerator<'t> {
                         result.push(ir);
                         last_was_debug = true;
                     }
-                },
+                }
                 _ => {
                     // 非DEBUG_INFO指令直接添加
                     result.push(ir);
@@ -608,10 +635,10 @@ impl<'t> IRGenerator<'t> {
                 }
             }
         }
-        
+
         result
     }
-    
+
     /// 生成并优化IR指令
     ///
     /// # Arguments

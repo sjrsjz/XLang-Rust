@@ -53,7 +53,7 @@ impl ParserError<'_> {
                     .position(|t| t.position == end.position)
                     .unwrap();
                 for token in tokens[start_idx..=end_idx].iter() {
-                    code.push_str(&token.token);
+                    code.push_str(&(token.token.to_string() + " "));
                 }
                 format!("解析错误: 未完全匹配 '{}' 在位置 {}", code, start.position)
             }
@@ -122,7 +122,7 @@ fn get_next_tokens<'a>(
         }
     }
     if stack.len() > 0 {
-        let (last, last_position) = stack.pop().unwrap();
+        let (_, last_position) = stack.pop().unwrap();
         return Err(ParserError::UnmatchedParenthesis(
             &tokens[last_position],
             &tokens[index - 1],
@@ -171,6 +171,8 @@ pub enum ASTNodeType {
     NamedTo, // x => y (x is name of y)
     Break, // break
     Continue, // continue
+    Range, // x..y
+    In,
 }
 
 #[derive(Debug, PartialEq, Eq, Clone)]
@@ -208,6 +210,7 @@ pub enum ASTNodeModifier {
     Assert,  // Assert
     Import,  // Import
     TypeOf,  // TypeOf
+    Wrap,    // Wrap
 }
 
 #[derive(Debug)]
@@ -238,16 +241,15 @@ impl ASTNode<'_> {
 
     pub fn formatted_print(&self, indent: usize) {
         let indent_str = " ".repeat(indent);
-        let mut output = String::new();
-        match &self.node_type {
+        let output = match &self.node_type {
             node_type @ (ASTNodeType::Variable(v)
             | ASTNodeType::Number(v)
             | ASTNodeType::String(v)
             | ASTNodeType::Boolean(v)) => {
-                output = format!("{}{:?}: {:?}", indent_str, node_type, v)
+                format!("{}{:?}: {:?}", indent_str, node_type, v)
             }
-            node_type @ _ => output = format!("{}{:?}", indent_str, node_type),
-        }
+            node_type @ _ => format!("{}{:?}", indent_str, node_type),
+        };
 
         println!("{}", output);
 
@@ -410,7 +412,9 @@ fn match_all<'t>(
     ));
 
     node_matcher.add_matcher(Box::new(
-        |tokens, current| -> Result<(Option<ASTNode<'t>>, usize), ParserError<'t>> {
+        |tokens: &Vec<&[Token<'_>]>,
+         current|
+         -> Result<(Option<ASTNode<'t>>, usize), ParserError<'t>> {
             match_tuple(tokens, current)
         },
     ));
@@ -447,13 +451,13 @@ fn match_all<'t>(
 
     node_matcher.add_matcher(Box::new(
         |tokens, current| -> Result<(Option<ASTNode<'t>>, usize), ParserError<'t>> {
-            match_if(tokens, current)
+            match_control_flow(tokens, current)
         },
     ));
 
     node_matcher.add_matcher(Box::new(
         |tokens, current| -> Result<(Option<ASTNode<'t>>, usize), ParserError<'t>> {
-            match_control_flow(tokens, current)
+            match_if(tokens, current)
         },
     ));
 
@@ -496,6 +500,18 @@ fn match_all<'t>(
     node_matcher.add_matcher(Box::new(
         |tokens, current| -> Result<(Option<ASTNode<'t>>, usize), ParserError<'t>> {
             match_lambda_def(tokens, current)
+        },
+    ));
+
+    node_matcher.add_matcher(Box::new(
+        |tokens, current| -> Result<(Option<ASTNode<'t>>, usize), ParserError<'t>> {
+            match_range(tokens, current)
+        },
+    ));
+
+    node_matcher.add_matcher(Box::new(
+        |tokens, current| -> Result<(Option<ASTNode<'t>>, usize), ParserError<'t>> {
+            match_in(tokens, current)
         },
     ));
 
@@ -603,7 +619,7 @@ fn match_tuple<'t>(
     let mut separated = Vec::<ASTNode>::new();
     while current + offset < tokens.len() {
         if is_symbol(&tokens[current + offset], ",") {
-            let (node, node_offset) = match_all(tokens, current + offset + 1)?;
+            let (node, node_offset) = match_all(&left_tokens, 0)?;
             if node.is_none() {
                 return Ok((None, 0));
             }
@@ -632,7 +648,7 @@ fn match_tuple<'t>(
     separated.push(node.unwrap());
     return Ok((
         Some(ASTNode::new(
-            ASTNodeType::Expressions,
+            ASTNodeType::Tuple,
             Some(&tokens[current][0]),
             Some(separated),
         )),
@@ -693,40 +709,52 @@ fn match_assign<'t>(
     tokens: &Vec<GatheredTokens<'t>>,
     current: usize,
 ) -> Result<(Option<ASTNode<'t>>, usize), ParserError<'t>> {
-    if current + 2 >= tokens.len() {
-        return Ok((None, 0));
-    }
-    if !is_symbol(&tokens[current + 1], "=") {
-        // x = expression
+    // 确保有足够的 token 来处理赋值
+    if current >= tokens.len() {
         return Ok((None, 0));
     }
 
-    let left_tokens = gather(&tokens[current])?;
+    // 向右搜索 = 符号
+    let mut offset = 0;
+    let mut left_tokens = Vec::new();
 
-    let (right, right_offset) = match_all(tokens, current + 2)?;
-    if right.is_none() {
+    while current + offset < tokens.len() {
+        // 找到 = 符号
+        if tokens[current + offset].len() == 1
+            && tokens[current + offset][0].token_type == TokenType::SYMBOL
+            && tokens[current + offset][0].token == "="
+        {
+            break;
+        }
+
+        left_tokens.push(tokens[current + offset]);
+        offset += 1;
+    }
+
+    // 没找到 = 符号
+    if current + offset >= tokens.len() || !is_symbol(&tokens[current + offset], "=") {
         return Ok((None, 0));
     }
-    let right = right.unwrap();
 
+    // 解析左侧表达式
     let (left, left_offset) = match_all(&left_tokens, 0)?;
     if left.is_none() {
         return Ok((None, 0));
     }
     if left_offset != left_tokens.len() {
         return Err(ParserError::NotFullyMatched(
-            &tokens[current][0],
-            &tokens[current][tokens[current].len() - 1],
+            &left_tokens[0][0],
+            &left_tokens[left_tokens.len() - 1][left_tokens[left_tokens.len() - 1].len() - 1],
         ));
     }
     let left = left.unwrap();
 
-    if !matches!(
-        left.node_type,
-        ASTNodeType::Variable(_) | ASTNodeType::String(_)
-    ) {
-        return Err(ParserError::InvalidVariableName(&tokens[current][0]));
+    // 解析右侧表达式
+    let (right, right_offset) = match_all(tokens, current + offset + 1)?;
+    if right.is_none() {
+        return Ok((None, 0));
     }
+    let right = right.unwrap();
 
     return Ok((
         Some(ASTNode::new(
@@ -734,10 +762,9 @@ fn match_assign<'t>(
             Some(&tokens[current][0]),
             Some(vec![left, right]),
         )),
-        right_offset + 2,
+        offset + right_offset + 1, // +1 是因为 = 符号
     ));
 }
-
 fn match_named_to<'t>(
     tokens: &Vec<GatheredTokens<'t>>,
     current: usize,
@@ -762,7 +789,11 @@ fn match_named_to<'t>(
             &tokens[current][tokens[current].len() - 1],
         ));
     }
-    let left = left.unwrap();
+    let mut left = left.unwrap();
+
+    if let ASTNodeType::Variable(name) = left.node_type {
+        left = ASTNode::new(ASTNodeType::String(name), left.token, Some(left.children));
+    }
 
     let (right, right_offset) = match_all(tokens, current + 2)?;
     if right.is_none() {
@@ -942,22 +973,46 @@ fn match_control_flow<'t>(
         return Ok((None, 0));
     }
     if is_identifier(&tokens[current], "break") {
+        let right_tokens = tokens[current + 1..].to_vec();
+        let (right, right_offset) = match_all(&right_tokens, 0)?;
+        if right.is_none() {
+            return Ok((None, 0));
+        }
+        if right_offset != right_tokens.len() {
+            return Err(ParserError::NotFullyMatched(
+                &tokens[current][0],
+                &tokens[current][tokens[current].len() - 1],
+            ));
+        }
+        let right = right.unwrap();
         return Ok((
             Some(ASTNode::new(
                 ASTNodeType::Break,
                 Some(&tokens[current][0]),
-                None,
+                Some(vec![right]),
             )),
-            1,
+            right_offset + 1,
         ));
     } else if is_identifier(&tokens[current], "continue") {
+        let right_tokens = tokens[current + 1..].to_vec();
+        let (right, right_offset) = match_all(&right_tokens, 0)?;
+        if right.is_none() {
+            return Ok((None, 0));
+        }
+        if right_offset != right_tokens.len() {
+            return Err(ParserError::NotFullyMatched(
+                &tokens[current][0],
+                &tokens[current][tokens[current].len() - 1],
+            ));
+        }
+        let right = right.unwrap();
         return Ok((
             Some(ASTNode::new(
                 ASTNodeType::Continue,
                 Some(&tokens[current][0]),
-                None,
+                Some(vec![right]),
             )),
-            1,
+            right_offset + 1,
         ));
     }
     return Ok((None, 0));
@@ -1436,7 +1491,7 @@ fn match_modifier<'t>(
     }
     if tokens[current].len() == 1
         && vec![
-            "copy", "ref", "deref", "keyof", "valueof", "selfof", "assert", "import",
+            "copy", "ref", "deref", "keyof", "valueof", "selfof", "assert", "import", "wrap", "typeof"
         ]
         .contains(&tokens[current][0].token)
     {
@@ -1455,6 +1510,8 @@ fn match_modifier<'t>(
             "selfof" => ASTNodeModifier::SelfOf,
             "assert" => ASTNodeModifier::Assert,
             "import" => ASTNodeModifier::Import,
+            "wrap" => ASTNodeModifier::Wrap,
+            "typeof" => ASTNodeModifier::TypeOf,
             _ => return Ok((None, 0)),
         };
         return Ok((
@@ -1563,10 +1620,15 @@ fn match_member_access_and_call<'t>(
                 return Ok((None, 0));
             }
 
-            let right = right.unwrap();
+            let mut right = right.unwrap();
 
             // 如果右侧是变量，将其视为属性名
-            if !matches!(right.node_type, ASTNodeType::Variable(_)) {
+            if let ASTNodeType::Variable(var_name) = right.node_type {
+                right = ASTNode::new(
+                    ASTNodeType::String(var_name),
+                    right.token,
+                    Some(right.children),
+                );
                 return Ok((
                     Some(ASTNode::new(
                         ASTNodeType::GetAttr,
@@ -1577,7 +1639,14 @@ fn match_member_access_and_call<'t>(
                 ));
             }
 
-            return Ok((None, 0));
+            return Ok((
+                Some(ASTNode::new(
+                    ASTNodeType::GetAttr,
+                    Some(&tokens[current][0]),
+                    Some(vec![left, right]),
+                )),
+                (access_pos - current) + 1 + right_offset,
+            ));
         }
 
         // 处理函数调用 func(args)
@@ -1586,49 +1655,116 @@ fn match_member_access_and_call<'t>(
             let args_tokens = unwrap_brace(&tokens[access_pos])?;
             let gathered_args = gather(args_tokens)?;
 
-            if gathered_args.len() == 0 {
-                // 处理无参数情况
-                return Ok((
-                    Some(ASTNode::new(
-                        ASTNodeType::LambdaCall,
-                        Some(&tokens[current][0]),
-                        Some(vec![left]),
-                    )),
-                    (access_pos - current) + 1,
-                ));
-            } else {
-                // 处理有参数情况
-                let (args_node, _) = match_all(&gathered_args, 0)?;
-                if args_node.is_none() {
-                    return Ok((None, 0));
-                }
-
-                let args_node = args_node.unwrap();
-
-                // 如果不是元组类型，将其包装为元组
-                let args = if args_node.node_type != ASTNodeType::Tuple {
-                    ASTNode::new(
-                        ASTNodeType::Tuple,
-                        Some(&tokens[access_pos][0]),
-                        Some(vec![args_node]),
-                    )
-                } else {
-                    args_node
-                };
-
-                return Ok((
-                    Some(ASTNode::new(
-                        ASTNodeType::LambdaCall,
-                        Some(&tokens[current][0]),
-                        Some(vec![left, args]),
-                    )),
-                    (access_pos - current) + 1,
-                ));
+            // 处理有参数情况
+            let (args_node, _) = match_all(&gathered_args, 0)?;
+            if args_node.is_none() {
+                return Ok((None, 0));
             }
+
+            let args_node = args_node.unwrap();
+
+            // 如果不是元组类型，将其包装为元组
+            let args = if args_node.node_type != ASTNodeType::Tuple {
+                ASTNode::new(
+                    ASTNodeType::Tuple,
+                    Some(&tokens[access_pos][0]),
+                    Some(vec![args_node]),
+                )
+            } else {
+                args_node
+            };
+
+            return Ok((
+                Some(ASTNode::new(
+                    ASTNodeType::LambdaCall,
+                    Some(&tokens[current][0]),
+                    Some(vec![left, args]),
+                )),
+                (access_pos - current) + 1,
+            ));
         }
 
         _ => unreachable!(),
     }
+}
+
+fn match_range<'t>(
+    tokens: &Vec<GatheredTokens<'t>>,
+    current: usize,
+) -> Result<(Option<ASTNode<'t>>, usize), ParserError<'t>> {
+    if current + 2 >= tokens.len() {
+        return Ok((None, 0));
+    }
+    if !is_symbol(&tokens[current + 1], "..") {
+        // x..y
+        return Ok((None, 0));
+    }
+
+    let left_tokens = gather(&tokens[current])?;
+    let (left, left_offset) = match_all(&left_tokens, 0)?;
+    if left.is_none() {
+        return Ok((None, 0));
+    }
+    let left = left.unwrap();
+    if left_offset != left_tokens.len() {
+        return Err(ParserError::NotFullyMatched(
+            &tokens[current][0],
+            &tokens[current][tokens[current].len() - 1],
+        ));
+    }
+    let (right, right_offset) = match_all(tokens, current + 2)?;
+    if right.is_none() {
+        return Ok((None, 0));
+    }
+    let right = right.unwrap();
+
+    return Ok((
+        Some(ASTNode::new(
+            ASTNodeType::Range,
+            Some(&tokens[current][0]),
+            Some(vec![left, right]),
+        )),
+        right_offset + 2,
+    ));
+}
+
+fn match_in<'t>(
+    tokens: &Vec<GatheredTokens<'t>>,
+    current: usize,
+) -> Result<(Option<ASTNode<'t>>, usize), ParserError<'t>> {
+    if current + 2 >= tokens.len() {
+        return Ok((None, 0));
+    }
+    if !is_identifier(&tokens[current + 1], "in") {
+        return Ok((None, 0));
+    }
+
+    let left_tokens = gather(&tokens[current])?;
+    let (left, left_offset) = match_all(&left_tokens, 0)?;
+    if left.is_none() {
+        return Ok((None, 0));
+    }
+    let left = left.unwrap();
+    if left_offset != left_tokens.len() {
+        return Err(ParserError::NotFullyMatched(
+            &tokens[current][0],
+            &tokens[current][tokens[current].len() - 1],
+        ));
+    }
+    let (right, right_offset) = match_all(tokens, current + 2)?;
+    if right.is_none() {
+        return Ok((None, 0));
+    }
+    let right = right.unwrap();
+
+    return Ok((
+        Some(ASTNode::new(
+            ASTNodeType::In,
+            Some(&tokens[current][0]),
+            Some(vec![left, right]),
+        )),
+        right_offset + 2,
+    ));
 }
 
 fn match_variable<'t>(
@@ -1640,7 +1776,7 @@ fn match_variable<'t>(
     }
 
     // 匹配括号内容（元组）
-    if is_bracket(&tokens[current]) {
+    if is_bracket(&tokens[current]) || is_square_bracket(&tokens[current]) {
         let inner_tokens = unwrap_brace(&tokens[current])?;
 
         // 处理空元组 ()

@@ -1,4 +1,3 @@
-
 #[derive(Debug, Clone)]
 pub enum TokenType {
     NUMBER,
@@ -74,8 +73,6 @@ impl<'a> Token<'a> {
 }
 
 
-
-
 pub mod lexer {
     use std::cell::RefCell;
 
@@ -84,38 +81,72 @@ pub mod lexer {
             "+", "-", "*", "/", "\\", "%", "&", "!", "^", "~", "=", "==", ">", "<", "<=", ">=",
             "!=", "?=", "|", "?", ":>", "#", "&&", ",", ".", "\n", ":", "->", "<<", ">>", "/*",
             "*/", ";", " ", ":=", "|>", "<|", "::", "=>", "++", "||", ">>", "<<", "\"\"\"", "'''",
-            "(", ")", "[", "]", "{", "}",
+            "(", ")", "[", "]", "{", "}", "..", "?->", "<:" // 添加了<:运算符
         ];
         operators.contains(&symbol)
     }
 
     // Tokenize the input code
     pub fn tokenize(code: &str) -> Vec<super::Token> {
+        let chars: Vec<char> = code.chars().collect(); // 预处理，将字符串转换为字符数组
         let tokens = RefCell::new(Vec::<super::Token>::new());
         let curr_pos = RefCell::new(0usize);
+
+        // 辅助函数：获取指定位置的子字符串
+        let substr = |start: usize, len: usize| -> String {
+            if start + len > chars.len() {
+                return "".to_string();
+            }
+            chars[start..start+len].iter().collect()
+        };
+
+        // 辅助函数：获取字符的字节索引
+        let get_byte_index = |char_index: usize| -> usize {
+            if char_index == 0 {
+                return 0;
+            }
+            let s: String = chars[0..char_index].iter().collect();
+            s.len()
+        };
 
         // Skip whitespace
         let skip_space = || {
             let mut curr_pos = curr_pos.borrow_mut();
-            while *curr_pos < code.len() && code.chars().nth(*curr_pos).unwrap().is_whitespace() {
+            while *curr_pos < chars.len() && chars[*curr_pos].is_whitespace() {
                 *curr_pos += 1;
             }
         };
 
         // 测试字符串匹配的闭包
         let test_string = |test_str: &str, pos| -> bool {
-            if pos + test_str.len() > code.len() {
+            let test_chars: Vec<char> = test_str.chars().collect();
+            if pos + test_chars.len() > chars.len() {
                 return false;
             }
-            String::from(&code[pos..pos + test_str.len()]) == test_str
+            
+            for i in 0..test_chars.len() {
+                if chars[pos + i] != test_chars[i] {
+                    return false;
+                }
+            }
+            true
         };
 
         // 测试数字模式的闭包
         let test_number = |pos| -> usize {
+            if pos >= chars.len() {
+                return 0;
+            }
+            
+            let substring: String = chars[pos..].iter().collect();
             let number_pattern = r"^\d*\.?\d+([eE][-+]?\d+)?";
             let re = regex::Regex::new(number_pattern).unwrap();
-            if let Some(matched) = re.find(&code[pos..]) {
-                matched.end()
+            
+            if let Some(matched) = re.find(&substring) {
+                let end_pos = matched.end();
+                // 字节索引转换为字符索引
+                let char_count = substring[..end_pos].chars().count();
+                char_count
             } else {
                 0
             }
@@ -128,7 +159,7 @@ pub mod lexer {
             if len == 0 {
                 return None;
             }
-            let token = String::from(&code[*pos..*pos + len]);
+            let token: String = chars[*pos..*pos + len].iter().collect();
             *pos += len;
             return Some((token.clone(), token)); // token, original token
         };
@@ -136,13 +167,14 @@ pub mod lexer {
         let read_base64 = || -> Option<(String, String)> {
             let mut curr_pos = curr_pos.borrow_mut();
             let mut current_token = String::new();
+            
             if test_string("$\"", *curr_pos) {
                 *curr_pos += 2;
-                while *curr_pos < code.len() {
-                    if code.chars().nth(*curr_pos).unwrap() == '\\' {
+                while *curr_pos < chars.len() {
+                    if chars[*curr_pos] == '\\' {
                         *curr_pos += 1;
-                        if *curr_pos < code.len() {
-                            let escape_char = code.chars().nth(*curr_pos).unwrap();
+                        if *curr_pos < chars.len() {
+                            let escape_char = chars[*curr_pos];
                             match escape_char {
                                 'n' => current_token.push('\n'),
                                 'r' => current_token.push('\r'),
@@ -154,18 +186,14 @@ pub mod lexer {
                                 '"' | '\\' => current_token.push(escape_char),
                                 'u' => {
                                     *curr_pos += 1;
-                                    if *curr_pos + 4 < code.len() {
-                                        let unicode_str = &code[*curr_pos..*curr_pos + 4];
-                                        if let Ok(unicode_char) =
-                                            u32::from_str_radix(unicode_str, 16)
-                                        {
-                                            current_token
-                                                .push(std::char::from_u32(unicode_char).unwrap());
+                                    if *curr_pos + 4 <= chars.len() {
+                                        let unicode_str: String = chars[*curr_pos..*curr_pos + 4].iter().collect();
+                                        if let Ok(unicode_char) = u32::from_str_radix(&unicode_str, 16) {
+                                            current_token.push(std::char::from_u32(unicode_char).unwrap());
                                             *curr_pos += 3;
                                         }
                                     }
                                 }
-
                                 _ => {
                                     current_token.push('\\');
                                     current_token.push(escape_char);
@@ -175,14 +203,14 @@ pub mod lexer {
                         } else {
                             return None;
                         }
-                    } else if code.chars().nth(*curr_pos).unwrap() == '"' {
+                    } else if chars[*curr_pos] == '"' {
                         *curr_pos += 1;
                         return Some((
                             current_token.clone(),
                             String::from("$\"") + &current_token + "\"",
                         ));
                     } else {
-                        current_token.push(code.chars().nth(*curr_pos).unwrap());
+                        current_token.push(chars[*curr_pos]);
                         *curr_pos += 1;
                     }
                 }
@@ -201,26 +229,23 @@ pub mod lexer {
                 let mut divider = String::new();
 
                 // 读取分隔符
-                while *curr_pos < code.len() && code.chars().nth(*curr_pos).unwrap() != '(' {
-                    divider.push(code.chars().nth(*curr_pos).unwrap());
+                while *curr_pos < chars.len() && chars[*curr_pos] != '(' {
+                    divider.push(chars[*curr_pos]);
                     *curr_pos += 1;
                 }
 
-                if *curr_pos < code.len() {
+                if *curr_pos < chars.len() {
                     *curr_pos += 1; // 跳过 '('
                     let end_divider = format!(")){}", divider);
 
-                    while *curr_pos < code.len()
-                        && !test_string(&(end_divider.clone() + "\""), *curr_pos)
-                    {
-                        current_token.push(code.chars().nth(*curr_pos).unwrap());
+                    while *curr_pos < chars.len() && !test_string(&(end_divider.clone() + "\""), *curr_pos) {
+                        current_token.push(chars[*curr_pos]);
                         *curr_pos += 1;
                     }
 
-                    if *curr_pos < code.len() {
+                    if *curr_pos < chars.len() {
                         *curr_pos += end_divider.len() + 1; // +1 for the closing quote
-                        original_token =
-                            format!("R\"{}({}){}", divider, current_token, end_divider);
+                        original_token = format!("R\"{}({}){}", divider, current_token, end_divider);
                         return Some((current_token, original_token));
                     }
                 }
@@ -232,18 +257,18 @@ pub mod lexer {
                 *curr_pos += 3;
                 original_token.push_str("\"\"\"");
 
-                while *curr_pos < code.len() {
+                while *curr_pos < chars.len() {
                     if test_string("\"\"\"", *curr_pos) {
                         *curr_pos += 3;
                         original_token.push_str("\"\"\"");
                         return Some((current_token, original_token));
                     }
 
-                    if code.chars().nth(*curr_pos).unwrap() == '\\' {
+                    if chars[*curr_pos] == '\\' {
                         original_token.push('\\');
                         *curr_pos += 1;
-                        if *curr_pos < code.len() {
-                            let escape_char = code.chars().nth(*curr_pos).unwrap();
+                        if *curr_pos < chars.len() {
+                            let escape_char = chars[*curr_pos];
                             original_token.push(escape_char);
 
                             match escape_char {
@@ -252,15 +277,12 @@ pub mod lexer {
                                 '"' | '\\' => current_token.push(escape_char),
                                 'u' => {
                                     *curr_pos += 1;
-                                    if *curr_pos + 4 <= code.len() {
-                                        let hex_str = &code[*curr_pos..*curr_pos + 4];
-                                        if let Ok(unicode_value) = u32::from_str_radix(hex_str, 16)
-                                        {
-                                            if let Some(unicode_char) =
-                                                std::char::from_u32(unicode_value)
-                                            {
+                                    if *curr_pos + 4 <= chars.len() {
+                                        let hex_str: String = chars[*curr_pos..*curr_pos + 4].iter().collect();
+                                        if let Ok(unicode_value) = u32::from_str_radix(&hex_str, 16) {
+                                            if let Some(unicode_char) = std::char::from_u32(unicode_value) {
                                                 current_token.push(unicode_char);
-                                                original_token.push_str(hex_str);
+                                                original_token.push_str(&hex_str);
                                                 *curr_pos += 3;
                                             } else {
                                                 return None;
@@ -282,7 +304,7 @@ pub mod lexer {
                             return None;
                         }
                     } else {
-                        let c = code.chars().nth(*curr_pos).unwrap();
+                        let c = chars[*curr_pos];
                         current_token.push(c);
                         original_token.push(c);
                         *curr_pos += 1;
@@ -298,19 +320,20 @@ pub mod lexer {
                     .cloned()
                     .collect();
 
-            if let Some(start_char) = code.chars().nth(*curr_pos) {
+            if *curr_pos < chars.len() {
+                let start_char = chars[*curr_pos];
                 if let Some(&end_char) = quote_pairs.get(&start_char) {
                     *curr_pos += 1;
                     original_token.push(start_char);
 
-                    while *curr_pos < code.len() {
-                        let current_char = code.chars().nth(*curr_pos).unwrap();
+                    while *curr_pos < chars.len() {
+                        let current_char = chars[*curr_pos];
 
                         if current_char == '\\' {
                             original_token.push('\\');
                             *curr_pos += 1;
-                            if *curr_pos < code.len() {
-                                let escape_char = code.chars().nth(*curr_pos).unwrap();
+                            if *curr_pos < chars.len() {
+                                let escape_char = chars[*curr_pos];
                                 original_token.push(escape_char);
 
                                 match escape_char {
@@ -319,16 +342,12 @@ pub mod lexer {
                                     '"' | '\'' | '\\' => current_token.push(escape_char),
                                     'u' => {
                                         *curr_pos += 1;
-                                        if *curr_pos + 4 <= code.len() {
-                                            let hex_str = &code[*curr_pos..*curr_pos + 4];
-                                            if let Ok(unicode_value) =
-                                                u32::from_str_radix(hex_str, 16)
-                                            {
-                                                if let Some(unicode_char) =
-                                                    std::char::from_u32(unicode_value)
-                                                {
+                                        if *curr_pos + 4 <= chars.len() {
+                                            let hex_str: String = chars[*curr_pos..*curr_pos + 4].iter().collect();
+                                            if let Ok(unicode_value) = u32::from_str_radix(&hex_str, 16) {
+                                                if let Some(unicode_char) = std::char::from_u32(unicode_value) {
                                                     current_token.push(unicode_char);
-                                                    original_token.push_str(hex_str);
+                                                    original_token.push_str(&hex_str);
                                                     *curr_pos += 3;
                                                 } else {
                                                     return None;
@@ -365,72 +384,13 @@ pub mod lexer {
             None
         };
 
-        let read_token = || -> Option<(String, String)> {
-            let mut curr_pos = curr_pos.borrow_mut();
-            let mut curr_token = String::new();
-            while *curr_pos < code.len() {
-                if code.chars().nth(*curr_pos).unwrap().is_whitespace()
-                    || vec!['\'', '"'].contains(&code.chars().nth(*curr_pos).unwrap())
-                {
-                    *curr_pos += 1;
-                    break;
-                }
-                if *curr_pos < code.len() - 2 {
-                    let three_chars = &code[*curr_pos..*curr_pos + 3];
-                    if is_operator(three_chars) {
-                        break;
-                    }
-                }
-                if *curr_pos < code.len() - 1 {
-                    let two_chars = &code[*curr_pos..*curr_pos + 2];
-                    if is_operator(two_chars) {
-                        break;
-                    }
-                }
-                if is_operator(&code[*curr_pos..*curr_pos + 1]) {
-                    break;
-                }
-                curr_token.push(code.chars().nth(*curr_pos).unwrap());
-                *curr_pos += 1;
-            }
-            return Some((curr_token.clone(), curr_token));
-        };
-
-        let read_operator = || -> Option<(String, String)> {
-            let mut curr_pos = curr_pos.borrow_mut();
-            if *curr_pos < code.len() - 2 {
-                let three_chars = &code[*curr_pos..*curr_pos + 3];
-                if is_operator(three_chars) {
-                    *curr_pos += 3;
-                    return Some((three_chars.to_string(), three_chars.to_string()));
-                }
-            }
-            if *curr_pos < code.len() - 1 {
-                let two_chars = &code[*curr_pos..*curr_pos + 2];
-                if is_operator(two_chars) {
-                    *curr_pos += 2;
-                    return Some((two_chars.to_string(), two_chars.to_string()));
-                }
-            }
-            if is_operator(&code[*curr_pos..*curr_pos + 1]) {
-                *curr_pos += 1;
-                return Some((
-                    code[*curr_pos - 1..*curr_pos].to_string(),
-                    code[*curr_pos - 1..*curr_pos].to_string(),
-                ));
-            }
-            return None;
-        };
-
         let read_comment = || -> Option<(String, String)> {
             let mut curr_pos = curr_pos.borrow_mut();
             if test_string("//", *curr_pos) {
                 *curr_pos += 2;
                 let mut current_token = String::new();
-                while *curr_pos < code.len()
-                    && !vec!['\n', '\r'].contains(&code.chars().nth(*curr_pos).unwrap())
-                {
-                    current_token.push(code.chars().nth(*curr_pos).unwrap());
+                while *curr_pos < chars.len() && !vec!['\n', '\r'].contains(&chars[*curr_pos]) {
+                    current_token.push(chars[*curr_pos]);
                     *curr_pos += 1;
                 }
                 return Some((current_token.clone(), format!("//{}", current_token)));
@@ -438,11 +398,11 @@ pub mod lexer {
             if test_string("/*", *curr_pos) {
                 *curr_pos += 2;
                 let mut current_token = String::new();
-                while *curr_pos < code.len() && !test_string("*/", *curr_pos) {
-                    current_token.push(code.chars().nth(*curr_pos).unwrap());
+                while *curr_pos < chars.len() && !test_string("*/", *curr_pos) {
+                    current_token.push(chars[*curr_pos]);
                     *curr_pos += 1;
                 }
-                if *curr_pos < code.len() {
+                if *curr_pos < chars.len() {
                     *curr_pos += 2;
                     return Some((current_token.clone(), format!("/*{}*/", current_token)));
                 }
@@ -450,10 +410,71 @@ pub mod lexer {
             return None;
         };
 
+        let read_operator = || -> Option<(String, String)> {
+            let mut curr_pos = curr_pos.borrow_mut();
+            if *curr_pos + 2 < chars.len() {
+                let three_chars: String = chars[*curr_pos..*curr_pos + 3].iter().collect();
+                if is_operator(&three_chars) {
+                    *curr_pos += 3;
+                    return Some((three_chars.clone(), three_chars));
+                }
+            }
+            if *curr_pos + 1 < chars.len() {
+                let two_chars: String = chars[*curr_pos..*curr_pos + 2].iter().collect();
+                if is_operator(&two_chars) {
+                    *curr_pos += 2;
+                    return Some((two_chars.clone(), two_chars));
+                }
+            }
+            if *curr_pos < chars.len() {
+                let one_char = chars[*curr_pos].to_string();
+                if is_operator(&one_char) {
+                    *curr_pos += 1;
+                    return Some((one_char.clone(), one_char));
+                }
+            }
+            return None;
+        };
+
+        let read_token = || -> Option<(String, String)> {
+            let mut curr_pos = curr_pos.borrow_mut();
+            let mut curr_token = String::new();
+            
+            // Unicode友好的标识符读取
+            // 标识符允许字母、数字、下划线，但首字符不能是数字
+            if *curr_pos < chars.len() {
+                let first_char = chars[*curr_pos];
+                if first_char.is_alphabetic() || first_char == '_' {
+                    curr_token.push(first_char);
+                    *curr_pos += 1;
+                    
+                    // 读取剩余字符
+                    while *curr_pos < chars.len() {
+                        let c = chars[*curr_pos];
+                        // 支持中文字符作为标识符的一部分
+                        if c.is_alphanumeric() || c == '_' || 
+                           // 添加对CJK字符的支持
+                           (c as u32 >= 0x4E00 && c as u32 <= 0x9FFF) ||
+                           (c as u32 >= 0x3400 && c as u32 <= 0x4DBF) ||
+                           (c as u32 >= 0xF900 && c as u32 <= 0xFAFF) {
+                            curr_token.push(c);
+                            *curr_pos += 1;
+                        } else {
+                            break;
+                        }
+                    }
+                    
+                    return Some((curr_token.clone(), curr_token));
+                }
+            }
+            
+            None
+        };
+
         loop {
             skip_space();
-            let curr_pos = *curr_pos.borrow_mut();
-            if curr_pos >= code.len() {
+            let curr_pos_value = *curr_pos.borrow();
+            if curr_pos_value >= chars.len() {
                 break;
             }
 
@@ -463,7 +484,7 @@ pub mod lexer {
                     token,
                     super::TokenType::NUMBER,
                     origin_token,
-                    curr_pos,
+                    curr_pos_value,
                 ));
                 continue;
             }
@@ -474,7 +495,7 @@ pub mod lexer {
                     token,
                     super::TokenType::BASE64,
                     origin_token,
-                    curr_pos,
+                    curr_pos_value,
                 ));
                 continue;
             }
@@ -485,7 +506,7 @@ pub mod lexer {
                     token,
                     super::TokenType::STRING,
                     origin_token,
-                    curr_pos,
+                    curr_pos_value,
                 ));
                 continue;
             }
@@ -496,7 +517,7 @@ pub mod lexer {
                     token,
                     super::TokenType::COMMENT,
                     origin_token,
-                    curr_pos,
+                    curr_pos_value,
                 ));
                 continue;
             }
@@ -507,7 +528,7 @@ pub mod lexer {
                     token,
                     super::TokenType::SYMBOL,
                     origin_token,
-                    curr_pos,
+                    curr_pos_value,
                 ));
                 continue;
             }
@@ -515,18 +536,21 @@ pub mod lexer {
             if let Some((token, origin_token)) = read_token() {
                 let mut tokens = tokens.borrow_mut();
                 tokens.push(super::Token::new(
-                    token.clone(),
+                    token,
                     super::TokenType::IDENTIFIER,
-                    origin_token.clone(),
-                    curr_pos,
+                    origin_token,
+                    curr_pos_value,
                 ));
                 continue;
+            } else {
+                // 如果所有解析器都失败，跳过当前字符
+                let mut curr_pos = curr_pos.borrow_mut();
+                *curr_pos += 1;
             }
         }
 
         return tokens.into_inner();
     }
-
 
     // Reject comments from the token list
     pub fn reject_comment(tokens: Vec<super::Token>) -> Vec<super::Token> {
@@ -538,6 +562,4 @@ pub mod lexer {
         }
         return result;
     }
-
-
 }
