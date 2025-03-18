@@ -173,6 +173,8 @@ pub enum ASTNodeType {
     Continue, // continue
     Range, // x..y
     In,
+    Yield,
+    AsyncLambdaCall,
 }
 
 #[derive(Debug, PartialEq, Eq, Clone)]
@@ -211,6 +213,7 @@ pub enum ASTNodeModifier {
     Import,  // Import
     TypeOf,  // TypeOf
     Wrap,    // Wrap
+    Await,
 }
 
 #[derive(Debug)]
@@ -407,7 +410,7 @@ fn match_all<'t>(
 
     node_matcher.add_matcher(Box::new(
         |tokens, current| -> Result<(Option<ASTNode<'t>>, usize), ParserError<'t>> {
-            match_return(tokens, current)
+            match_return_and_yield(tokens, current)
         },
     ));
 
@@ -584,14 +587,14 @@ fn match_expressions<'t>(
     ));
 }
 
-fn match_return<'t>(
+fn match_return_and_yield<'t>(
     tokens: &Vec<GatheredTokens<'t>>,
     current: usize,
 ) -> Result<(Option<ASTNode<'t>>, usize), ParserError<'t>> {
     if current + 1 >= tokens.len() {
         return Ok((None, 0));
     }
-    if !is_identifier(&tokens[current], "return") {
+    if !is_identifier(&tokens[current], "return") && !is_identifier(&tokens[current], "yield") {
         return Ok((None, 0));
     }
     let (guess, guess_offset) = match_all(tokens, current + 1)?;
@@ -599,9 +602,15 @@ fn match_return<'t>(
         return Ok((None, 0));
     }
     let guess = guess.unwrap();
+
+    let node_type = if is_identifier(&tokens[current], "return") {
+        ASTNodeType::Return
+    } else {
+        ASTNodeType::Yield
+    };
     return Ok((
         Some(ASTNode::new(
-            ASTNodeType::Return,
+            node_type,
             Some(&tokens[current][0]),
             Some(vec![guess]),
         )),
@@ -1491,7 +1500,8 @@ fn match_modifier<'t>(
     }
     if tokens[current].len() == 1
         && vec![
-            "copy", "ref", "deref", "keyof", "valueof", "selfof", "assert", "import", "wrap", "typeof"
+            "copy", "ref", "deref", "keyof", "valueof", "selfof", "assert", "import", "wrap",
+            "typeof", "await",
         ]
         .contains(&tokens[current][0].token)
     {
@@ -1512,6 +1522,7 @@ fn match_modifier<'t>(
             "import" => ASTNodeModifier::Import,
             "wrap" => ASTNodeModifier::Wrap,
             "typeof" => ASTNodeModifier::TypeOf,
+            "await" => ASTNodeModifier::Await,
             _ => return Ok((None, 0)),
         };
         return Ok((
@@ -1564,28 +1575,27 @@ fn match_member_access_and_call<'t>(
         return Ok((None, 0)); // 没有找到访问操作符
     }
 
-    // 解析左侧表达式（被访问的对象或被调用的函数）
-    let left_tokens = &tokens[current..access_pos].to_vec();
-    if left_tokens.len() == 0 {
-        return Ok((None, 0));
-    }
-
-    let (left, left_offset) = match_all(left_tokens, 0)?;
-    if left.is_none() {
-        return Ok((None, 0));
-    }
-
-    let left = left.unwrap();
-    if left_offset != left_tokens.len() {
-        return Err(ParserError::NotFullyMatched(
-            &tokens[current][0],
-            &tokens[current][tokens[current].len() - 1],
-        ));
-    }
-
     match access_type.unwrap() {
         // 处理索引访问 obj[idx]
         "[]" => {
+            // 解析左侧表达式（被访问的对象或被调用的函数）
+            let left_tokens = &tokens[current..access_pos].to_vec();
+            if left_tokens.len() == 0 {
+                return Ok((None, 0));
+            }
+
+            let (left, left_offset) = match_all(left_tokens, 0)?;
+            if left.is_none() {
+                return Ok((None, 0));
+            }
+
+            let left = left.unwrap();
+            if left_offset != left_tokens.len() {
+                return Err(ParserError::NotFullyMatched(
+                    &tokens[current][0],
+                    &tokens[current][tokens[current].len() - 1],
+                ));
+            }
             // 解包索引括号中的内容
             let index_tokens = unwrap_brace(&tokens[access_pos])?;
             let gathered_index = gather(index_tokens)?;
@@ -1609,6 +1619,24 @@ fn match_member_access_and_call<'t>(
 
         // 处理属性访问 obj.prop
         "." => {
+            // 解析左侧表达式（被访问的对象或被调用的函数）
+            let left_tokens = &tokens[current..access_pos].to_vec();
+            if left_tokens.len() == 0 {
+                return Ok((None, 0));
+            }
+
+            let (left, left_offset) = match_all(left_tokens, 0)?;
+            if left.is_none() {
+                return Ok((None, 0));
+            }
+
+            let left = left.unwrap();
+            if left_offset != left_tokens.len() {
+                return Err(ParserError::NotFullyMatched(
+                    &tokens[current][0],
+                    &tokens[current][tokens[current].len() - 1],
+                ));
+            }
             if access_pos + 1 >= tokens.len() {
                 return Ok((None, 0));
             }
@@ -1651,6 +1679,28 @@ fn match_member_access_and_call<'t>(
 
         // 处理函数调用 func(args)
         "()" => {
+            // 解析左侧表达式（被访问的对象或被调用的函数）
+            let mut left_tokens = tokens[current..access_pos].to_vec();
+            if left_tokens.len() == 0 {
+                return Ok((None, 0));
+            }
+
+            let is_async = if left_tokens[0].len() == 1 && left_tokens[0][0].token == "async"{
+                left_tokens = left_tokens[1..].to_vec(); true
+            } else {false};
+            let (left, left_offset) = match_all(&left_tokens, 0)?;
+            if left.is_none() {
+                return Ok((None, 0));
+            }
+
+            let left = left.unwrap();
+            if left_offset != left_tokens.len() {
+                return Err(ParserError::NotFullyMatched(
+                    &tokens[current][0],
+                    &tokens[current][tokens[current].len() - 1],
+                ));
+            }
+
             // 解包括号中的参数
             let args_tokens = unwrap_brace(&tokens[access_pos])?;
             let gathered_args = gather(args_tokens)?;
@@ -1676,7 +1726,11 @@ fn match_member_access_and_call<'t>(
 
             return Ok((
                 Some(ASTNode::new(
-                    ASTNodeType::LambdaCall,
+                    if is_async {
+                        ASTNodeType::AsyncLambdaCall
+                    } else {
+                        ASTNodeType::LambdaCall
+                    },
                     Some(&tokens[current][0]),
                     Some(vec![left, args]),
                 )),

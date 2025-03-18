@@ -70,7 +70,10 @@ pub enum IR{
     RedirectJump(String), // redirect ir, not for vm just for ir generation
     RedirectJumpIfFalse(String), 
     RedirectLabel(String),
-    In
+    In,
+    Yield,
+    AsyncCallLambda,
+    Await,
 }
 
 #[derive(Serialize, Deserialize, Debug)]
