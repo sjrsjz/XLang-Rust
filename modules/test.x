@@ -1,6 +1,6 @@
-i := 0;
-while(i = i + 1;i <= 1000000){
-    print(i); // 0, 1, 2, ..., 10000
-    
+fibo := (n=>0) -> {
+    if (n==0 or n==1) {return 1};
+    return fibo(n-1)+fibo(n-2);
 };
-print(i); // 11
+
+print(fibo(20));

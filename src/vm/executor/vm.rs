@@ -1511,7 +1511,10 @@ impl IRExecutor {
                         ir_package.unwrap_err()
                     )));
                 }
-                let IRPackage {instructions, function_ips} = ir_package.unwrap();
+                let IRPackage {
+                    instructions,
+                    function_ips,
+                } = ir_package.unwrap();
 
                 let vm_instructions = gc_system.new_object(VMInstructions::new(
                     instructions.clone(),
@@ -1531,7 +1534,6 @@ impl IRExecutor {
                 self.stack.push(VMStackObject::VMObject(lambda));
                 self.offline_if_not_variable(&path_arg_named);
                 vm_instructions.offline();
-
             }
 
             _ => return Err(VMError::InvaildInstruction(instruction.clone())),

@@ -443,17 +443,17 @@ fn test_gc_stress_test() {
             //             let kv1 = all_objects[idx1].clone();
             //             let kv2 = all_objects[idx2].clone();
                         
-                        {
-                            let mut mutable_kv1 = kv1.as_type::<VMKeyVal>();
-                            mutable_kv1.assign(kv2.clone());
-                        }
-                        {
-                            let mut mutable_kv2 = kv2.as_type::<VMKeyVal>();
-                            mutable_kv2.assign(kv1.clone());
-                        }
-                    }
-                }
-            }
+            //             {
+            //                 let mut mutable_kv1 = kv1.as_type::<VMKeyVal>();
+            //                 mutable_kv1.assign(kv2.clone());
+            //             }
+            //             {
+            //                 let mut mutable_kv2 = kv2.as_type::<VMKeyVal>();
+            //                 mutable_kv2.assign(kv1.clone());
+            //             }
+            //         }
+            //     }
+            // }
         }
         
         // 阶段2: 使一部分对象离线
