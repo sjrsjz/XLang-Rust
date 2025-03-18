@@ -1,17 +1,26 @@
-async_func := (n=>0) -> {
-    while (n = n + 1; n < 1000) {
+create_async_func := () -> (n=>0) -> {
+    while (n = n + 1; n < 10000) {
         yield n / 2;
     };
     return "success";
 };
-
-async async_func();
-
 n:=0;
-while(n = n + 1; n < 100){
-    print(valueof async_func)
+asyncs := (,);
+while(n = n + 1; n <= 1) {
+    obj := create_async_func();
+    asyncs = asyncs + (obj,);
+    async obj();
+    await obj;
 };
+// print(asyncs);
+// n:=0;
+// while(n = n + 1; n < 1000000){
+//     print(valueof asyncs[0])
+// };
 
-await async_func;
+// // n:=0;
+// // while(n = n + 1; n < len(asyncs)){
+// //     await asyncs[n]
+// // };
 
-print(keyof async_func, valueof async_func);
+// print("done!");

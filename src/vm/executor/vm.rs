@@ -92,7 +92,8 @@ impl VMCoroutinePool {
         gc_system: &mut GCSystem,
     ) -> Result<isize, VMError> {
         let mut executor = IRExecutor::new(original_code);
-        executor.entry_lambda = Some(lambda_object.clone());
+        executor.entry_lambda_wrapper =
+            Some(gc_system.new_object(VMVariableWrapper::new(lambda_object.clone())));
         executor.init(lambda_object, gc_system)?;
         self.executors.push((executor, self.gen_id));
         let id = self.gen_id;
@@ -121,12 +122,23 @@ impl VMCoroutinePool {
     }
 
     pub fn sweep_finished(&mut self) {
-        self.executors.retain(|(executor, _)| {
+        for (executor, _id) in &mut self.executors {
             let coroutine_status = &executor
-                .entry_lambda
+                .entry_lambda_wrapper
                 .as_ref()
                 .unwrap()
-                .as_type::<VMLambda>()
+                .as_type::<VMVariableWrapper>().value_ref.as_const_type::<VMLambda>()
+                .coroutine_status;
+            if *coroutine_status == VMCoroutineStatus::Finished {
+                executor.entry_lambda_wrapper.as_mut().unwrap().offline();
+            }
+        }
+        self.executors.retain(|(executor, _)| {
+            let coroutine_status = &executor
+                .entry_lambda_wrapper
+                .as_ref()
+                .unwrap()
+                .as_type::<VMVariableWrapper>().value_ref.as_const_type::<VMLambda>()
                 .coroutine_status;
             *coroutine_status != VMCoroutineStatus::Finished
         });
@@ -140,7 +152,7 @@ impl VMCoroutinePool {
                 for coroutine in coroutines {
                     let lambda_object = coroutine.lambda_ref;
                     let source_code = coroutine.source_code;
-                    println!("spawn coroutine: {}", try_repr_vmobject(lambda_object.clone()).unwrap_or(format!("{:?}", lambda_object.clone())));
+                    // println!("spawn coroutine: {}", try_repr_vmobject(lambda_object.clone()).unwrap_or(format!("{:?}", lambda_object.clone())));
                     self.new_coroutine(lambda_object, source_code, gc_system)?;
                 }
             }
@@ -165,7 +177,7 @@ pub struct IRExecutor {
     lambda_instructions: Vec<GCRef>,
     original_code: Option<String>,
     debug_info: Option<DebugInfo>,
-    entry_lambda: Option<GCRef>,
+    entry_lambda_wrapper: Option<GCRef>,
 }
 
 mod native_functions {
@@ -401,7 +413,7 @@ impl IRExecutor {
             lambda_instructions: Vec::new(),
             original_code: original_code,
             debug_info: None,
-            entry_lambda: None,
+            entry_lambda_wrapper: None,
         }
     }
     pub fn set_debug_info(&mut self, debug_info: DebugInfo) {
@@ -595,10 +607,12 @@ impl IRExecutor {
         // spawned new coroutine, error
 
         let coroutine_status = &self
-            .entry_lambda
+            .entry_lambda_wrapper
             .as_ref()
             .unwrap()
-            .as_type::<VMLambda>()
+            .as_type::<VMVariableWrapper>()
+            .value_ref
+            .as_const_type::<VMLambda>()
             .coroutine_status;
 
         let mut spawned_coroutines = None;
@@ -634,7 +648,13 @@ impl IRExecutor {
             //gc_system.print_reference_graph(); // debug
             self.ip += 1;
         } else if *coroutine_status != VMCoroutineStatus::Finished {
-            let lambda_obj = self.entry_lambda.as_ref().unwrap().as_type::<VMLambda>();
+            let lambda_obj = self
+                .entry_lambda_wrapper
+                .as_ref()
+                .unwrap()
+                .as_type::<VMVariableWrapper>()
+                .value_ref
+                .as_type::<VMLambda>();
 
             lambda_obj.coroutine_status = VMCoroutineStatus::Finished;
 
@@ -931,9 +951,11 @@ impl IRExecutor {
                     return Err(VMError::EmptyStack);
                 }
                 let (obj, obj_ref) = self.pop_and_ref()?;
-                self.entry_lambda
+                self.entry_lambda_wrapper
                     .as_mut()
                     .unwrap()
+                    .as_type::<VMVariableWrapper>()
+                    .value_ref
                     .as_type::<VMLambda>()
                     .set_result(obj_ref.clone());
                 self.stack.push(VMStackObject::VMObject(obj_ref));
