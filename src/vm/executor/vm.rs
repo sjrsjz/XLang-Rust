@@ -726,8 +726,8 @@ impl IRExecutor {
                 let mut tuple_refs: Vec<GCRef> = Vec::new();
                 for _ in 0..*size {
                     let (obj, obj_ref) = self.pop_and_ref()?;
-                    tuple.push(obj);
-                    tuple_refs.push(obj_ref);
+                    tuple.insert(0, obj);
+                    tuple_refs.insert(0, obj_ref);
                 }
                 let obj = gc_system.new_object(VMTuple::new(tuple_refs.clone()));
 
