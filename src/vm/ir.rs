@@ -70,6 +70,9 @@ pub enum IR{
     RedirectJump(String), // redirect ir, not for vm just for ir generation
     RedirectJumpIfFalse(String), 
     RedirectLabel(String),
+    Altas(String),
+    WipeAltas,
+    AltasOf,
     In,
     Yield,
     AsyncCallLambda,

@@ -95,8 +95,7 @@ impl VMCoroutinePool {
         let mut executor = IRExecutor::new(original_code);
         let wrapped;
         if auto_wrap {
-            wrapped =
-            gc_system.new_object(VMVariableWrapper::new(lambda_object.clone()));            
+            wrapped = gc_system.new_object(VMVariableWrapper::new(lambda_object.clone()));
         } else {
             wrapped = lambda_object.clone();
         }
@@ -135,7 +134,9 @@ impl VMCoroutinePool {
                 .entry_lambda_wrapper
                 .as_ref()
                 .unwrap()
-                .as_type::<VMVariableWrapper>().value_ref.as_const_type::<VMLambda>()
+                .as_type::<VMVariableWrapper>()
+                .value_ref
+                .as_const_type::<VMLambda>()
                 .coroutine_status;
             if *coroutine_status == VMCoroutineStatus::Finished {
                 executor.entry_lambda_wrapper.as_mut().unwrap().offline();
@@ -146,7 +147,9 @@ impl VMCoroutinePool {
                 .entry_lambda_wrapper
                 .as_ref()
                 .unwrap()
-                .as_type::<VMVariableWrapper>().value_ref.as_const_type::<VMLambda>()
+                .as_type::<VMVariableWrapper>()
+                .value_ref
+                .as_const_type::<VMLambda>()
                 .coroutine_status;
             *coroutine_status != VMCoroutineStatus::Finished
         });
@@ -1396,6 +1399,40 @@ impl IRExecutor {
                 self.stack.push(VMStackObject::VMObject(lambda));
                 self.offline_if_not_variable(&path_arg_named);
                 vm_instructions.offline();
+            }
+
+            IR::Altas(altas) => {
+                let (obj, ref_obj) = self.pop_and_ref()?;
+                let obj_altas =
+                    try_altas_as_vmobject(&ref_obj).map_err(|e| VMError::VMVariableError(e))?;
+                obj_altas.push(altas.clone());
+                self.stack.push(VMStackObject::VMObject(ref_obj));
+                self.offline_if_not_variable(&obj);
+            }
+
+            IR::WipeAltas => {
+                let (obj, ref_obj) = self.pop_and_ref()?;
+                let obj_altas =
+                    try_altas_as_vmobject(&ref_obj).map_err(|e| VMError::VMVariableError(e))?;
+                obj_altas.clear();
+                self.stack.push(VMStackObject::VMObject(ref_obj));
+                self.offline_if_not_variable(&obj);
+            }
+
+            IR::AltasOf => {
+                let (obj, ref_obj) = self.pop_and_ref()?;
+                let obj_altas =
+                    try_altas_as_vmobject(&ref_obj).map_err(|e| VMError::VMVariableError(e))?;
+                let mut tuple = Vec::new();
+                for altas in obj_altas.iter() {
+                    tuple.push(gc_system.new_object(VMString::new(altas.clone())));
+                }
+                let result = gc_system.new_object(VMTuple::new(tuple));
+                for i in result.as_type::<VMTuple>().values.iter() {
+                    i.offline();
+                }
+                self.stack.push(VMStackObject::VMObject(result));
+                self.offline_if_not_variable(&obj);
             }
 
             _ => return Err(VMError::InvaildInstruction(instruction.clone())),

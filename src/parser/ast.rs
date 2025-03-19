@@ -175,6 +175,7 @@ pub enum ASTNodeType {
     In,
     Yield,
     AsyncLambdaCall,
+    Altas(String), // Type::Value
 }
 
 #[derive(Debug, PartialEq, Eq, Clone)]
@@ -214,6 +215,8 @@ pub enum ASTNodeModifier {
     TypeOf,  // TypeOf
     Wrap,    // Wrap
     Await,
+    Wipe,
+    AltasOf
 }
 
 #[derive(Debug)]
@@ -521,6 +524,12 @@ fn match_all<'t>(
     node_matcher.add_matcher(Box::new(
         |tokens, current| -> Result<(Option<ASTNode<'t>>, usize), ParserError<'t>> {
             match_modifier(tokens, current)
+        },
+    ));
+
+    node_matcher.add_matcher(Box::new(
+        |tokens, current| -> Result<(Option<ASTNode<'t>>, usize), ParserError<'t>> {
+            match_altas(tokens, current)
         },
     ));
 
@@ -1501,7 +1510,7 @@ fn match_modifier<'t>(
     if tokens[current].len() == 1
         && vec![
             "copy", "ref", "deref", "keyof", "valueof", "selfof", "assert", "import", "wrap",
-            "typeof", "await",
+            "typeof", "await", "wipe", "altasof",
         ]
         .contains(&tokens[current][0].token)
     {
@@ -1523,6 +1532,8 @@ fn match_modifier<'t>(
             "wrap" => ASTNodeModifier::Wrap,
             "typeof" => ASTNodeModifier::TypeOf,
             "await" => ASTNodeModifier::Await,
+            "wipe" => ASTNodeModifier::Wipe,
+            "altasof" => ASTNodeModifier::AltasOf,
             _ => return Ok((None, 0)),
         };
         return Ok((
@@ -1535,6 +1546,57 @@ fn match_modifier<'t>(
         ));
     }
     return Ok((None, 0));
+}
+
+fn match_altas<'t>(
+    tokens: &Vec<GatheredTokens<'t>>,
+    current: usize,
+) -> Result<(Option<ASTNode<'t>>, usize), ParserError<'t>> {
+    if current + 2 >= tokens.len() {
+        return Ok((None, 0));
+    }
+    
+    if !is_symbol(&tokens[current + 1], "::") {
+        return Ok((None, 0));
+    }
+
+    let type_tokens = gather(&tokens[current])?;
+    let (type_node, type_offset) = match_all(&type_tokens, 0)?;
+    
+    if type_node.is_none() {
+        return Ok((None, 0));
+    }
+    
+    let type_node = type_node.unwrap();
+    if type_offset != type_tokens.len() {
+        return Err(ParserError::NotFullyMatched(
+            &tokens[current][0],
+            &tokens[current][tokens[current].len() - 1],
+        ));
+    }
+    
+    let type_name = match &type_node.node_type {
+        ASTNodeType::Variable(name) => name.clone(),
+        _ => {
+            return Err(ParserError::InvalidSyntax(&tokens[current][0]));
+        }
+    };
+    
+    // 解析右侧值表达式
+    let (value_node, value_offset) = match_all(tokens, current + 2)?;
+    if value_node.is_none() {
+        return Ok((None, 0));
+    }
+    let value_node = value_node.unwrap();
+  
+    return Ok((
+        Some(ASTNode::new(
+            ASTNodeType::Altas(type_name),
+            Some(&tokens[current][0]),
+            Some(vec![value_node]),
+        )),
+        value_offset + 2,
+    ));
 }
 
 fn match_member_access_and_call<'t>(

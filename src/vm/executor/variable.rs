@@ -538,6 +538,26 @@ pub fn try_value_ref_as_vmobject(value: GCRef) -> Result<GCRef, VMVariableError>
     ))
 }
 
+
+#[macro_export]
+macro_rules! try_altas_as_type {
+    ($value:expr; $($t:ty),+) => {
+        $(
+            if $value.isinstance::<$t>() {
+                return Ok($value.as_type::<$t>().altas());
+            }
+        )+
+    };
+}
+
+pub fn try_altas_as_vmobject<'t>(value:&'t GCRef) -> Result<&'t mut Vec<String>, VMVariableError> {
+    try_altas_as_type!(value; VMInt, VMString, VMFloat, VMBoolean, VMNull, VMKeyVal, VMTuple, VMNamed, VMLambda, VMInstructions, VMVariableWrapper, VMNativeFunction, VMWrapper, VMRange);
+    Err(VMVariableError::ReferenceError(
+        value.clone(),
+        "Cannot get reference of a non-referenceable type".to_string(),
+    ))
+}
+
 #[macro_export]
 macro_rules! try_binary_op_as_type {
     ($value:expr, $op:ident, $other:expr; $($t:ty),+) => {
@@ -558,6 +578,7 @@ pub trait VMObject {
     fn copy(&self, gc_system: &mut GCSystem) -> Result<GCRef, VMVariableError>;
     fn value_ref(&self) -> Result<GCRef, VMVariableError>;
     fn assign(&mut self, value: GCRef) -> Result<GCRef, VMVariableError>;
+    fn altas(&mut self) -> &mut Vec<String>;
 }
 
 // 变量包装器
@@ -568,6 +589,7 @@ pub trait VMObject {
 pub struct VMVariableWrapper {
     pub value_ref: GCRef,
     traceable: GCTraceable,
+    altas: Vec<String>,
 }
 
 impl VMVariableWrapper {
@@ -579,6 +601,7 @@ impl VMVariableWrapper {
         VMVariableWrapper {
             value_ref: value.clone(),
             traceable: GCTraceable::new(Some(vec![value.clone()])),
+            altas: Vec::new(),
         }
     }
 }
@@ -605,6 +628,10 @@ impl VMObject for VMVariableWrapper {
     fn value_ref(&self) -> Result<GCRef, VMVariableError> {
         return try_value_ref_as_vmobject(self.value_ref.clone());
     }
+
+    fn altas(&mut self) -> &mut Vec<String> {
+        return &mut self.altas;
+    }
 }
 
 // 值包装器
@@ -616,6 +643,7 @@ pub struct VMWrapper {
     // 变体包装
     pub value_ref: GCRef,
     traceable: GCTraceable,
+    altas: Vec<String>,
 }
 
 impl VMWrapper {
@@ -623,6 +651,7 @@ impl VMWrapper {
         VMWrapper {
             value_ref: value.clone(),
             traceable: GCTraceable::new(Some(vec![value.clone()])),
+            altas: Vec::new(),
         }
     }
 
@@ -656,6 +685,10 @@ impl VMObject for VMWrapper {
     fn value_ref(&self) -> Result<GCRef, VMVariableError> {
         Ok(GCRef::wrap(self))
     }
+
+    fn altas(&mut self) -> &mut Vec<String> {
+        return &mut self.altas;
+    }
 }
 
 // 整数类型
@@ -665,6 +698,7 @@ impl VMObject for VMWrapper {
 pub struct VMInt {
     pub value: i64,
     traceable: GCTraceable,
+    altas: Vec<String>,
 }
 
 impl VMInt {
@@ -672,6 +706,7 @@ impl VMInt {
         VMInt {
             value,
             traceable: GCTraceable::new(None),
+            altas: Vec::new(),
         }
     }
 
@@ -910,6 +945,10 @@ impl VMObject for VMInt {
     fn value_ref(&self) -> Result<GCRef, VMVariableError> {
         Ok(GCRef::wrap(self))
     }
+
+    fn altas(&mut self) -> &mut Vec<String> {
+        return &mut self.altas;
+    }
 }
 
 // 字符串类型
@@ -919,6 +958,7 @@ impl VMObject for VMInt {
 pub struct VMString {
     pub value: String,
     traceable: GCTraceable,
+    altas: Vec<String>,
 }
 
 impl VMString {
@@ -926,6 +966,7 @@ impl VMString {
         VMString {
             value,
             traceable: GCTraceable::new(None),
+            altas: Vec::new(),
         }
     }
 
@@ -1042,6 +1083,10 @@ impl VMObject for VMString {
     fn value_ref(&self) -> Result<GCRef, VMVariableError> {
         Ok(GCRef::wrap(self))
     }
+
+    fn altas(&mut self) -> &mut Vec<String> {
+        return &mut self.altas;
+    }
 }
 
 // 浮点数类型
@@ -1051,6 +1096,7 @@ impl VMObject for VMString {
 pub struct VMFloat {
     pub value: f64,
     traceable: GCTraceable,
+    altas: Vec<String>,
 }
 
 impl VMFloat {
@@ -1058,6 +1104,7 @@ impl VMFloat {
         VMFloat {
             value,
             traceable: GCTraceable::new(None),
+            altas: Vec::new(),
         }
     }
 
@@ -1216,6 +1263,10 @@ impl VMObject for VMFloat {
     fn value_ref(&self) -> Result<GCRef, VMVariableError> {
         Ok(GCRef::wrap(self))
     }
+
+    fn altas(&mut self) -> &mut Vec<String> {
+        return &mut self.altas;
+    }
 }
 
 // 布尔类型
@@ -1225,6 +1276,7 @@ impl VMObject for VMFloat {
 pub struct VMBoolean {
     pub value: bool,
     traceable: GCTraceable,
+    altas: Vec<String>,
 }
 
 impl VMBoolean {
@@ -1232,6 +1284,7 @@ impl VMBoolean {
         VMBoolean {
             value,
             traceable: GCTraceable::new(None),
+            altas: Vec::new(),
         }
     }
 
@@ -1316,6 +1369,10 @@ impl VMObject for VMBoolean {
     fn value_ref(&self) -> Result<GCRef, VMVariableError> {
         Ok(GCRef::wrap(self))
     }
+
+    fn altas(&mut self) -> &mut Vec<String> {
+        return &mut self.altas;
+    }
 }
 
 // 空值类型
@@ -1324,12 +1381,14 @@ impl VMObject for VMBoolean {
 #[derive(Debug)]
 pub struct VMNull {
     traceable: GCTraceable,
+    altas: Vec<String>,
 }
 
 impl VMNull {
     pub fn new() -> Self {
         VMNull {
             traceable: GCTraceable::new(None),
+            altas: Vec::new(),
         }
     }
 
@@ -1367,6 +1426,10 @@ impl VMObject for VMNull {
     fn value_ref(&self) -> Result<GCRef, VMVariableError> {
         Ok(GCRef::wrap(self))
     }
+
+    fn altas(&mut self) -> &mut Vec<String> {
+        return &mut self.altas;
+    }
 }
 
 // 键值对类型
@@ -1378,6 +1441,7 @@ pub struct VMKeyVal {
     pub key: GCRef,
     pub value: GCRef,
     traceable: GCTraceable,
+    altas: Vec<String>,
 }
 
 impl VMKeyVal {
@@ -1386,6 +1450,7 @@ impl VMKeyVal {
             key: key.clone(),
             value: value.clone(),
             traceable: GCTraceable::new(Some(vec![key, value])),
+            altas: Vec::new(),
         }
     }
 
@@ -1441,6 +1506,10 @@ impl VMObject for VMKeyVal {
     fn value_ref(&self) -> Result<GCRef, VMVariableError> {
         Ok(GCRef::wrap(self))
     }
+
+    fn altas(&mut self) -> &mut Vec<String> {
+        return &mut self.altas;
+    }
 }
 
 // 命名参数类型
@@ -1452,6 +1521,7 @@ pub struct VMNamed {
     pub key: GCRef,
     pub value: GCRef,
     traceable: GCTraceable,
+    altas: Vec<String>,
 }
 
 impl VMNamed {
@@ -1460,6 +1530,7 @@ impl VMNamed {
             key: key.clone(),
             value: value.clone(),
             traceable: GCTraceable::new(Some(vec![key, value])),
+            altas: Vec::new(),
         }
     }
 
@@ -1515,6 +1586,10 @@ impl VMObject for VMNamed {
     fn value_ref(&self) -> Result<GCRef, VMVariableError> {
         Ok(GCRef::wrap(self))
     }
+
+    fn altas(&mut self) -> &mut Vec<String> {
+        return &mut self.altas;
+    }
 }
 
 // 元组类型
@@ -1525,6 +1600,7 @@ impl VMObject for VMNamed {
 pub struct VMTuple {
     pub values: Vec<GCRef>,
     traceable: GCTraceable,
+    altas: Vec<String>,
 }
 
 impl VMTuple {
@@ -1533,6 +1609,7 @@ impl VMTuple {
         VMTuple {
             values: values.clone(),
             traceable: GCTraceable::new(Some(values)),
+            altas: Vec::new(),
         }
     }
 
@@ -1794,6 +1871,10 @@ impl VMObject for VMTuple {
     fn value_ref(&self) -> Result<GCRef, VMVariableError> {
         Ok(GCRef::wrap(self))
     }
+
+    fn altas(&mut self) -> &mut Vec<String> {
+        return &mut self.altas;
+    }
 }
 
 // 指令集类型
@@ -1805,6 +1886,7 @@ pub struct VMInstructions {
     pub instructions: Vec<IR>,
     pub func_ips: HashMap<String, usize>,
     traceable: GCTraceable,
+    altas: Vec<String>,
 }
 
 impl VMInstructions {
@@ -1813,6 +1895,7 @@ impl VMInstructions {
             instructions,
             func_ips,
             traceable: GCTraceable::new(None),
+            altas: Vec::new(),
         }
     }
 }
@@ -1844,6 +1927,10 @@ impl VMObject for VMInstructions {
     fn value_ref(&self) -> Result<GCRef, VMVariableError> {
         Ok(GCRef::wrap(self))
     }
+
+    fn altas(&mut self) -> &mut Vec<String> {
+        return &mut self.altas;
+    }
 }
 
 // 函数/闭包类型
@@ -1866,8 +1953,8 @@ pub struct VMLambda {
     pub lambda_instructions: GCRef,
     pub result: GCRef,
     traceable: GCTraceable,
-
     pub coroutine_status: VMCoroutineStatus,
+    altas: Vec<String>,
 }
 
 impl VMLambda {
@@ -1903,6 +1990,7 @@ impl VMLambda {
             })),
             result: result,
             coroutine_status: VMCoroutineStatus::Running,
+            altas: Vec::new(),
         }
     }
 
@@ -1989,6 +2077,10 @@ impl VMObject for VMLambda {
     fn value_ref(&self) -> Result<GCRef, VMVariableError> {
         Ok(GCRef::wrap(self))
     }
+
+    fn altas(&mut self) -> &mut Vec<String> {
+        return &mut self.altas;
+    }
 }
 
 // 原生函数类型
@@ -1999,6 +2091,7 @@ pub struct VMNativeFunction {
     // 包装rust函数， 函数定义为 fn(GCRef, &mut GCSystem) -> Result<GCRef, VMVariableError>
     pub function: fn(GCRef, &mut GCSystem) -> Result<GCRef, VMVariableError>,
     traceable: GCTraceable,
+    altas: Vec<String>,
 }
 
 impl VMNativeFunction {
@@ -2006,6 +2099,7 @@ impl VMNativeFunction {
         VMNativeFunction {
             function,
             traceable: GCTraceable::new(None),
+            altas: Vec::new(),
         }
     }
 
@@ -2038,6 +2132,10 @@ impl VMObject for VMNativeFunction {
     fn value_ref(&self) -> Result<GCRef, VMVariableError> {
         Ok(GCRef::wrap(self))
     }
+
+    fn altas(&mut self) -> &mut Vec<String> {
+        return &mut self.altas;
+    }
 }
 
 #[derive(Debug)]
@@ -2045,6 +2143,7 @@ pub struct VMRange {
     pub start: i64,
     pub end: i64,
     traceable: GCTraceable,
+    altas: Vec<String>,
 }
 impl VMRange {
     pub fn new(start: i64, end: i64) -> Self {
@@ -2052,6 +2151,7 @@ impl VMRange {
             start,
             end,
             traceable: GCTraceable::new(None),
+            altas: Vec::new(),
         }
     }
 
@@ -2136,5 +2236,9 @@ impl VMObject for VMRange {
 
     fn value_ref(&self) -> Result<GCRef, VMVariableError> {
         Ok(GCRef::wrap(self))
+    }
+
+    fn altas(&mut self) -> &mut Vec<String> {
+        return &mut self.altas;
     }
 }

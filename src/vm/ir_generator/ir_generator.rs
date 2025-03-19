@@ -565,6 +565,14 @@ impl<'t> IRGenerator<'t> {
                         instructions.push(IR::RedirectJumpIfFalse(label));
                         instructions.push(IR::LoadNull);
                     }
+                    ASTNodeModifier::Wipe => {
+                        instructions.extend(self.generate_without_redirect(&ast_node.children[0])?);
+                        instructions.push(IR::WipeAltas);
+                    }
+                    ASTNodeModifier::AltasOf => {
+                        instructions.extend(self.generate_without_redirect(&ast_node.children[0])?);
+                        instructions.push(IR::AltasOf);
+                    }
                 }
                 Ok(instructions)
             }
@@ -582,6 +590,12 @@ impl<'t> IRGenerator<'t> {
                 instructions.extend(self.generate_without_redirect(&ast_node.children[0])?);
                 instructions.extend(self.generate_without_redirect(&ast_node.children[1])?);
                 instructions.push(IR::In);
+                Ok(instructions)
+            }
+            ASTNodeType::Altas(altas) => {
+                let mut instructions = Vec::new();
+                instructions.push(debug_info);
+                instructions.push(IR::Altas(altas.clone()));
                 Ok(instructions)
             }
         }
