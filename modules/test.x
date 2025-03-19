@@ -101,3 +101,25 @@ deepseek := bind {
 	chat => () -> "服务器繁忙，请稍后重试",
 };
 print(deepseek.chat());
+
+iter := (container => null, wrapper => null) -> 
+	if (container == null or wrapper == null) {
+		return () -> false;
+	} else {
+		return (container => container, wrapper => wrapper, n => 0) -> {
+			if (n >= len(container)) {
+				return false;
+			};
+			wrapper = container[n];
+			n = n + 1;
+			return true;
+		};
+	};
+
+arr := (1, 2, 3, 4, 5);
+arr_iter := iter(arr, elem := wrap 0);
+while(arr_iter()) {
+	print(valueof elem);
+};
+
+
