@@ -119,9 +119,13 @@ fn execute_ir(package: IRPackage, source_code: Option<String>) -> Result<GCRef, 
     lambda_result.offline();
 
     let _coro_id =
-        coroutine_pool.new_coroutine(main_lambda.clone(), source_code, &mut gc_system)?;
+        coroutine_pool.new_coroutine(main_lambda.clone(), source_code, &mut gc_system, true)?;
 
-    coroutine_pool.run_until_finished(&mut gc_system)?;
+    let result = coroutine_pool.run_until_finished(&mut gc_system);
+    if let Err(e) = result {
+        println!("执行错误: {}", e.to_string());
+        return Err(VMError::AssertFailed);
+    }
 
     let result = main_lambda.as_const_type::<VMLambda>().result.clone();
 
@@ -140,6 +144,7 @@ fn execute_ir(package: IRPackage, source_code: Option<String>) -> Result<GCRef, 
     }
     main_lambda.offline();
 
+    println!("done!");
     gc_system.collect();
 
     Ok(result)

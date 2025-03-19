@@ -60,6 +60,13 @@ impl GCRef {
         }
     }
 
+    pub fn mark_as_online(&self) {
+        unsafe {
+            let obj = self.reference as *mut dyn GCObject;
+            (*obj).get_traceable().mark_as_online();
+        }
+    }
+
     pub fn is_online(&self) -> bool {
         unsafe {
             let obj = self.reference as *mut dyn GCObject;
@@ -145,7 +152,11 @@ impl GCTraceable {
         self.online = false;
     }
 
-    pub fn add_reference(&mut self, obj: &mut GCRef) {
+    pub fn mark_as_online(&mut self) {
+        // 设置对象在线，以防止被回收
+        self.online = true;
+    }
+    pub fn add_reference(&mut self, obj: &GCRef) {
         // 增加引用计数
         *self.references.entry(obj.clone()).or_insert(0) += 1;
         unsafe {
@@ -427,7 +438,7 @@ impl GCSystem {
         // 标记活对象
         for i in 0..self.objects.len() {
             let gc_ref = &self.objects[i];
-            alive[i] = !(gc_ref.get_traceable().ref_count == 0 && !gc_ref.get_traceable().online);
+            alive[i] = !(gc_ref.get_traceable().ref_count == 0 && !gc_ref.is_online() && gc_ref.get_traceable().references.is_empty()); // 检查孤岛对象
         }
 
         // 先创建新的对象列表，仅包含活对象
@@ -456,7 +467,7 @@ impl GCSystem {
         }
     }
     pub fn collect(&mut self) {
-        self.immediate_collect();
+        self.immediate_collect(); // panic! corrupt double-linked list
         self.mark();
         self.sweep();
         

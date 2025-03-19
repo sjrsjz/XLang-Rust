@@ -124,7 +124,12 @@ pub fn try_repr_vmobject(value: GCRef) -> Result<String, VMVariableError> {
         return Ok(format!("({})", repr));
     } else if value.isinstance::<VMLambda>() {
         let lambda = value.as_const_type::<VMLambda>();
-        return Ok(format!("VMLambda({}, default_args={}, result={})", lambda.signature, try_repr_vmobject(lambda.default_args_tuple.clone())?, try_repr_vmobject(lambda.result.clone())?));
+        return Ok(format!(
+            "VMLambda({}, default_args={}, result={})",
+            lambda.signature,
+            try_repr_vmobject(lambda.default_args_tuple.clone())?,
+            try_repr_vmobject(lambda.result.clone())?
+        ));
     } else if value.isinstance::<VMInstructions>() {
         return Ok("VMInstructions".to_string());
     } else if value.isinstance::<VMVariableWrapper>() {
@@ -1421,7 +1426,9 @@ impl GCObject for VMKeyVal {
 
 impl VMObject for VMKeyVal {
     fn copy(&self, gc_system: &mut GCSystem) -> Result<GCRef, VMVariableError> {
-        Ok(gc_system.new_object(VMKeyVal::new(self.key.clone(), self.value.clone())))
+        let new_key = try_copy_as_vmobject(self.key.clone(), gc_system)?;
+        let new_value = try_copy_as_vmobject(self.value.clone(), gc_system)?;
+        Ok(gc_system.new_object(VMKeyVal::new(new_key, new_value)))
     }
 
     fn assign(&mut self, value: GCRef) -> Result<GCRef, VMVariableError> {
@@ -1493,7 +1500,9 @@ impl GCObject for VMNamed {
 
 impl VMObject for VMNamed {
     fn copy(&self, gc_system: &mut GCSystem) -> Result<GCRef, VMVariableError> {
-        Ok(gc_system.new_object(VMNamed::new(self.key.clone(), self.value.clone())))
+        let new_key = try_copy_as_vmobject(self.key.clone(), gc_system)?;
+        let new_value = try_copy_as_vmobject(self.value.clone(), gc_system)?;
+        Ok(gc_system.new_object(VMNamed::new(new_key, new_value)))
     }
 
     fn assign(&mut self, value: GCRef) -> Result<GCRef, VMVariableError> {
@@ -1696,7 +1705,9 @@ impl VMTuple {
             let other_tuple = other.as_const_type::<VMTuple>();
             let mut new_values = self.values.clone();
             new_values.extend(other_tuple.values.clone());
-            return Ok(gc_system.new_object(VMTuple::new(new_values)));
+            let new_tuple = gc_system.new_object(VMTuple::new(new_values));
+            new_tuple.as_type::<VMTuple>().set_lambda_self();
+            return Ok(new_tuple);
         }
         Err(VMVariableError::TypeError(
             other.clone(),
@@ -1711,6 +1722,20 @@ impl VMTuple {
             }
         }
         Ok(false)
+    }
+
+    pub fn set_lambda_self(&mut self) {
+        for val in &self.values {
+            if val.isinstance::<VMNamed>()
+                && val
+                    .as_const_type::<VMNamed>()
+                    .value
+                    .isinstance::<VMLambda>()
+            {
+                let lambda = val.as_const_type::<VMNamed>().value.as_type::<VMLambda>();
+                lambda.set_self_object(GCRef::wrap(self));
+            }
+        }
     }
 }
 
@@ -1730,15 +1755,15 @@ impl GCObject for VMTuple {
 impl VMObject for VMTuple {
     fn copy(&self, gc_system: &mut GCSystem) -> Result<GCRef, VMVariableError> {
         // 深拷贝元组中的每个元素
-        let mut new_values = Vec::new();
+        let mut new_values = Vec::with_capacity(self.values.len());
         for value in &self.values {
-            let copied_value = (|| {
-                return try_copy_as_vmobject(value.clone(), gc_system);
-            })()?;
+            let copied_value = try_copy_as_vmobject(value.clone(), gc_system)?;
+            copied_value.offline();
             new_values.push(copied_value);
         }
         // 创建新的元组对象
         let new_tuple = gc_system.new_object(VMTuple::new(new_values));
+        new_tuple.as_type::<VMTuple>().set_lambda_self();
         Ok(new_tuple)
     }
 
@@ -1864,13 +1889,18 @@ impl VMLambda {
             code_position,
             signature,
             default_args_tuple: default_args_tuple.clone(),
-            self_object,
+            self_object: self_object.clone(),
             lambda_instructions: lambda_instructions.clone(),
-            traceable: GCTraceable::new(Some(vec![
-                default_args_tuple,
-                lambda_instructions,
-                result.clone(),
-            ])),
+            traceable: GCTraceable::new(Some(if self_object.is_some() {
+                vec![
+                    default_args_tuple,
+                    lambda_instructions,
+                    self_object.unwrap(),
+                    result.clone(),
+                ]
+            } else {
+                vec![default_args_tuple, lambda_instructions, result.clone()]
+            })),
             result: result,
             coroutine_status: VMCoroutineStatus::Running,
         }
@@ -1937,10 +1967,23 @@ impl VMObject for VMLambda {
     }
 
     fn assign(&mut self, _value: GCRef) -> Result<GCRef, VMVariableError> {
-        Err(VMVariableError::TypeError(
-            GCRef::wrap(self),
-            "Cannot assign a value to VMLambda".to_string(),
-        ))
+        let c_default_args_tuple = self.default_args_tuple.clone();
+        let c_lambda_instructions = self.lambda_instructions.clone();
+        let c_result = self.result.clone();
+        self.get_traceable().remove_reference(&c_default_args_tuple);
+        self.get_traceable()
+            .remove_reference(&c_lambda_instructions);
+        self.get_traceable().remove_reference(&c_result);
+        let v_lambda = _value.as_type::<VMLambda>();
+        self.default_args_tuple = v_lambda.default_args_tuple.clone();
+        self.lambda_instructions = v_lambda.lambda_instructions.clone();
+        self.result = v_lambda.result.clone();
+        self.get_traceable()
+            .add_reference(&v_lambda.default_args_tuple);
+        self.get_traceable()
+            .add_reference(&v_lambda.lambda_instructions);
+        self.get_traceable().add_reference(&v_lambda.result);
+        Ok(GCRef::wrap(self))
     }
 
     fn value_ref(&self) -> Result<GCRef, VMVariableError> {

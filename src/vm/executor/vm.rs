@@ -90,11 +90,19 @@ impl VMCoroutinePool {
         lambda_object: GCRef,
         original_code: Option<String>,
         gc_system: &mut GCSystem,
+        auto_wrap: bool,
     ) -> Result<isize, VMError> {
         let mut executor = IRExecutor::new(original_code);
-        executor.entry_lambda_wrapper =
-            Some(gc_system.new_object(VMVariableWrapper::new(lambda_object.clone())));
-        executor.init(lambda_object, gc_system)?;
+        let wrapped;
+        if auto_wrap {
+            wrapped =
+            gc_system.new_object(VMVariableWrapper::new(lambda_object.clone()));            
+        } else {
+            wrapped = lambda_object.clone();
+        }
+        executor.entry_lambda_wrapper = Some(wrapped.clone());
+        let unwrapped = wrapped.as_type::<VMVariableWrapper>().value_ref.clone();
+        executor.init(unwrapped, gc_system)?;
         self.executors.push((executor, self.gen_id));
         let id = self.gen_id;
         self.gen_id += 1;
@@ -153,7 +161,7 @@ impl VMCoroutinePool {
                     let lambda_object = coroutine.lambda_ref;
                     let source_code = coroutine.source_code;
                     // println!("spawn coroutine: {}", try_repr_vmobject(lambda_object.clone()).unwrap_or(format!("{:?}", lambda_object.clone())));
-                    self.new_coroutine(lambda_object, source_code, gc_system)?;
+                    self.new_coroutine(lambda_object, source_code, gc_system, false)?;
                 }
             }
             if self.executors.len() == 0 {
@@ -752,17 +760,7 @@ impl IRExecutor {
                 let obj = gc_system.new_object(VMTuple::new(tuple_refs.clone()));
 
                 let built_tuple = obj.as_type::<VMTuple>();
-                for val in &built_tuple.values {
-                    if val.isinstance::<VMNamed>()
-                        && val
-                            .as_const_type::<VMNamed>()
-                            .value
-                            .isinstance::<VMLambda>()
-                    {
-                        let lambda = val.as_const_type::<VMNamed>().value.as_type::<VMLambda>();
-                        lambda.set_self_object(obj.clone());
-                    }
-                }
+                built_tuple.set_lambda_self();
 
                 self.stack.push(VMStackObject::VMObject(obj));
                 for obj in tuple {
@@ -1194,7 +1192,7 @@ impl IRExecutor {
                 }
 
                 let spawned_coroutines = vec![SpawnedCoroutine {
-                    lambda_ref: lambda_ref.clone(),
+                    lambda_ref: gc_system.new_object(VMVariableWrapper::new(lambda_ref.clone())),
                     source_code: self.original_code.clone(),
                 }];
                 self.stack.push(VMStackObject::VMObject(lambda_ref));
