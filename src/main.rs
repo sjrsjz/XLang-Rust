@@ -144,7 +144,6 @@ fn execute_ir(package: IRPackage, source_code: Option<String>) -> Result<GCRef, 
     }
     main_lambda.offline();
 
-    println!("done!");
     gc_system.collect();
 
     Ok(result)

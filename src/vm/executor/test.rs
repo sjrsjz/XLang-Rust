@@ -15,7 +15,7 @@ fn test_vm_int_operations() {
     assert_eq!(int_obj.as_const_type::<VMInt>().value, 42);
     
     // 测试复制
-    let int_copy = int_obj.as_const_type::<VMInt>().copy(&mut gc_system).unwrap();
+    let int_copy = int_obj.as_const_type::<VMInt>().deepcopy(&mut gc_system).unwrap();
     assert_eq!(int_copy.as_const_type::<VMInt>().value, 42);
     
     // 测试赋值
@@ -166,7 +166,7 @@ fn test_keyval_copy_and_assign() {
     let keyval = gc_system.new_object(VMKeyVal::new(key, value));
     
     // 测试复制
-    let copied = keyval.as_const_type::<VMKeyVal>().copy(&mut gc_system).unwrap();
+    let copied = keyval.as_const_type::<VMKeyVal>().deepcopy(&mut gc_system).unwrap();
     assert!(copied.isinstance::<VMKeyVal>());
     
     // 验证复制的键值对内容

@@ -543,7 +543,11 @@ impl<'t> IRGenerator<'t> {
                     }
                     ASTNodeModifier::Copy => {
                         instructions.extend(self.generate_without_redirect(&ast_node.children[0])?);
-                        instructions.push(IR::CopyValue);
+                        instructions.push(IR::DeepCopyValue);
+                    }
+                    ASTNodeModifier::DeepCopy => {
+                        instructions.extend(self.generate_without_redirect(&ast_node.children[0])?);
+                        instructions.push(IR::DeepCopyValue);
                     }
                     ASTNodeModifier::Import => {
                         instructions.extend(self.generate_without_redirect(&ast_node.children[0])?);
@@ -567,11 +571,15 @@ impl<'t> IRGenerator<'t> {
                     }
                     ASTNodeModifier::Wipe => {
                         instructions.extend(self.generate_without_redirect(&ast_node.children[0])?);
-                        instructions.push(IR::WipeAltas);
+                        instructions.push(IR::WipeAlias);
                     }
-                    ASTNodeModifier::AltasOf => {
+                    ASTNodeModifier::AliasOf => {
                         instructions.extend(self.generate_without_redirect(&ast_node.children[0])?);
-                        instructions.push(IR::AltasOf);
+                        instructions.push(IR::AliasOf);
+                    }
+                    ASTNodeModifier::BindSelf => {
+                        instructions.extend(self.generate_without_redirect(&ast_node.children[0])?);
+                        instructions.push(IR::BindSelf);
                     }
                 }
                 Ok(instructions)
@@ -592,10 +600,11 @@ impl<'t> IRGenerator<'t> {
                 instructions.push(IR::In);
                 Ok(instructions)
             }
-            ASTNodeType::Altas(altas) => {
+            ASTNodeType::Alias(alias) => {
                 let mut instructions = Vec::new();
                 instructions.push(debug_info);
-                instructions.push(IR::Altas(altas.clone()));
+                instructions.extend(self.generate_without_redirect(&ast_node.children[0])?);
+                instructions.push(IR::Alias(alias.clone()));
                 Ok(instructions)
             }
         }

@@ -20,7 +20,7 @@ pub enum ContextError {
     NoVariable(String),
     ExistingVariable(String),
     OfflinedObject(GCRef),
-    InvaildContextVariable(GCRef),
+    InvalidContextVariable(GCRef),
     VMVariableError(VMVariableError),
     ContextError(String),
 }
@@ -35,7 +35,7 @@ impl ContextError {
                 "Offlined object: {:?}",
                 try_repr_vmobject(obj.clone()).unwrap_or(format!("{:?}", obj))
             ),
-            ContextError::InvaildContextVariable(obj) => format!(
+            ContextError::InvalidContextVariable(obj) => format!(
                 "Invalid context variable: {:?}",
                 try_repr_vmobject(obj.clone()).unwrap_or(format!("{:?}", obj))
             ),

@@ -21,34 +21,6 @@
 
 
 
-// obj1 := {
-//     "A" : "This is A",
-//     "B" : "This is B",
-//     "C" : {
-//         "D" : 1,
-//         "E" : 2,
-//     },
-//     getB => () -> {
-//         return self.B;
-//     },
-//     setB => (v => "") -> {
-//         self.B = v;
-//     },
-// };
-
-// print(obj1);
-
-// obj2 := obj1;
-// obj1.setB("This is obj1.B");
-
-// print(obj2.getB());
-
-// obj2 := copy obj1;
-// obj2.B = "This is obj2.B";
-// obj1.B = "This is obj1.B";
-
-// print(obj2.getB());
-
 extend := (obj => null, methods => (,)) -> {
     new_obj := (,);
     n := 0; while(n < len(obj)) {
@@ -61,13 +33,13 @@ extend := (obj => null, methods => (,)) -> {
         n = n + 1;
     };
     n := 0; while(n < len(methods)) {
-        new_obj = new_obj + (copy methods[n],);
+        new_obj = new_obj + (methods[n],);
         n = n + 1;
     };
-    return new_obj;
+    return bind new_obj;
 };
 
-obj1 := {
+obj1 := bind {
     "A" : "This is A",
     "B" : "This is B",
     "C" : {
@@ -97,3 +69,35 @@ extended_obj.setA("This is obj1.A");
 extended_obj.setB("This is obj1.B");
 print(extended_obj.getA());
 print(extended_obj.getB());
+
+
+classA := bind {
+	"A" : "This is A",
+	"B" : "This is B",
+	"C" : {
+		"D" : 1,
+		"E" : 2,
+	},
+	getB => () -> {
+		return self.B;
+	},
+	setB => (v => "") -> {
+		self.B = v;
+	},
+};
+
+print(classA.getB());
+
+aliased := MyType::Type1::bind {
+	print => () -> {
+		print("This is a print function");
+	},
+};
+
+aliased.print();
+print(aliasof aliased); // (Type1, MyType)
+
+deepseek := bind {
+	chat => () -> "服务器繁忙，请稍后重试",
+};
+print(deepseek.chat());

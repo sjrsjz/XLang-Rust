@@ -42,6 +42,7 @@ pub enum IR{
     BuildKeyValue, // pop key and value from stack and build key value pair
     BuildNamed, // pop key and value from stack and build named argument
     BuildRange, // pop start and end from stack and build range
+    BindSelf, // bind lambda's self to tuple
     BinaryOp(IROperation), // pop two values from stack and perform binary operation
     UnaryOp(IROperation), // pop one value from stack and perform unary operation
     Let(String), // pop value from stack and store it in variable
@@ -61,6 +62,7 @@ pub enum IR{
     JumpOffset(isize), // jump to offset
     JumpIfFalseOffset(isize), // jump to offset if false
     ResetStack, // reset stack
+    DeepCopyValue, // copy value
     CopyValue, // copy value
     RefValue, // get reference value
     DerefValue, // get dereference value
@@ -70,9 +72,9 @@ pub enum IR{
     RedirectJump(String), // redirect ir, not for vm just for ir generation
     RedirectJumpIfFalse(String), 
     RedirectLabel(String),
-    Altas(String),
-    WipeAltas,
-    AltasOf,
+    Alias(String),
+    WipeAlias,
+    AliasOf,
     In,
     Yield,
     AsyncCallLambda,
