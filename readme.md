@@ -92,7 +92,7 @@ a = true; // 赋值变量 a
 print(valueof a); // true
 ```
 
-*注意*: XLang-Rust 默认认为赋值是传递引用而非值，除非使用 `copy` 和 `deepcopy` 关键字
+*注意*: XLang-Rust 默认认为赋值是传递引用而非值，除非使用 `copy` 和 `deepcopy` 关键字进行浅拷贝和深拷贝
 
 ```xlang
 a := 1; // 定义变量 a
@@ -121,6 +121,8 @@ XLang-Rust 有以下基本数据类型：
 - `keyval`：键值对类型
 - `named`：命名参数类型
 - `lambda`：函数类型
+- `range`：范围类型
+- `wrap`：变体包装类型
 
 ### 键值对和命名参数
 
@@ -262,7 +264,7 @@ a := 1; // 定义变量 a
     b := 2; // 定义变量 b
     print(a); // 1
     print(b); // 2
-}
+};
 print(a); // 1
 // print(b); // 错误，变量 b 不在作用域内
 ```
