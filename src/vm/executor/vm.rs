@@ -31,6 +31,7 @@ pub enum VMError {
     CannotGetSelf(GCRef),
     InvalidArgument(GCRef, String),
     FileError(String),
+    DetailedError(String),
 }
 
 impl VMError {
@@ -41,16 +42,16 @@ impl VMError {
             }
             VMError::TryEnterNotLambda(lambda) => format!(
                 "TryEnterNotLambda: {}",
-                try_repr_vmobject(lambda.clone()).unwrap_or(format!("{:?}", lambda))
+                try_repr_vmobject(lambda.clone(), Some((0,5))).unwrap_or(format!("{:?}", lambda))
             ),
             VMError::EmptyStack => "EmptyStack".to_string(),
             VMError::ArgumentIsNotTuple(tuple) => format!(
                 "ArgumentIsNotTuple: {}",
-                try_repr_vmobject(tuple.clone()).unwrap_or(format!("{:?}", tuple))
+                try_repr_vmobject(tuple.clone(), Some((0,5))).unwrap_or(format!("{:?}", tuple))
             ),
             VMError::UnableToReference(obj) => format!(
                 "UnableToReference: {}",
-                try_repr_vmobject(obj.clone()).unwrap_or(format!("{:?}", obj))
+                try_repr_vmobject(obj.clone(), Some((0,5))).unwrap_or(format!("{:?}", obj))
             ),
             VMError::NotVMObject(obj) => format!("NotVMObject: {:?}", obj),
             VMError::ContextError(err) => format!("ContextError: {:?}", err.to_string()),
@@ -58,14 +59,15 @@ impl VMError {
             VMError::AssertFailed => "AssertFailed".to_string(),
             VMError::CannotGetSelf(obj) => format!(
                 "CannotGetSelf: {}",
-                try_repr_vmobject(obj.clone()).unwrap_or(format!("{:?}", obj))
+                try_repr_vmobject(obj.clone(), Some((0,5))).unwrap_or(format!("{:?}", obj))
             ),
             VMError::InvalidArgument(obj, msg) => format!(
                 "InvalidArgument: {}, {}",
-                try_repr_vmobject(obj.clone()).unwrap_or(format!("{:?}", obj)),
+                try_repr_vmobject(obj.clone(), Some((0,5))).unwrap_or(format!("{:?}", obj)),
                 msg
             ),
             VMError::FileError(msg) => format!("FileError: {}", msg),
+            VMError::DetailedError(msg) => format!("DetailedError: {}", msg),
         }
     }
 }
@@ -157,7 +159,29 @@ impl VMCoroutinePool {
 
     pub fn run_until_finished(&mut self, gc_system: &mut GCSystem) -> Result<(), VMError> {
         loop {
-            let spawned_coroutines = self.step_all(gc_system)?;
+            let spawned_coroutines = self.step_all(gc_system).map_err(|e| {
+                let all_coroutines_contexts_repr = self
+                    .executors
+                    .iter()
+                    .map(|(e, _)| {
+                        let lambda = e
+                            .entry_lambda_wrapper
+                            .as_ref()
+                            .unwrap()
+                            .as_type::<VMVariableWrapper>()
+                            .value_ref
+                            .as_const_type::<VMLambda>();
+                        format!(
+                            "# {}: {}\n{}",
+                            lambda.signature,
+                            lambda.coroutine_status.to_string(),
+                            e.context.format_context(&e.stack)
+                        )
+                    })
+                    .collect::<Vec<String>>()
+                    .join("\n");
+                VMError::DetailedError(format!("** CoroutinePool Step Error! **\n\n# Main Error\n{}\n\nAll Coroutine Contexts:\n{}", e.to_string(),all_coroutines_contexts_repr))
+            })?;
             self.sweep_finished();
             if let Some(coroutines) = spawned_coroutines {
                 for coroutine in coroutines {
@@ -218,7 +242,7 @@ mod native_functions {
         let mut result = String::new();
         for obj in tuple.values.iter() {
             let obj_ref = try_value_ref_as_vmobject(obj.clone())?;
-            let repr = try_repr_vmobject(obj_ref)?;
+            let repr = try_repr_vmobject(obj_ref, None)?;
             result.push_str(&format!("{} ", repr));
         }
         result = result.trim_end_matches(" ").to_string();
@@ -487,7 +511,7 @@ impl IRExecutor {
         for (i, obj) in self.stack.iter().enumerate() {
             match obj {
                 VMStackObject::VMObject(obj) => {
-                    let repr = try_repr_vmobject(obj.clone());
+                    let repr = try_repr_vmobject(obj.clone(), Some((0,5)));
                     if repr.is_ok() {
                         println!("{}: {:?}", i, repr.unwrap());
                     } else {
@@ -558,8 +582,8 @@ impl IRExecutor {
                     name.clone(),
                     format!(
                         "Expected VMString in Lambda arguments {}'s key, but got {}",
-                        try_repr_vmobject(v_ref.clone()).unwrap_or(format!("{:?}", v_ref)),
-                        try_repr_vmobject(name.clone()).unwrap_or(format!("{:?}", name))
+                        try_repr_vmobject(v_ref.clone(), Some((0,5))).unwrap_or(format!("{:?}", v_ref)),
+                        try_repr_vmobject(name.clone(), Some((0,5))).unwrap_or(format!("{:?}", name))
                     ),
                 ));
             }
@@ -1336,7 +1360,7 @@ impl IRExecutor {
                         path_arg_named_ref.clone(),
                         format!(
                             "Import requires VMNamed but got {:?}",
-                            try_repr_vmobject(path_arg_named_ref.clone())
+                            try_repr_vmobject(path_arg_named_ref.clone(), Some((0,5)))
                         ),
                     ));
                 }
@@ -1353,7 +1377,7 @@ impl IRExecutor {
                         path_ref.clone(),
                         format!(
                             "Import requires VMString but got {:?}",
-                            try_repr_vmobject(path_ref.clone())
+                            try_repr_vmobject(path_ref.clone(), Some((0,5)))
                         ),
                     ));
                 }
@@ -1367,7 +1391,7 @@ impl IRExecutor {
                         arg_tuple_ref.clone(),
                         format!(
                             "Import as VMLambda requires VMTuple but got {:?}",
-                            try_repr_vmobject(arg_tuple_ref.clone())
+                            try_repr_vmobject(arg_tuple_ref.clone(), Some((0,5)))
                         ),
                     ));
                 }

@@ -123,7 +123,7 @@ fn execute_ir(package: IRPackage, source_code: Option<String>) -> Result<GCRef, 
 
     let result = coroutine_pool.run_until_finished(&mut gc_system);
     if let Err(e) = result {
-        println!("执行错误: {}", e.to_string());
+        println!("VM Crashed!: {}", e.to_string());
         return Err(VMError::AssertFailed);
     }
 
@@ -133,7 +133,7 @@ fn execute_ir(package: IRPackage, source_code: Option<String>) -> Result<GCRef, 
         try_value_ref_as_vmobject(result.clone()).map_err(|e| VMError::VMVariableError(e))?;
 
     if !result_ref.isinstance::<VMNull>() {
-        match try_repr_vmobject(result_ref.clone()) {
+        match try_repr_vmobject(result_ref.clone(), None) {
             Ok(value) => {
                 println!("{}", value);
             }

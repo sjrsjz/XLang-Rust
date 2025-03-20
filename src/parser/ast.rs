@@ -531,6 +531,12 @@ fn match_all<'t>(
 
     node_matcher.add_matcher(Box::new(
         |tokens, current| -> Result<(Option<ASTNode<'t>>, usize), ParserError<'t>> {
+            match_named_to_null(tokens, current)
+        },
+    ));
+
+    node_matcher.add_matcher(Box::new(
+        |tokens, current| -> Result<(Option<ASTNode<'t>>, usize), ParserError<'t>> {
             match_alias(tokens, current)
         },
     ));
@@ -1552,6 +1558,42 @@ fn match_modifier<'t>(
     return Ok((None, 0));
 }
 
+fn match_named_to_null<'t>(
+    tokens: &Vec<GatheredTokens<'t>>,
+    current: usize,
+) -> Result<(Option<ASTNode<'t>>, usize), ParserError<'t>> {
+    // expr ?
+    if current + 1 >= tokens.len() {
+        return Ok((None, 0));
+    }
+    if is_symbol(&tokens[tokens.len() - 1], "?") {
+        let left_tokens = tokens[..tokens.len() - 1].to_vec();
+        let (node, node_offset) = match_all(&left_tokens, 0 )?;
+        if node.is_none() {
+            return Ok((None, 0));
+        }
+        if node_offset != left_tokens.len() {
+            return Err(ParserError::NotFullyMatched(
+                &tokens[current][0],
+                &tokens[current][tokens[current].len() - 1],
+            ));
+        }
+        let mut node = node.unwrap();
+        if let ASTNodeType::Variable(name) = node.node_type {
+            node = ASTNode::new(ASTNodeType::String(name), node.token, Some(node.children));
+        }
+        return Ok((
+            Some(ASTNode::new(
+                ASTNodeType::NamedTo,
+                Some(&tokens[current][0]),
+                Some(vec![node, ASTNode::new(ASTNodeType::Null, None, None)]),
+            )),
+            node_offset + 1,
+        ));
+    }
+    return Ok((None, 0));
+}
+
 fn match_alias<'t>(
     tokens: &Vec<GatheredTokens<'t>>,
     current: usize,
@@ -2010,6 +2052,5 @@ fn match_variable<'t>(
             1,
         ));
     }
-
     return Ok((None, 0));
 }

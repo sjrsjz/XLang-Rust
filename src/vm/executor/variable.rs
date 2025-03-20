@@ -27,43 +27,43 @@ impl VMVariableError {
         match self {
             VMVariableError::TypeError(gc_ref, msg) => format!(
                 "TypeError: {}: {}",
-                try_repr_vmobject(gc_ref.clone()).unwrap_or(format!("{:?}", gc_ref)),
+                try_repr_vmobject(gc_ref.clone(), Some((0,5))).unwrap_or(format!("{:?}", gc_ref)),
                 msg
             ),
             VMVariableError::ValueError(gc_ref, msg) => format!(
                 "ValueError: {}: {}",
-                try_repr_vmobject(gc_ref.clone()).unwrap_or(format!("{:?}", gc_ref)),
+                try_repr_vmobject(gc_ref.clone(), Some((0,5))).unwrap_or(format!("{:?}", gc_ref)),
                 msg
             ),
 
             VMVariableError::KeyNotFound(key, gc_ref) => format!(
                 "KeyNotFound: {} in {}",
-                try_repr_vmobject(key.clone()).unwrap_or(format!("{:?}", key)),
-                try_repr_vmobject(gc_ref.clone()).unwrap_or(format!("{:?}", gc_ref))
+                try_repr_vmobject(key.clone(), Some((0,5))).unwrap_or(format!("{:?}", key)),
+                try_repr_vmobject(gc_ref.clone(), Some((0,5))).unwrap_or(format!("{:?}", gc_ref))
             ),
             VMVariableError::ValueNotFound(value, gc_ref) => format!(
                 "ValueNotFound: {} in {}",
-                try_repr_vmobject(value.clone()).unwrap_or(format!("{:?}", value)),
-                try_repr_vmobject(gc_ref.clone()).unwrap_or(format!("{:?}", gc_ref))
+                try_repr_vmobject(value.clone(), Some((0,5))).unwrap_or(format!("{:?}", value)),
+                try_repr_vmobject(gc_ref.clone(), Some((0,5))).unwrap_or(format!("{:?}", gc_ref))
             ),
             VMVariableError::IndexNotFound(index, gc_ref) => format!(
                 "IndexNotFound: {} in {}",
-                try_repr_vmobject(index.clone()).unwrap_or(format!("{:?}", index)),
-                try_repr_vmobject(gc_ref.clone()).unwrap_or(format!("{:?}", gc_ref))
+                try_repr_vmobject(index.clone(), Some((0,5))).unwrap_or(format!("{:?}", index)),
+                try_repr_vmobject(gc_ref.clone(), Some((0,5))).unwrap_or(format!("{:?}", gc_ref))
             ),
             VMVariableError::CopyError(gc_ref, msg) => format!(
                 "CopyError: {}: {}",
-                try_repr_vmobject(gc_ref.clone()).unwrap_or(format!("{:?}", gc_ref)),
+                try_repr_vmobject(gc_ref.clone(), Some((0,5))).unwrap_or(format!("{:?}", gc_ref)),
                 msg
             ),
             VMVariableError::AssignError(gc_ref, msg) => format!(
                 "AssignError: {}: {}",
-                try_repr_vmobject(gc_ref.clone()).unwrap_or(format!("{:?}", gc_ref)),
+                try_repr_vmobject(gc_ref.clone(), Some((0,5))).unwrap_or(format!("{:?}", gc_ref)),
                 msg
             ),
             VMVariableError::ReferenceError(gc_ref, msg) => format!(
                 "ReferenceError: {}: {}",
-                try_repr_vmobject(gc_ref.clone()).unwrap_or(format!("{:?}", gc_ref)),
+                try_repr_vmobject(gc_ref.clone(), Some((0,5))).unwrap_or(format!("{:?}", gc_ref)),
                 msg
             ),
         }
@@ -87,7 +87,19 @@ pub fn try_contains_as_vmobject(value: GCRef, other: GCRef) -> Result<bool, VMVa
     ))
 }
 
-pub fn try_repr_vmobject(value: GCRef) -> Result<String, VMVariableError> {
+pub fn try_repr_vmobject(value: GCRef, depth: Option<(usize, usize)>) -> Result<String, VMVariableError> {
+    if depth.is_some() {
+        let (current, max) = depth.unwrap();
+        if current > max {
+            return Ok("...".to_string());
+        }
+    }
+    let new_depth = if depth.is_some() {
+        let (current, max) = depth.unwrap();
+        Some((current + 1, max))
+    } else {
+        None
+    };
     if value.isinstance::<VMInt>() {
         let int = value.as_const_type::<VMInt>();
         return Ok(int.value.to_string());
@@ -104,39 +116,45 @@ pub fn try_repr_vmobject(value: GCRef) -> Result<String, VMVariableError> {
         return Ok("null".to_string());
     } else if value.isinstance::<VMKeyVal>() {
         let kv = value.as_const_type::<VMKeyVal>();
-        let key = try_repr_vmobject(kv.get_key())?;
-        let value = try_repr_vmobject(kv.get_value())?;
+        let key = try_repr_vmobject(kv.get_key(), new_depth)?;
+        let value = try_repr_vmobject(kv.get_value(), new_depth)?;
         return Ok(format!("{}: {}", key, value));
     } else if value.isinstance::<VMNamed>() {
         let named = value.as_const_type::<VMNamed>();
-        let key = try_repr_vmobject(named.get_key())?;
-        let value = try_repr_vmobject(named.get_value())?;
+        let key = try_repr_vmobject(named.get_key(), new_depth)?;
+        let value = try_repr_vmobject(named.get_value(), new_depth)?;
         return Ok(format!("{} => {}", key, value));
     } else if value.isinstance::<VMTuple>() {
         let tuple = value.as_const_type::<VMTuple>();
         let mut repr = String::new();
+        if tuple.values.len() == 0 {
+            return Ok("(,)".to_string());
+        } 
+        if tuple.values.len() == 1 {
+            return Ok(format!("({},)", try_repr_vmobject(tuple.values[0].clone(), new_depth)?));
+        }
         for (i, val) in tuple.values.iter().enumerate() {
             if i > 0 {
                 repr.push_str(", ");
             }
-            repr.push_str(&try_repr_vmobject(val.clone())?);
+            repr.push_str(&try_repr_vmobject(val.clone(), new_depth)?);
         }
         return Ok(format!("({})", repr));
     } else if value.isinstance::<VMLambda>() {
         let lambda = value.as_const_type::<VMLambda>();
         return Ok(format!(
-            "VMLambda({}, default_args={}, result={})",
+            "{}::{} -> {})",
             lambda.signature,
-            try_repr_vmobject(lambda.default_args_tuple.clone())?,
-            try_repr_vmobject(lambda.result.clone())?
+            try_repr_vmobject(lambda.default_args_tuple.clone(), new_depth)?,
+            try_repr_vmobject(lambda.result.clone(), new_depth)?
         ));
     } else if value.isinstance::<VMInstructions>() {
         return Ok("VMInstructions".to_string());
     } else if value.isinstance::<VMVariableWrapper>() {
         let wrapper = value.as_const_type::<VMVariableWrapper>();
         return Ok(format!(
-            "VMVariableWrapper({})",
-            try_repr_vmobject(wrapper.value_ref.clone())?
+            "wrap({})",
+            try_repr_vmobject(wrapper.value_ref.clone(), new_depth)?
         ));
     } else if value.isinstance::<VMNativeFunction>() {
         //let native_func = value.as_const_type::<VMNativeFunction>();
@@ -145,7 +163,7 @@ pub fn try_repr_vmobject(value: GCRef) -> Result<String, VMVariableError> {
         let wrapper = value.as_const_type::<VMWrapper>();
         return Ok(format!(
             "VMWrapper({})",
-            try_repr_vmobject(wrapper.value_ref.clone())?
+            try_repr_vmobject(wrapper.value_ref.clone(), new_depth)?
         ));
     }
     Err(VMVariableError::TypeError(
@@ -155,7 +173,7 @@ pub fn try_repr_vmobject(value: GCRef) -> Result<String, VMVariableError> {
 }
 
 pub fn debug_print_repr(value: GCRef) {
-    match try_repr_vmobject(value) {
+    match try_repr_vmobject(value, None) {
         Ok(repr) => println!("Repr: {}", repr),
         Err(err) => println!("Cannot repr: {:?}", err),
     }
@@ -2138,6 +2156,16 @@ pub enum VMCoroutineStatus {
     Running,
     Pending,
     Finished,
+}
+
+impl VMCoroutineStatus {
+    pub fn to_string(&self) -> String {
+        match self {
+            VMCoroutineStatus::Running => "Running".to_string(),
+            VMCoroutineStatus::Pending => "Pending".to_string(),
+            VMCoroutineStatus::Finished => "Finished".to_string(),
+        }
+    }
 }
 
 #[derive(Debug)]
