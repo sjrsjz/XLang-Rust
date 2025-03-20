@@ -196,7 +196,7 @@ impl Drop for GCTraceable {
         let total_refs: usize = self.references.values().sum();
         if total_refs > 0 {
             eprintln!(
-                "[GC警告] 对象被销毁时仍有非零引用! 引用计数: {}, 引用详情: {:?}",
+                "[GC] Warning: {} references are not cleaned up! References: {:?}",
                 total_refs, self.references
             );
 

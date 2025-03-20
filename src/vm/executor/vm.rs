@@ -1,13 +1,7 @@
-use std::ascii::AsciiExt;
-use std::cell::RefCell;
 use std::collections::HashMap;
-use std::default;
 use std::fs::File;
 use std::io::Read;
 
-use rand::seq::index;
-
-use crate::vm::gc;
 use crate::vm::ir::DebugInfo;
 use crate::vm::ir::IROperation;
 use crate::vm::ir::IRPackage;
@@ -42,29 +36,29 @@ impl VMError {
             }
             VMError::TryEnterNotLambda(lambda) => format!(
                 "TryEnterNotLambda: {}",
-                try_repr_vmobject(lambda.clone(), Some((0, 5))).unwrap_or(format!("{:?}", lambda))
+                try_repr_vmobject(lambda.clone(), None).unwrap_or(format!("{:?}", lambda))
             ),
             VMError::EmptyStack => "EmptyStack".to_string(),
             VMError::ArgumentIsNotTuple(tuple) => format!(
                 "ArgumentIsNotTuple: {}",
-                try_repr_vmobject(tuple.clone(), Some((0, 5))).unwrap_or(format!("{:?}", tuple))
+                try_repr_vmobject(tuple.clone(), None).unwrap_or(format!("{:?}", tuple))
             ),
             VMError::UnableToReference(obj) => format!(
                 "UnableToReference: {}",
-                try_repr_vmobject(obj.clone(), Some((0, 5))).unwrap_or(format!("{:?}", obj))
+                try_repr_vmobject(obj.clone(), None).unwrap_or(format!("{:?}", obj))
             ),
             VMError::NotVMObject(obj) => format!("NotVMObject: {:?}", obj),
-            VMError::ContextError(err) => format!("ContextError: {:?}", err.to_string()),
-            VMError::VMVariableError(err) => format!("VMVariableError: {}", err.to_string()),
+            VMError::ContextError(err) => err.to_string(),
+            VMError::VMVariableError(err) => err.to_string(),
             VMError::AssertFailed => "AssertFailed".to_string(),
             VMError::CannotGetSelf(obj) => format!(
                 "CannotGetSelf: {}",
-                try_repr_vmobject(obj.clone(), Some((0, 5))).unwrap_or(format!("{:?}", obj))
+                try_repr_vmobject(obj.clone(), None).unwrap_or(format!("{:?}", obj))
             ),
             VMError::InvalidArgument(obj, msg) => format!(
-                "InvalidArgument: {}, {}",
-                try_repr_vmobject(obj.clone(), Some((0, 5))).unwrap_or(format!("{:?}", obj)),
-                msg
+                "InvalidArgument: {} because {}",
+                try_repr_vmobject(obj.clone(), None).unwrap_or(format!("{:?}", obj)),
+                msg,
             ),
             VMError::FileError(msg) => format!("FileError: {}", msg),
             VMError::DetailedError(msg) => format!("DetailedError: {}", msg),
@@ -175,10 +169,11 @@ impl VMCoroutinePool {
                             .value_ref
                             .as_const_type::<VMLambda>();
                         format!(
-                            "# {}: {}\n{}",
+                            "# {}: {}\n{}\n\n=== Code ===\n\n{}",
                             lambda.signature,
                             lambda.coroutine_status.to_string(),
-                            e.context.format_context(&e.stack)
+                            e.context.format_context(&e.stack),
+                            e.repr_current_code(Some(2))
                         )
                     })
                     .collect::<Vec<String>>()
@@ -461,6 +456,95 @@ impl IRExecutor {
     pub fn set_debug_info(&mut self, debug_info: DebugInfo) {
         self.debug_info = Some(debug_info);
     }
+    pub fn repr_current_code(&self, context_lines: Option<usize>) -> String {
+        let context_lines = context_lines.unwrap_or(2); // Default to 2 lines of context
+
+        if self.original_code.is_none() || self.debug_info.is_none() {
+            return String::from("[Source code information not available]");
+        }
+
+        let source_code = self.original_code.as_ref().unwrap();
+        let debug_info = self.debug_info.as_ref().unwrap();
+
+        // Check if current IP is out of bounds
+        if self.ip < 0
+            || self.ip as usize
+                >= self
+                    .lambda_instructions
+                    .last()
+                    .unwrap()
+                    .as_const_type::<VMInstructions>()
+                    .instructions
+                    .len()
+        {
+            return format!("[IP out of range: {}]", self.ip);
+        }
+
+        // Get source position for current instruction
+        let current_pos = debug_info.code_position;
+
+        // Split source code into lines
+        let lines: Vec<&str> = source_code.lines().collect();
+
+        // Helper function to find line and column from position
+        let find_position = |pos: usize| -> (usize, usize) {
+            let mut current_pos = 0;
+            for (line_num, line) in lines.iter().enumerate() {
+                let line_len = line.len() + 1; // +1 for newline
+                if current_pos + line_len > pos {
+                    return (line_num, pos - current_pos);
+                }
+                current_pos += line_len;
+            }
+            (lines.len() - 1, 0) // Default to last line
+        };
+
+        // Get line and column number for current position
+        let (line_num, col_num) = find_position(current_pos);
+
+        // Calculate range of lines to display
+        let start_line = if line_num > context_lines {
+            line_num - context_lines
+        } else {
+            0
+        };
+        let end_line = std::cmp::min(line_num + context_lines, lines.len() - 1);
+
+        // Build result string
+        let mut result = String::new();
+
+        // Add context lines with current line highlighted
+        for i in start_line..=end_line {
+            let line_prefix = format!("{:4} | ", i + 1);
+            result.push_str(&line_prefix);
+            result.push_str(lines[i]);
+            result.push('\n');
+
+            // Mark the current line with pointer
+            if i == line_num {
+                let mut marker = String::from(" ".repeat(line_prefix.len()));
+                marker.push_str(&" ".repeat(col_num));
+                marker.push('^');
+
+                result.push_str(&marker);
+                result.push('\n');
+            }
+        }
+
+        // Add current instruction information
+        let instruction = &self
+            .lambda_instructions
+            .last()
+            .unwrap()
+            .as_const_type::<VMInstructions>()
+            .instructions[self.ip as usize];
+        result.push_str(&format!(
+            "Current instruction: {:?} (IP: {})\n",
+            instruction, self.ip
+        ));
+
+        result
+    }
 
     pub fn pop_object(&mut self) -> Result<VMStackObject, VMError> {
         if self.stack.len() == 0 {
@@ -518,7 +602,7 @@ impl IRExecutor {
         for (i, obj) in self.stack.iter().enumerate() {
             match obj {
                 VMStackObject::VMObject(obj) => {
-                    let repr = try_repr_vmobject(obj.clone(), Some((0, 5)));
+                    let repr = try_repr_vmobject(obj.clone(), None);
                     if repr.is_ok() {
                         println!("{}: {:?}", i, repr.unwrap());
                     } else {
@@ -577,7 +661,10 @@ impl IRExecutor {
             if !v_ref.isinstance::<VMNamed>() {
                 return Err(VMError::InvalidArgument(
                     v.clone(),
-                    format!("Not a VMNamed in Lambda arguments: {:?}", v),
+                    format!(
+                        "Not a VMNamed in Lambda arguments: {}",
+                        try_repr_vmobject(default_args.clone(), None).unwrap_or(format!("{:?}", default_args))
+                    ),
                 ));
             }
             let v = v_ref.as_const_type::<VMNamed>();
@@ -589,10 +676,8 @@ impl IRExecutor {
                     name.clone(),
                     format!(
                         "Expected VMString in Lambda arguments {}'s key, but got {}",
-                        try_repr_vmobject(v_ref.clone(), Some((0, 5)))
-                            .unwrap_or(format!("{:?}", v_ref)),
-                        try_repr_vmobject(name.clone(), Some((0, 5)))
-                            .unwrap_or(format!("{:?}", name))
+                        try_repr_vmobject(v_ref.clone(), None).unwrap_or(format!("{:?}", v_ref)),
+                        try_repr_vmobject(name.clone(), None).unwrap_or(format!("{:?}", name))
                     ),
                 ));
             }
@@ -900,12 +985,13 @@ impl IRExecutor {
                             .map_err(|e| VMError::VMVariableError(e))?;
                         gc_system.new_object(VMBoolean::new(result))
                     }
-
                     IROperation::Or => {
                         let result = try_or_as_vmobject(left, right)
                             .map_err(|e| VMError::VMVariableError(e))?;
                         gc_system.new_object(VMBoolean::new(result))
                     }
+                    IROperation::Power => try_power_as_vmobject(left, right, gc_system)
+                        .map_err(|e| VMError::VMVariableError(e))?,
                     _ => return Err(VMError::InvalidInstruction(instruction)),
                 };
                 self.stack.push(VMStackObject::VMObject(obj));
@@ -933,6 +1019,20 @@ impl IRExecutor {
                             return Err(VMError::InvalidInstruction(instruction));
                         }
                     }
+                    IROperation::Add => {
+                        let ref_obj = ref_obj;
+                        if ref_obj.isinstance::<VMInt>() {
+                            let value = ref_obj.as_const_type::<VMInt>().value;
+                            gc_system.new_object(VMInt::new(value.abs()))
+                        } else if ref_obj.isinstance::<VMFloat>() {
+                            let value = ref_obj.as_const_type::<VMFloat>().value;
+                            gc_system.new_object(VMFloat::new(value.abs()))
+                        } else {
+                            return Err(VMError::InvalidInstruction(instruction));
+                        }
+                    }
+                    IROperation::BitwiseNot => try_bitwise_not_as_vmobject(ref_obj, gc_system)
+                        .map_err(|e| VMError::VMVariableError(e))?,
                     _ => return Err(VMError::InvalidInstruction(instruction)),
                 };
                 self.stack.push(VMStackObject::VMObject(obj));
@@ -978,7 +1078,7 @@ impl IRExecutor {
                     .truncate(*self.context.stack_pointers.last().unwrap());
                 let ip_info = self.stack.pop().unwrap();
                 let VMStackObject::LastIP(ip, use_new_instructions) = ip_info else {
-                    return Err(VMError::InvalidInstruction(instruction));
+                    return Err(VMError::EmptyStack);
                 };
                 self.ip = ip as isize;
                 if use_new_instructions {
@@ -1040,6 +1140,16 @@ impl IRExecutor {
                 }
                 self.stack.push(VMStackObject::VMObject(obj));
             }
+
+            IR::Pop => {
+                let obj = self.pop_object()?;
+                let obj = match obj {
+                    VMStackObject::VMObject(obj) => obj,
+                    _ => return Err(VMError::NotVMObject(obj)),
+                };
+                self.offline_if_not_variable(&obj);
+            }
+
             IR::JumpOffset(offset) => {
                 self.ip += offset;
             }
@@ -1366,7 +1476,7 @@ impl IRExecutor {
                         path_arg_named_ref.clone(),
                         format!(
                             "Import requires VMNamed but got {:?}",
-                            try_repr_vmobject(path_arg_named_ref.clone(), Some((0, 5)))
+                            try_repr_vmobject(path_arg_named_ref.clone(), None)
                         ),
                     ));
                 }
@@ -1383,7 +1493,7 @@ impl IRExecutor {
                         path_ref.clone(),
                         format!(
                             "Import requires VMString but got {:?}",
-                            try_repr_vmobject(path_ref.clone(), Some((0, 5)))
+                            try_repr_vmobject(path_ref, None)
                         ),
                     ));
                 }
@@ -1397,7 +1507,7 @@ impl IRExecutor {
                         arg_tuple_ref.clone(),
                         format!(
                             "Import as VMLambda requires VMTuple but got {:?}",
-                            try_repr_vmobject(arg_tuple_ref.clone(), Some((0, 5)))
+                            try_repr_vmobject(arg_tuple_ref, None)
                         ),
                     ));
                 }

@@ -22,6 +22,7 @@ pub enum IROperation {
     Less,         // <
     GreaterEqual, // >=
     LessEqual,    // <=
+    BitwiseNot,   // ~
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -59,6 +60,7 @@ pub enum IR{
     Return, // pop value from stack and return it
     NewFrame, // create new frame
     PopFrame, // pop frame
+    Pop, // pop value from stack and discard it
     JumpOffset(isize), // jump to offset
     JumpIfFalseOffset(isize), // jump to offset if false
     ResetStack, // reset stack
@@ -163,7 +165,7 @@ impl Functions {
         self.function_instructions.insert(function_name, instructions);
     }
 
-    pub fn build_instructions(&mut self) -> (IRPackage) {
+    pub fn build_instructions(&mut self) -> IRPackage {
         let mut func_ips = HashMap::new();
         let mut instructions = Vec::<IR>::new();
         for (func_name, func_instructions) in self.function_instructions.iter() {

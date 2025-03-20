@@ -78,10 +78,10 @@ pub mod lexer {
 
     pub fn is_operator(symbol: &str) -> bool {
         let operators = vec![
-            "+", "-", "*", "/", "\\", "%", "&", "!", "^", "~", "=", "==", ">", "<", "<=", ">=",
+            "+", "-", "*", "**", "/", "\\", "%", "&", "!", "^", "~", "=", "==", ">", "<", "<=", ">=",
             "!=", "?=", "|", "?", ":>", "#", "&&", ",", ".", "\n", ":", "->", "<<", ">>", "/*",
             "*/", ";", " ", ":=", "|>", "<|", "::", "=>", "++", "||", ">>", "<<", "\"\"\"", "'''",
-            "(", ")", "[", "]", "{", "}", "..", "?->", "<:" // 添加了<:运算符
+            "(", ")", "[", "]", "{", "}", "..",
         ];
         operators.contains(&symbol)
     }
@@ -92,22 +92,22 @@ pub mod lexer {
         let tokens = RefCell::new(Vec::<super::Token>::new());
         let curr_pos = RefCell::new(0usize);
 
-        // 辅助函数：获取指定位置的子字符串
-        let substr = |start: usize, len: usize| -> String {
-            if start + len > chars.len() {
-                return "".to_string();
-            }
-            chars[start..start+len].iter().collect()
-        };
+        // // 辅助函数：获取指定位置的子字符串
+        // let substr = |start: usize, len: usize| -> String {
+        //     if start + len > chars.len() {
+        //         return "".to_string();
+        //     }
+        //     chars[start..start+len].iter().collect()
+        // };
 
-        // 辅助函数：获取字符的字节索引
-        let get_byte_index = |char_index: usize| -> usize {
-            if char_index == 0 {
-                return 0;
-            }
-            let s: String = chars[0..char_index].iter().collect();
-            s.len()
-        };
+        // // 辅助函数：获取字符的字节索引
+        // let get_byte_index = |char_index: usize| -> usize {
+        //     if char_index == 0 {
+        //         return 0;
+        //     }
+        //     let s: String = chars[0..char_index].iter().collect();
+        //     s.len()
+        // };
 
         // Skip whitespace
         let skip_space = || {

@@ -12,6 +12,7 @@ clap = { version = "4.5.32", features = ["derive"] }
 rustyline = "15.0.0"
 colored = "3.0.0"
 dirs = "6.0.0"
+rustyline-derive = "0.11.0"
 
 [profile.release]
 # 保留一些调试信息，帮助排查问题

@@ -33,11 +33,11 @@ impl ContextError {
             ContextError::ExistingVariable(name) => format!("Existing variable: {}", name),
             ContextError::OfflinedObject(obj) => format!(
                 "Offlined object: {:?}",
-                try_repr_vmobject(obj.clone(), Some((0,5))).unwrap_or(format!("{:?}", obj))
+                try_repr_vmobject(obj.clone(), None).unwrap_or(format!("{:?}", obj))
             ),
             ContextError::InvalidContextVariable(obj) => format!(
                 "Invalid context variable: {:?}",
-                try_repr_vmobject(obj.clone(), Some((0,5))).unwrap_or(format!("{:?}", obj))
+                try_repr_vmobject(obj.clone(), None).unwrap_or(format!("{:?}", obj))
             ),
             ContextError::VMVariableError(err) => {
                 format!("VM variable error: {:?}", err.to_string())
@@ -194,7 +194,7 @@ impl Context {
                     output.push_str("  Variables:\n");
                     
                     for (name, var) in vars.iter() {
-                        let var_value = try_repr_vmobject(var.clone(), Some((0,5)))
+                        let var_value = try_repr_vmobject(var.clone(), None)
                             .unwrap_or_else(|_| format!("<cannot display>"));
                         
                         output.push_str(&format!("    - {} = {}\n", 
@@ -220,7 +220,7 @@ impl Context {
                             i, ip, call_type));
                     },
                     VMStackObject::VMObject(obj_ref) => {
-                        let obj_value = try_repr_vmobject(obj_ref.clone(), Some((0,5)))
+                        let obj_value = try_repr_vmobject(obj_ref.clone(), None)
                             .unwrap_or_else(|_| format!("<cannot display>"));
                         
                         output.push_str(&format!("+ [{}] {}\n", 
@@ -246,7 +246,7 @@ impl Context {
     pub fn debug_print_all_vars(&self) {
         for (vars, _, _, _) in self.frames.iter().rev() {
             for (name, var) in vars.iter() {
-                println!("{}: {:?}, refs: {:?}", name, try_repr_vmobject(var.clone(), Some((0,5))), var.get_traceable().references);
+                println!("{}: {:?}, refs: {:?}", name, try_repr_vmobject(var.clone(), None), var.get_traceable().references);
             }
         }
     }
