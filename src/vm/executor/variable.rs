@@ -2339,7 +2339,13 @@ impl VMObject for VMLambda {
         )))
     }
 
-    fn assign(&mut self, _value: GCRef) -> Result<GCRef, VMVariableError> {
+    fn assign(&mut self, value: GCRef) -> Result<GCRef, VMVariableError> {
+        if !value.isinstance::<VMLambda>() {
+            return Err(VMVariableError::TypeError(
+                value.clone(),
+                "Cannot assign a value of non-lambda type".to_string(),
+            ));
+        }
         let c_default_args_tuple = self.default_args_tuple.clone();
         let c_lambda_instructions = self.lambda_instructions.clone();
         let c_result = self.result.clone();
@@ -2347,7 +2353,7 @@ impl VMObject for VMLambda {
         self.get_traceable()
             .remove_reference(&c_lambda_instructions);
         self.get_traceable().remove_reference(&c_result);
-        let v_lambda = _value.as_type::<VMLambda>();
+        let v_lambda = value.as_type::<VMLambda>();
         self.default_args_tuple = v_lambda.default_args_tuple.clone();
         self.lambda_instructions = v_lambda.lambda_instructions.clone();
         self.result = v_lambda.result.clone();

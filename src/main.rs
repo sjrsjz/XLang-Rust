@@ -68,7 +68,7 @@ fn build_code(code: &str) -> Result<IRPackage, String> {
     let ast = match build_ast(&gathered) {
         Ok(ast) => ast,
         Err(err_token) => {
-            return Err(format!("Error token: {:?}", err_token.format(&tokens)));
+            return Err(format!("{}", err_token.format(&tokens, code.to_string())));
         }
     };
 
@@ -101,7 +101,7 @@ fn execute_ir(package: IRPackage, source_code: Option<String>) -> Result<GCRef, 
         function_ips,
     } = package;
 
-    let mut coroutine_pool = VMCoroutinePool::new();
+    let mut coroutine_pool = VMCoroutinePool::new(true);
     let mut gc_system = GCSystem::new(None);
 
     let default_args_tuple = gc_system.new_object(VMTuple::new(vec![]));
@@ -158,7 +158,7 @@ fn execute_ir_repl(package: IRPackage, source_code: Option<String>, gc_system:&m
         function_ips,
     } = package;
 
-    let mut coroutine_pool = VMCoroutinePool::new();
+    let mut coroutine_pool = VMCoroutinePool::new(false);
 
     let key = gc_system.new_object(VMString::new("Out".to_string()));
     let named = gc_system.new_object(VMNamed::new(key.clone(), input_arguments.clone()));
@@ -182,11 +182,7 @@ fn execute_ir_repl(package: IRPackage, source_code: Option<String>, gc_system:&m
 
     let _coro_id =
         coroutine_pool.new_coroutine(main_lambda.clone(), source_code, gc_system, true)?;
-    let result = coroutine_pool.run_until_finished(gc_system);
-    if let Err(e) = result {
-        println!("VM Crashed!: {}", e.to_string());
-        return Err(VMError::AssertFailed);
-    }
+    coroutine_pool.run_until_finished(gc_system)?;
     gc_system.collect();
 
     Ok(main_lambda)
@@ -297,10 +293,15 @@ fn run_repl() -> Result<(), String> {
     let mut line_count = 0;
 
     loop {
-        let prompt = format!("{} ", format!("In[{}]:", line_count).green().bold());
+        // Start with an empty buffer for collecting multi-line input
+        let mut input_buffer = String::new();
+        let mut is_multiline = false;
         
-        // Read input line
-        let readline = rl.readline(&prompt);
+        // Main prompt for the first line
+        let main_prompt = format!("{} ", format!("In[{}]:", line_count).green().bold());
+        
+        // Read the first line
+        let readline = rl.readline(&main_prompt);
         
         match readline {
             Ok(line) => {
@@ -309,37 +310,77 @@ fn run_repl() -> Result<(), String> {
                     continue;
                 }
                 
-                // Add to history
-                let _ = rl.add_history_entry(line.clone());
-                
-                // Process exit commands
-                if input == "exit" || input == "quit" {
+                // Process exit commands on the first line
+                if !is_multiline && (input == "exit" || input == "quit") {
                     println!("{}", "Goodbye!".bright_blue());
                     break;
                 }
-
-                match build_code(input) {
-                    Ok(package) => match execute_ir_repl(package, Some(input.to_string()), &mut gc_system, input_arguments.clone()) {
+                
+                // Add to input buffer
+                input_buffer.push_str(&line);
+                input_buffer.push('\n');
+                
+                // Check if input is complete
+                if !is_input_complete(&input_buffer) {
+                    is_multiline = true;
+                    
+                    // Continue reading lines until input is complete
+                    while is_multiline {
+                        // Continuation prompt
+                        let cont_prompt = format!("{} ", "...".bright_yellow());
+                        match rl.readline(&cont_prompt) {
+                            Ok(cont_line) => {
+                                // Add to input buffer
+                                input_buffer.push_str(&cont_line);
+                                input_buffer.push('\n');
+                                
+                                // Check if input is now complete
+                                if is_input_complete(&input_buffer) {
+                                    is_multiline = false;
+                                }
+                            },
+                            Err(ReadlineError::Interrupted) => {
+                                println!("{}", "Multiline input cancelled".yellow());
+                                input_buffer.clear();
+                                is_multiline = false;
+                                continue;
+                            },
+                            Err(err) => {
+                                println!("{}", format!("Input error: {}", err).red());
+                                is_multiline = false;
+                                continue;
+                            }
+                        }
+                    }
+                }
+                
+                // Add the complete input to history
+                let _ = rl.add_history_entry(input_buffer.clone());
+                
+                // Process the complete input
+                match build_code(&input_buffer) {
+                    Ok(package) => match execute_ir_repl(package, Some(input_buffer.to_string()), &mut gc_system, input_arguments.clone()) {
                         Ok(lambda_ref) => {
                             let executed = lambda_ref.as_const_type::<VMLambda>();
                             let result_ref = executed.result.clone();
                             let idx = input_arguments.as_type::<VMTuple>().values.len();
                             match try_repr_vmobject(result_ref.clone(), None) {
                                 Ok(value) => {
-                                    println!("{} = {}", format!("Out[{}]", idx).blue().bold(), value.bright_white());
+                                    if !result_ref.isinstance::<VMNull>() {
+                                        println!("{} = {}", format!("Out[{}]", idx).blue().bold(), value.bright_white().bold());
+                                    }
                                     let mut result_ref = result_ref.clone();
                                     input_arguments.get_traceable().add_reference(&mut result_ref);
                                     input_arguments.as_type::<VMTuple>().values.push(result_ref.clone());
                                     result_ref.offline();
                                 }
                                 Err(err) => {
-                                    println!("{} = {}", 
+                                    println!("{}{}", 
                                              format!("Out[{}]", idx).blue().bold(), 
                                              format!("<Unable to repr: {}>", err.to_string()).red());
                                 }
                             }
                             lambda_ref.offline();
-
                         }
                         Err(e) => println!("{}", format!("Execution error: {}", e.to_string()).red().bold()),
                     },
@@ -371,6 +412,60 @@ fn run_repl() -> Result<(), String> {
     Ok(())
 }
 
+// Function to check if input is complete
+fn is_input_complete(input: &str) -> bool {
+    // Simple bracket matching
+    let mut brace_count = 0;     // { }
+    let mut bracket_count = 0;   // [ ]
+    let mut paren_count = 0;     // ( )
+    
+    // Track string literals to ignore brackets inside them
+    let mut in_string = false;
+    let mut escape_next = false;
+    
+    for c in input.chars() {
+        if in_string {
+            if escape_next {
+                escape_next = false;
+            } else if c == '\\' {
+                escape_next = true;
+            } else if c == '"' {
+                in_string = false;
+            }
+            continue;
+        }
+        
+        match c {
+            '"' => in_string = true,
+            '{' => brace_count += 1,
+            '}' => brace_count -= 1,
+            '[' => bracket_count += 1,
+            ']' => bracket_count -= 1,
+            '(' => paren_count += 1,
+            ')' => paren_count -= 1,
+            _ => {}
+        }
+    }
+    
+    // Also try to tokenize the input using the lexer
+    let tokens = lexer::reject_comment(lexer::tokenize(input));
+    
+    // Input is incomplete if:
+    // 1. Any bracket count is unbalanced
+    // 2. We're still in a string
+    // 3. The input ends with an operator or other continuation indicator
+    let balanced = brace_count == 0 && bracket_count == 0 && paren_count == 0 && !in_string;
+    
+    // Check for trailing operators that indicate continuation
+    let last_token = tokens.last().map(|t| t.token).unwrap_or("");
+    let is_trailing_operator = ["+", "-", "*", "/", "=", ":=", ".", "->"].contains(&last_token);
+    
+    // Check for trailing semicolon
+    let trimmed = input.trim();
+    let ends_with_semicolon = trimmed.ends_with(';');
+    
+    balanced && !is_trailing_operator && (ends_with_semicolon || !trimmed.contains(';'))
+}
 fn main() {
     let cli = Cli::parse();
 
