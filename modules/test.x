@@ -191,5 +191,4 @@ print(table.data);
 print(table.project(("name",),).data);
 
 print(table.filter((row?, table?) -> {row[1] > 30}).project(("name",),));
-a0
 

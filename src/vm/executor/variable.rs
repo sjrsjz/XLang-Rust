@@ -143,7 +143,7 @@ pub fn try_repr_vmobject(value: GCRef, depth: Option<(usize, usize)>) -> Result<
     } else if value.isinstance::<VMLambda>() {
         let lambda = value.as_const_type::<VMLambda>();
         return Ok(format!(
-            "{}::{} -> {})",
+            "{}::{} -> {}",
             lambda.signature,
             try_repr_vmobject(lambda.default_args_tuple.clone(), new_depth)?,
             try_repr_vmobject(lambda.result.clone(), new_depth)?
