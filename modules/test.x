@@ -122,4 +122,17 @@ while(arr_iter()) {
 	print(valueof elem);
 };
 
+sum := (tuple => null) -> {
+	if (len(tuple) == 0) {
+		return null;
+	};
+	sum := tuple[0];
+	n := 1;
+	while(n < len(tuple)) {
+		sum = sum + tuple[n];
+		n = n + 1;
+	};
+	return sum;
+};
 
+print(sum((1, 2, 3, 4, 5),));
