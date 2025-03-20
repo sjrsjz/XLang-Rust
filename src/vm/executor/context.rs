@@ -33,11 +33,11 @@ impl ContextError {
             ContextError::ExistingVariable(name) => format!("Existing variable: {}", name),
             ContextError::OfflinedObject(obj) => format!(
                 "Offlined object: {:?}",
-                try_repr_vmobject(obj.clone()).unwrap_or(format!("{:?}", obj))
+                try_repr_vmobject(obj.clone(), Some((0,5))).unwrap_or(format!("{:?}", obj))
             ),
             ContextError::InvalidContextVariable(obj) => format!(
                 "Invalid context variable: {:?}",
-                try_repr_vmobject(obj.clone()).unwrap_or(format!("{:?}", obj))
+                try_repr_vmobject(obj.clone(), Some((0,5))).unwrap_or(format!("{:?}", obj))
             ),
             ContextError::VMVariableError(err) => {
                 format!("VM variable error: {:?}", err.to_string())
@@ -168,83 +168,85 @@ impl Context {
         Err(ContextError::NoVariable(name.to_string()))
     }
 
-    pub fn slice_frames_and_stack(
-        &mut self,
-        stack: &mut Vec<VMStackObject>,
-        size: usize,
-    ) -> Result<(), ContextError> {
-        // 情况1: 所有帧都被移除
-        if size == 0 {
-            // 离线所有帧中的变量
-            for (vars, _, _, _) in &mut self.frames {
-                for variable in vars.values() {
-                    variable.offline();
+    pub fn format_context(&self, stack: &Vec<VMStackObject>) -> String {
+        let mut output = String::new();
+        // Format stack frames
+        if self.frames.is_empty() {
+            output.push_str("No active stack frames\n\n");
+        } else {
+            output.push_str("=== Stack Frames ===\n\n");
+            
+            for (i, (vars, is_function_frame, function_code_position, is_hidden_frame)) in self.frames.iter().enumerate().rev() {
+                // Frame header
+                let frame_type = if *is_function_frame { "Function Frame" } else { "Normal Frame" };
+                let hidden_status = if *is_hidden_frame { " (Hidden)" } else { "" };
+                
+                output.push_str(&format!("Frame #{} - {}{}\n", i, frame_type, hidden_status));
+                
+                if *is_function_frame {
+                    output.push_str(&format!("Function code position: {}\n", function_code_position));
                 }
-            }
-
-            // 离线栈中的所有对象
-            for stack_obj in stack.iter_mut() {
-                if let VMStackObject::VMObject(obj_ref) = stack_obj {
-                    self.offline_if_not_variable(obj_ref);
+                
+                // Variables list
+                if vars.is_empty() {
+                    output.push_str("  No variables in this frame\n\n");
+                } else {
+                    output.push_str("  Variables:\n");
+                    
+                    for (name, var) in vars.iter() {
+                        let var_value = try_repr_vmobject(var.clone(), Some((0,5)))
+                            .unwrap_or_else(|_| format!("<cannot display>"));
+                        
+                        output.push_str(&format!("    - {} = {}\n", 
+                            name, var_value));
+                    }
+                    output.push_str("\n");
                 }
+                output.push_str("  ---\n\n");
             }
-
-            self.frames.clear();
-            self.stack_pointers.clear();
-            stack.clear();
-            return Ok(());
         }
-
-        // 检查请求的大小是否合法
-        if self.frames.len() < size {
-            return Err(ContextError::ContextError(format!(
-                "无法截断上下文：请求大小({})大于当前大小({})",
-                size,
-                self.frames.len()
-            )));
-        }
-
-        // 情况2: 部分帧被移除
-        if size < self.frames.len() {
-            // 获取将保留的最后一帧的栈指针
-            let stack_pointer = if size > 0 {
-                self.stack_pointers[size - 1]
-            } else {
-                0
-            };
-
-            // 离线所有要移除的帧中的变量
-            for i in size..self.frames.len() {
-                let (vars, _, _, _) = &mut self.frames[i];
-                for variable in vars.values() {
-                    variable.offline();
-                }
-            }
-
-            // 离线栈中将被移除的对象
-            if stack.len() > stack_pointer {
-                for stack_obj in stack.iter_mut().skip(stack_pointer) {
-                    if let VMStackObject::VMObject(obj_ref) = stack_obj {
-                        self.offline_if_not_variable(obj_ref);
+        
+        // Format stack contents
+        output.push_str("=== Stack Contents ===\n\n");
+        
+        if stack.is_empty() {
+            output.push_str("Stack is empty\n\n");
+        } else {
+            for (i, item) in stack.iter().enumerate() {
+                match item {
+                    VMStackObject::LastIP(ip, is_function_call) => {
+                        let call_type = if *is_function_call { "function call" } else { "normal jump" };
+                        output.push_str(&format!("+ [{}] Instruction Pointer: {} ({})\n", 
+                            i, ip, call_type));
+                    },
+                    VMStackObject::VMObject(obj_ref) => {
+                        let obj_value = try_repr_vmobject(obj_ref.clone(), Some((0,5)))
+                            .unwrap_or_else(|_| format!("<cannot display>"));
+                        
+                        output.push_str(&format!("+ [{}] {}\n", 
+                            i, obj_value));
                     }
                 }
             }
-
-            // 截断帧和栈指针
-            self.frames.truncate(size);
-            self.stack_pointers.truncate(size);
-
-            // 截断数据栈
-            stack.truncate(stack_pointer);
+            output.push_str("\n");
         }
-
-        Ok(())
+        
+        // Add stack pointers information
+        output.push_str("=== Stack Pointers ===\n\n");
+        if self.stack_pointers.is_empty() {
+            output.push_str("No active stack pointers\n");
+        } else {
+            for (i, ptr) in self.stack_pointers.iter().enumerate() {
+                output.push_str(&format!("Frame #{}: Position {}\n", i, ptr));
+            }
+        }
+        
+        output
     }
-
     pub fn debug_print_all_vars(&self) {
         for (vars, _, _, _) in self.frames.iter().rev() {
             for (name, var) in vars.iter() {
-                println!("{}: {:?}, refs: {:?}", name, try_repr_vmobject(var.clone()), var.get_traceable().references);
+                println!("{}: {:?}, refs: {:?}", name, try_repr_vmobject(var.clone(), Some((0,5))), var.get_traceable().references);
             }
         }
     }

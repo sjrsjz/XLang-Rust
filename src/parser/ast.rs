@@ -13,58 +13,130 @@ pub enum ParserError<'t> {
 }
 
 impl ParserError<'_> {
-    pub fn format(&self, tokens: &Vec<Token>) -> String {
+    pub fn format(&self, tokens: &Vec<Token>, source_code: String) -> String {
+        // Split source code into lines
+        let lines: Vec<&str> = source_code.lines().collect();
+        
+        // Helper function to find line and column from position
+        let find_position = |pos: usize| -> (usize, usize) {
+            let mut current_pos = 0;
+            for (line_num, line) in lines.iter().enumerate() {
+                let line_len = line.len() + 1; // +1 for newline
+                if current_pos + line_len > pos {
+                    return (line_num, pos - current_pos);
+                }
+                current_pos += line_len;
+            }
+            (lines.len() - 1, 0) // Default to last line
+        };
+        
         match self {
             ParserError::UnexpectedToken(token) => {
-                format!(
-                    "解析错误: 意外的令牌 '{}' 在位置 {}",
-                    token.token, token.position
-                )
+                let (line_num, col) = find_position(token.position);
+                let line = if line_num < lines.len() { lines[line_num] } else { "" };
+                
+                let mut error_msg = format!("Parse Error: Unexpected token '{}'\n\n", token.token);
+                error_msg.push_str(&format!("Position {}:{}\n", line_num + 1, col + 1));
+                error_msg.push_str(&format!("{}\n", line));
+                error_msg.push_str(&format!("{}{}\n", " ".repeat(col), "^".repeat(token.origin_token.len())));
+                
+                error_msg
             }
+            
             ParserError::UnmatchedParenthesis(opening, closing) => {
-                let mut code = String::new();
-                let opening_idx = tokens
-                    .iter()
-                    .position(|t| t.position == opening.position)
-                    .unwrap();
-                let closing_idx = tokens
-                    .iter()
-                    .position(|t| t.position == closing.position)
-                    .unwrap();
-                for token in tokens[opening_idx..=closing_idx].iter() {
-                    code.push_str(&token.token);
+                let (opening_line, opening_col) = find_position(opening.position);
+                let (closing_line, closing_col) = find_position(closing.position);
+                
+                let mut error_msg = format!("Parse Error: Unmatched parenthesis\n\n");
+                
+                // Display opening parenthesis position
+                if opening_line < lines.len() {
+                    let line = lines[opening_line];
+                    error_msg.push_str(&format!("Opening '{}' at {}:{}\n", opening.token, opening_line + 1, opening_col + 1));
+                    error_msg.push_str(&format!("{}\n", line));
+                    error_msg.push_str(&format!("{}{}\n\n", " ".repeat(opening_col), "^"));
                 }
-                format!(
-                    "解析错误: 括号不匹配 '{}' 在位置 {}",
-                    code, opening.position
-                )
+                
+                // Display closing parenthesis position
+                if closing_line < lines.len() {
+                    let line = lines[closing_line];
+                    error_msg.push_str(&format!("Closing '{}' at {}:{}\n", closing.token, closing_line + 1, closing_col + 1));
+                    error_msg.push_str(&format!("{}\n", line));
+                    error_msg.push_str(&format!("{}{}\n", " ".repeat(closing_col), "^"));
+                }
+                
+                error_msg
             }
+            
             ParserError::InvalidSyntax(token) => {
-                format!("语法错误: 无效的语法在位置 {}", token.position)
+                let (line_num, col) = find_position(token.position);
+                let line = if line_num < lines.len() { lines[line_num] } else { "" };
+                
+                let mut error_msg = format!("Syntax Error: Invalid syntax\n\n");
+                error_msg.push_str(&format!("Position {}:{}\n", line_num + 1, col + 1));
+                error_msg.push_str(&format!("{}\n", line));
+                error_msg.push_str(&format!("{}{}\n", " ".repeat(col), "^".repeat(token.origin_token.len())));
+                
+                error_msg
             }
+            
             ParserError::NotFullyMatched(start, end) => {
-                let mut code = String::new();
-                let start_idx = tokens
-                    .iter()
-                    .position(|t| t.position == start.position)
-                    .unwrap();
-                let end_idx = tokens
-                    .iter()
-                    .position(|t| t.position == end.position)
-                    .unwrap();
-                for token in tokens[start_idx..=end_idx].iter() {
-                    code.push_str(&(token.token.to_string() + " "));
+                let (start_line, start_col) = find_position(start.position);
+                let (end_line, end_col) = find_position(end.position);
+                
+                let mut error_msg = format!("Parse Error: Expression not fully matched\n\n");
+                
+                if start_line == end_line && start_line < lines.len() {
+                    // If on the same line
+                    let line = lines[start_line];
+                    let underline_length = end.position + end.origin_token.len() - start.position;
+                    
+                    error_msg.push_str(&format!("Position {}:{}-{}:{}\n", 
+                        start_line + 1, start_col + 1, end_line + 1, end_col + 1 + end.origin_token.len()));
+                    error_msg.push_str(&format!("{}\n", line));
+                    error_msg.push_str(&format!("{}{}\n", " ".repeat(start_col), "~".repeat(underline_length)));
+                } else {
+                    // If spans multiple lines
+                    error_msg.push_str(&format!("Starting position {}:{}\n", start_line + 1, start_col + 1));
+                    if start_line < lines.len() {
+                        let line = lines[start_line];
+                        error_msg.push_str(&format!("{}\n", line));
+                        error_msg.push_str(&format!("{}{}\n\n", " ".repeat(start_col), "~".repeat(line.len() - start_col)));
+                    }
+                    
+                    error_msg.push_str(&format!("Ending position {}:{}\n", end_line + 1, end_col + 1));
+                    if end_line < lines.len() {
+                        let line = lines[end_line];
+                        error_msg.push_str(&format!("{}\n", line));
+                        error_msg.push_str(&format!("{}{}\n", " ".repeat(0), "~".repeat(end_col + end.origin_token.len())));
+                    }
                 }
-                format!("解析错误: 未完全匹配 '{}' 在位置 {}", code, start.position)
+                
+                error_msg
             }
+            
             ParserError::InvalidVariableName(token) => {
-                format!(
-                    "解析错误: 无效的变量名 '{}' 在位置 {}",
-                    token.token, token.position
-                )
+                let (line_num, col) = find_position(token.position);
+                let line = if line_num < lines.len() { lines[line_num] } else { "" };
+                
+                let mut error_msg = format!("Parse Error: Invalid variable name '{}'\n\n", token.origin_token);
+                error_msg.push_str(&format!("Position {}:{}\n", line_num + 1, col + 1));
+                error_msg.push_str(&format!("{}\n", line));
+                error_msg.push_str(&format!("{}{}\n", " ".repeat(col), "^".repeat(token.origin_token.len())));
+                
+                error_msg
             }
+            
             ParserError::UnsupportedStructure(token) => {
-                format!("解析错误: 不支持的结构在位置 {}", token.position)
+                let (line_num, col) = find_position(token.position);
+                let line = if line_num < lines.len() { lines[line_num] } else { "" };
+                
+                let mut error_msg = format!("Parse Error: Unsupported structure\n\n");
+                error_msg.push_str(&format!("Position {}:{}\n", line_num + 1, col + 1));
+                error_msg.push_str(&format!("{}\n", line));
+                error_msg.push_str(&format!("{}{}\n", " ".repeat(col), "^".repeat(token.origin_token.len())));
+                
+                error_msg
             }
         }
     }
@@ -320,6 +392,14 @@ fn is_symbol(token: &GatheredTokens, symbol: &str) -> bool {
     token.token_type == TokenType::SYMBOL && token.token == symbol
 }
 
+fn is_any_symbol(token: &GatheredTokens) -> bool {
+    if token.len() != 1 {
+        return false;
+    }
+    let token = &token[0];
+    token.token_type == TokenType::SYMBOL
+}
+
 fn is_identifier(token: &GatheredTokens, identifier: &str) -> bool {
     if token.len() != 1 {
         return false;
@@ -531,6 +611,12 @@ fn match_all<'t>(
 
     node_matcher.add_matcher(Box::new(
         |tokens, current| -> Result<(Option<ASTNode<'t>>, usize), ParserError<'t>> {
+            match_named_to_null(tokens, current)
+        },
+    ));
+
+    node_matcher.add_matcher(Box::new(
+        |tokens, current| -> Result<(Option<ASTNode<'t>>, usize), ParserError<'t>> {
             match_alias(tokens, current)
         },
     ));
@@ -566,8 +652,8 @@ fn match_expressions<'t>(
             }
             if node_offset != left_tokens.len() {
                 return Err(ParserError::NotFullyMatched(
-                    &tokens[current][0],
-                    &tokens[current][tokens[current].len() - 1],
+                    &left_tokens.first().unwrap().first().unwrap(),
+                    &left_tokens.last().unwrap().last().unwrap()
                 ));
             }
 
@@ -645,8 +731,8 @@ fn match_tuple<'t>(
             }
             if node_offset != left_tokens.len() {
                 return Err(ParserError::NotFullyMatched(
-                    &tokens[current][0],
-                    &tokens[current][tokens[current].len() - 1],
+                    &left_tokens.first().unwrap().first().unwrap(),
+                    &left_tokens.last().unwrap().last().unwrap()
                 ));
             }
             separated.push(node.unwrap());
@@ -702,8 +788,8 @@ fn match_let<'t>(
     }
     if left_offset != left_tokens.len() {
         return Err(ParserError::NotFullyMatched(
-            &tokens[current][0],
-            &tokens[current][tokens[current].len() - 1],
+            &left_tokens.first().unwrap().first().unwrap(),
+            &left_tokens.last().unwrap().last().unwrap()
         ));
     }
     let left = left.unwrap();
@@ -763,8 +849,8 @@ fn match_assign<'t>(
     }
     if left_offset != left_tokens.len() {
         return Err(ParserError::NotFullyMatched(
-            &left_tokens[0][0],
-            &left_tokens[left_tokens.len() - 1][left_tokens[left_tokens.len() - 1].len() - 1],
+            &left_tokens.first().unwrap().first().unwrap(),
+            &left_tokens.last().unwrap().last().unwrap()
         ));
     }
     let left = left.unwrap();
@@ -805,8 +891,8 @@ fn match_named_to<'t>(
     }
     if left_offset != left_tokens.len() {
         return Err(ParserError::NotFullyMatched(
-            &tokens[current][0],
-            &tokens[current][tokens[current].len() - 1],
+            &left_tokens.first().unwrap().first().unwrap(),
+            &left_tokens.last().unwrap().last().unwrap()
         ));
     }
     let mut left = left.unwrap();
@@ -850,8 +936,8 @@ fn match_key_value<'t>(
     }
     if left_offset != left_tokens.len() {
         return Err(ParserError::NotFullyMatched(
-            &tokens[current][0],
-            &tokens[current][tokens[current].len() - 1],
+            &left_tokens.first().unwrap().first().unwrap(),
+            &left_tokens.last().unwrap().last().unwrap()
         ));
     }
     let left = left.unwrap();
@@ -892,8 +978,8 @@ fn match_while<'t>(
     }
     if condition_offset != condition_tokens.len() {
         return Err(ParserError::NotFullyMatched(
-            &tokens[current][0],
-            &tokens[current][tokens[current].len() - 1],
+            &condition_tokens.first().unwrap().first().unwrap(),
+            &condition_tokens.last().unwrap().last().unwrap()
         ));
     }
     let condition = condition.unwrap();
@@ -935,8 +1021,8 @@ fn match_if<'t>(
     }
     if condition_offset != condition_tokens.len() {
         return Err(ParserError::NotFullyMatched(
-            &tokens[current][0],
-            &tokens[current][tokens[current].len() - 1],
+            &condition_tokens.first().unwrap().first().unwrap(),
+            &condition_tokens.last().unwrap().last().unwrap()
         ));
     }
     let condition = condition.unwrap();
@@ -947,8 +1033,8 @@ fn match_if<'t>(
     }
     if true_condition_offset != true_condition_tokens.len() {
         return Err(ParserError::NotFullyMatched(
-            &tokens[current][0],
-            &tokens[current][tokens[current].len() - 1],
+            &true_condition_tokens.first().unwrap().first().unwrap(),
+            &true_condition_tokens.last().unwrap().last().unwrap()
         ));
     }
     let true_condition = true_condition.unwrap();
@@ -961,8 +1047,8 @@ fn match_if<'t>(
         }
         if false_condition_offset != false_condition_tokens.len() {
             return Err(ParserError::NotFullyMatched(
-                &tokens[current][0],
-                &tokens[current][tokens[current].len() - 1],
+                &false_condition_tokens.first().unwrap().first().unwrap(),
+                &false_condition_tokens.last().unwrap().last().unwrap()
             ));
         }
         let false_condition = false_condition.unwrap();
@@ -1000,8 +1086,8 @@ fn match_control_flow<'t>(
         }
         if right_offset != right_tokens.len() {
             return Err(ParserError::NotFullyMatched(
-                &tokens[current][0],
-                &tokens[current][tokens[current].len() - 1],
+                &right_tokens.first().unwrap().first().unwrap(),
+                &right_tokens.last().unwrap().last().unwrap()
             ));
         }
         let right = right.unwrap();
@@ -1021,8 +1107,8 @@ fn match_control_flow<'t>(
         }
         if right_offset != right_tokens.len() {
             return Err(ParserError::NotFullyMatched(
-                &tokens[current][0],
-                &tokens[current][tokens[current].len() - 1],
+                &right_tokens.first().unwrap().first().unwrap(),
+                &right_tokens.last().unwrap().last().unwrap()
             ));
         }
         let right = right.unwrap();
@@ -1068,8 +1154,8 @@ fn match_or<'t>(
     let left = left.unwrap();
     if left_offset != left_tokens.len() {
         return Err(ParserError::NotFullyMatched(
-            &tokens[current][0],
-            &tokens[current][tokens[current].len() - 1],
+            &left_tokens.first().unwrap().first().unwrap(),
+            &left_tokens.last().unwrap().last().unwrap(),
         ));
     }
     let (right, right_offset) = match_all(right_tokens, 0)?;
@@ -1079,8 +1165,8 @@ fn match_or<'t>(
     let right = right.unwrap();
     if right_offset != right_tokens.len() {
         return Err(ParserError::NotFullyMatched(
-            &tokens[current][0],
-            &tokens[current][tokens[current].len() - 1],
+            &right_tokens.first().unwrap().first().unwrap(),
+            &right_tokens.last().unwrap().last().unwrap()
         ));
     }
     return Ok((
@@ -1123,8 +1209,8 @@ fn match_and<'t>(
     let left = left.unwrap();
     if left_offset != left_tokens.len() {
         return Err(ParserError::NotFullyMatched(
-            &tokens[current][0],
-            &tokens[current][tokens[current].len() - 1],
+            &left_tokens.first().unwrap().first().unwrap(),
+            &left_tokens.last().unwrap().last().unwrap()
         ));
     }
     let (right, right_offset) = match_all(right_tokens, 0)?;
@@ -1134,8 +1220,8 @@ fn match_and<'t>(
     let right = right.unwrap();
     if right_offset != right_tokens.len() {
         return Err(ParserError::NotFullyMatched(
-            &tokens[current][0],
-            &tokens[current][tokens[current].len() - 1],
+            &right_tokens.first().unwrap().first().unwrap(),
+            &right_tokens.last().unwrap().last().unwrap(),
         ));
     }
     return Ok((
@@ -1210,8 +1296,8 @@ fn match_operation_compare<'t>(
     let left = left.unwrap();
     if left_offset != left_tokens.len() {
         return Err(ParserError::NotFullyMatched(
-            &tokens[current][0],
-            &tokens[current][tokens[current].len() - 1],
+            &left_tokens.first().unwrap().first().unwrap(),
+            &left_tokens.last().unwrap().last().unwrap()
         ));
     }
     let (right, right_offset) = match_all(right_tokens, 0)?;
@@ -1221,8 +1307,8 @@ fn match_operation_compare<'t>(
     let right = right.unwrap();
     if right_offset != right_tokens.len() {
         return Err(ParserError::NotFullyMatched(
-            &tokens[current][0],
-            &tokens[current][tokens[current].len() - 1],
+            &right_tokens.first().unwrap().first().unwrap(),
+            &right_tokens.last().unwrap().last().unwrap()
         ));
     }
     let operation = match operator.unwrap() {
@@ -1265,12 +1351,7 @@ fn match_operation_add_sub<'t>(
             } else {
                 // 检查前一个token是否为运算符或括号等，表明这是一元操作符
                 let prev_pos = pos - 1;
-                tokens[prev_pos].len() == 1
-                    && tokens[prev_pos][0].token_type == TokenType::SYMBOL
-                    && vec![
-                        "+", "-", "*", "/", "%", "==", "!=", "<", ">", "<=", ">=", "(",
-                    ]
-                    .contains(&tokens[prev_pos][0].token)
+                is_any_symbol(&tokens[prev_pos])
             };
 
             // 如果是一元操作符，继续向左搜索二元操作符
@@ -1296,11 +1377,7 @@ fn match_operation_add_sub<'t>(
     if operator_pos == current
         || (operator_pos > current
             && tokens[operator_pos - 1].len() == 1
-            && tokens[operator_pos - 1][0].token_type == TokenType::SYMBOL
-            && vec![
-                "+", "-", "*", "/", "%", "==", "!=", "<", ">", "<=", ">=", "(",
-            ]
-            .contains(&tokens[operator_pos - 1][0].token))
+            && is_any_symbol(&tokens[operator_pos - 1]))            
     {
         // 解析右侧表达式
         let right_tokens = &tokens[operator_pos + 1..].to_vec();
@@ -1313,8 +1390,8 @@ fn match_operation_add_sub<'t>(
         let right = right.unwrap();
         if right_offset != right_tokens.len() {
             return Err(ParserError::NotFullyMatched(
-                &tokens[current][0],
-                &tokens[current][tokens[current].len() - 1],
+                &right_tokens.first().unwrap().first().unwrap(),
+                &right_tokens.last().unwrap().last().unwrap()
             ));
         }
 
@@ -1349,8 +1426,8 @@ fn match_operation_add_sub<'t>(
     let left = left.unwrap();
     if left_offset != left_tokens.len() {
         return Err(ParserError::NotFullyMatched(
-            &tokens[current][0],
-            &tokens[current][tokens[current].len() - 1],
+            &left_tokens.first().unwrap().first().unwrap(),
+            &left_tokens.last().unwrap().last().unwrap()
         ));
     }
 
@@ -1365,8 +1442,8 @@ fn match_operation_add_sub<'t>(
     let right = right.unwrap();
     if right_offset != right_tokens.len() {
         return Err(ParserError::NotFullyMatched(
-            &tokens[current][0],
-            &tokens[current][tokens[current].len() - 1],
+            &right_tokens.first().unwrap().first().unwrap(),
+            &right_tokens.last().unwrap().last().unwrap()
         ));
     }
 
@@ -1424,8 +1501,8 @@ fn match_operation_mul_div_mod<'t>(
     let left = left.unwrap();
     if left_offset != left_tokens.len() {
         return Err(ParserError::NotFullyMatched(
-            &tokens[current][0],
-            &tokens[operator_pos][tokens[operator_pos].len() - 1],
+            &left_tokens.first().unwrap().first().unwrap(),
+            &left_tokens.last().unwrap().last().unwrap()
         ));
     }
 
@@ -1440,8 +1517,8 @@ fn match_operation_mul_div_mod<'t>(
     let right = right.unwrap();
     if right_offset != right_tokens.len() {
         return Err(ParserError::NotFullyMatched(
-            &tokens[operator_pos + 1][0],
-            &tokens[tokens.len() - 1][tokens[tokens.len() - 1].len() - 1],
+            &right_tokens.first().unwrap().first().unwrap(),
+            &right_tokens.last().unwrap().last().unwrap()
         ));
     }
 
@@ -1482,8 +1559,8 @@ fn match_lambda_def<'t>(
     let left = left.unwrap();
     if left_offset != left_tokens.len() {
         return Err(ParserError::NotFullyMatched(
-            &tokens[current][0],
-            &tokens[current][tokens[current].len() - 1],
+            &left_tokens.first().unwrap().first().unwrap(),
+            &left_tokens.last().unwrap().last().unwrap()
         ));
     }
     let (right, right_offset) = match_all(tokens, current + 2)?;
@@ -1552,6 +1629,42 @@ fn match_modifier<'t>(
     return Ok((None, 0));
 }
 
+fn match_named_to_null<'t>(
+    tokens: &Vec<GatheredTokens<'t>>,
+    current: usize,
+) -> Result<(Option<ASTNode<'t>>, usize), ParserError<'t>> {
+    // expr ?
+    if current + 1 >= tokens.len() {
+        return Ok((None, 0));
+    }
+    if is_symbol(&tokens[tokens.len() - 1], "?") {
+        let left_tokens = tokens[..tokens.len() - 1].to_vec();
+        let (node, node_offset) = match_all(&left_tokens, 0 )?;
+        if node.is_none() {
+            return Ok((None, 0));
+        }
+        if node_offset != left_tokens.len() {
+            return Err(ParserError::NotFullyMatched(
+                &left_tokens.first().unwrap().first().unwrap(),
+                &left_tokens.last().unwrap().last().unwrap()
+            ));
+        }
+        let mut node = node.unwrap();
+        if let ASTNodeType::Variable(name) = node.node_type {
+            node = ASTNode::new(ASTNodeType::String(name), node.token, Some(node.children));
+        }
+        return Ok((
+            Some(ASTNode::new(
+                ASTNodeType::NamedTo,
+                Some(&tokens[current][0]),
+                Some(vec![node, ASTNode::new(ASTNodeType::Null, None, None)]),
+            )),
+            node_offset + 1,
+        ));
+    }
+    return Ok((None, 0));
+}
+
 fn match_alias<'t>(
     tokens: &Vec<GatheredTokens<'t>>,
     current: usize,
@@ -1574,8 +1687,8 @@ fn match_alias<'t>(
     let type_node = type_node.unwrap();
     if type_offset != type_tokens.len() {
         return Err(ParserError::NotFullyMatched(
-            &tokens[current][0],
-            &tokens[current][tokens[current].len() - 1],
+            &type_tokens.first().unwrap().first().unwrap(),
+            &type_tokens.last().unwrap().last().unwrap()
         ));
     }
 
@@ -1658,8 +1771,8 @@ fn match_member_access_and_call<'t>(
             let left = left.unwrap();
             if left_offset != left_tokens.len() {
                 return Err(ParserError::NotFullyMatched(
-                    &tokens[current][0],
-                    &tokens[current][tokens[current].len() - 1],
+                    &left_tokens.first().unwrap().first().unwrap(),
+                    &left_tokens.last().unwrap().last().unwrap()
                 ));
             }
             // 解包索引括号中的内容
@@ -1699,8 +1812,8 @@ fn match_member_access_and_call<'t>(
             let left = left.unwrap();
             if left_offset != left_tokens.len() {
                 return Err(ParserError::NotFullyMatched(
-                    &tokens[current][0],
-                    &tokens[current][tokens[current].len() - 1],
+                    &left_tokens.first().unwrap().first().unwrap(),
+                    &left_tokens.last().unwrap().last().unwrap()
                 ));
             }
             if access_pos + 1 >= tokens.len() {
@@ -1765,8 +1878,8 @@ fn match_member_access_and_call<'t>(
             let left = left.unwrap();
             if left_offset != left_tokens.len() {
                 return Err(ParserError::NotFullyMatched(
-                    &tokens[current][0],
-                    &tokens[current][tokens[current].len() - 1],
+                    &left_tokens.first().unwrap().first().unwrap(),
+                    &left_tokens.last().unwrap().last().unwrap()
                 ));
             }
 
@@ -1831,8 +1944,8 @@ fn match_range<'t>(
     let left = left.unwrap();
     if left_offset != left_tokens.len() {
         return Err(ParserError::NotFullyMatched(
-            &tokens[current][0],
-            &tokens[current][tokens[current].len() - 1],
+            &left_tokens.first().unwrap().first().unwrap(),
+            &left_tokens.last().unwrap().last().unwrap()
         ));
     }
     let (right, right_offset) = match_all(tokens, current + 2)?;
@@ -1870,8 +1983,8 @@ fn match_in<'t>(
     let left = left.unwrap();
     if left_offset != left_tokens.len() {
         return Err(ParserError::NotFullyMatched(
-            &tokens[current][0],
-            &tokens[current][tokens[current].len() - 1],
+            &left_tokens.first().unwrap().first().unwrap(),
+            &left_tokens.last().unwrap().last().unwrap()
         ));
     }
     let (right, right_offset) = match_all(tokens, current + 2)?;
@@ -2010,6 +2123,5 @@ fn match_variable<'t>(
             1,
         ));
     }
-
     return Ok((None, 0));
 }

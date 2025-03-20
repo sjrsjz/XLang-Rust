@@ -3,6 +3,7 @@ pub mod vm;
 use vm::executor::variable::VMInstructions;
 use vm::executor::variable::VMLambda;
 use vm::executor::variable::VMTuple;
+use vm::gc;
 use vm::gc::gc::GCRef;
 use vm::ir::IRPackage;
 use vm::ir::IR;
@@ -22,6 +23,7 @@ use clap::{Parser, Subcommand};
 use std::fs;
 use std::io::Write;
 use std::path::PathBuf;
+use std::result;
 
 #[derive(Parser)]
 #[command(author, version, about, long_about = None)]
@@ -32,32 +34,32 @@ struct Cli {
 
 #[derive(Subcommand)]
 enum Commands {
-    /// 编译源代码到 XLang IR 文件
+    /// Compile source code to XLang IR file
     Compile {
-        /// 输入源代码文件路径
+        /// Input source code file path
         #[arg(required = true)]
         input: PathBuf,
 
-        /// 输出 IR 文件路径 (默认为与输入同名但扩展名为 .xir)
+        /// Output IR file path (defaults to same name as input but with .xir extension)
         #[arg(short, long)]
         output: Option<PathBuf>,
     },
 
-    /// 执行 XLang 源代码或编译后的 IR 文件
+    /// Execute XLang source code or compiled IR file
     Run {
-        /// 输入文件路径 (源代码或 .xir 文件)
+        /// Input file path (source code or .xir file)
         #[arg(required = true)]
         input: PathBuf,
     },
 
-    /// 交互式解释器模式
+    /// Interactive interpreter mode
     Repl {},
 }
 
-// 编译代码，生成中间表示
+// Compile code and generate intermediate representation
 fn build_code(code: &str) -> Result<IRPackage, String> {
     let tokens = lexer::reject_comment(lexer::tokenize(code));
-    // 可选：打印tokens
+    // Optional: Print tokens
     // for token in &tokens {
     //     print!("{:?} ", token.to_string());
     // }
@@ -66,11 +68,11 @@ fn build_code(code: &str) -> Result<IRPackage, String> {
     let ast = match build_ast(&gathered) {
         Ok(ast) => ast,
         Err(err_token) => {
-            return Err(format!("Error token: {:?}", err_token.format(&tokens)));
+            return Err(format!("{}", err_token.format(&tokens, code.to_string())));
         }
     };
 
-    // 可选：打印AST
+    // Optional: Print AST
     // println!("\n\nAST:\n");
     // ast.formatted_print(0);
 
@@ -92,14 +94,14 @@ fn build_code(code: &str) -> Result<IRPackage, String> {
     return Ok(functions.build_instructions());
 }
 
-// 执行编译后的代码
+// Execute compiled code
 fn execute_ir(package: IRPackage, source_code: Option<String>) -> Result<GCRef, VMError> {
     let IRPackage {
         instructions,
         function_ips,
     } = package;
 
-    let mut coroutine_pool = VMCoroutinePool::new();
+    let mut coroutine_pool = VMCoroutinePool::new(true);
     let mut gc_system = GCSystem::new(None);
 
     let default_args_tuple = gc_system.new_object(VMTuple::new(vec![]));
@@ -123,7 +125,7 @@ fn execute_ir(package: IRPackage, source_code: Option<String>) -> Result<GCRef, 
 
     let result = coroutine_pool.run_until_finished(&mut gc_system);
     if let Err(e) = result {
-        println!("执行错误: {}", e.to_string());
+        println!("VM Crashed!: {}", e.to_string());
         return Err(VMError::AssertFailed);
     }
 
@@ -133,7 +135,7 @@ fn execute_ir(package: IRPackage, source_code: Option<String>) -> Result<GCRef, 
         try_value_ref_as_vmobject(result.clone()).map_err(|e| VMError::VMVariableError(e))?;
 
     if !result_ref.isinstance::<VMNull>() {
-        match try_repr_vmobject(result_ref.clone()) {
+        match try_repr_vmobject(result_ref.clone(), None) {
             Ok(value) => {
                 println!("{}", value);
             }
@@ -149,47 +151,86 @@ fn execute_ir(package: IRPackage, source_code: Option<String>) -> Result<GCRef, 
     Ok(result)
 }
 
+
+fn execute_ir_repl(package: IRPackage, source_code: Option<String>, gc_system:&mut GCSystem, input_arguments: GCRef) -> Result<GCRef, VMError> {
+    let IRPackage {
+        instructions,
+        function_ips,
+    } = package;
+
+    let mut coroutine_pool = VMCoroutinePool::new(false);
+
+    let key = gc_system.new_object(VMString::new("Out".to_string()));
+    let named = gc_system.new_object(VMNamed::new(key.clone(), input_arguments.clone()));
+    let default_args_tuple = gc_system.new_object(VMTuple::new(vec![named.clone()]));
+    key.offline();
+    named.offline();
+    let lambda_instructions = gc_system.new_object(VMInstructions::new(instructions, function_ips));
+
+    let lambda_result: GCRef = gc_system.new_object(VMNull::new());
+    let main_lambda = gc_system.new_object(VMLambda::new(
+        0,
+        "__main__".to_string(),
+        default_args_tuple.clone(),
+        None,
+        lambda_instructions.clone(),
+        lambda_result.clone(),
+    ));
+    default_args_tuple.offline();
+    lambda_instructions.offline();
+    lambda_result.offline();
+
+    let _coro_id =
+        coroutine_pool.new_coroutine(main_lambda.clone(), source_code, gc_system, true)?;
+    coroutine_pool.run_until_finished(gc_system)?;
+    gc_system.collect();
+
+    Ok(main_lambda)
+}
+
+
+
 fn run_file(path: &PathBuf) -> Result<(), String> {
     let extension = path.extension().and_then(|e| e.to_str()).unwrap_or("");
 
     if extension == "xir" {
-        // 执行 IR 文件
+        // Execute IR file
         match IRPackage::read_from_file(path.to_str().unwrap()) {
             Ok(package) => match execute_ir(package, None) {
                 Ok(_) => Ok(()),
-                Err(e) => Err(format!("执行错误: {}", e.to_string())),
+                Err(e) => Err(format!("Execution error: {}", e.to_string())),
             },
-            Err(e) => Err(format!("读取 IR 文件错误: {}", e)),
+            Err(e) => Err(format!("Error reading IR file: {}", e)),
         }
     } else {
-        // 假设是源码文件，先编译再执行
+        // Assume it's a source file, compile and execute
         match fs::read_to_string(path) {
             Ok(code) => match build_code(&code) {
                 Ok(package) => match execute_ir(package, Some(code)) {
                     Ok(_) => Ok(()),
-                    Err(e) => Err(format!("执行错误: {}", e.to_string())),
+                    Err(e) => Err(format!("Execution error: {}", e.to_string())),
                 },
-                Err(e) => Err(format!("编译错误: {}", e)),
+                Err(e) => Err(format!("Compilation error: {}", e)),
             },
-            Err(e) => Err(format!("读取文件错误: {}", e)),
+            Err(e) => Err(format!("File reading error: {}", e)),
         }
     }
 }
 
 fn compile_file(input: &PathBuf, output: Option<PathBuf>) -> Result<(), String> {
-    // 读取源代码
+    // Read source code
     let code = match fs::read_to_string(input) {
         Ok(content) => content,
-        Err(e) => return Err(format!("读取源文件错误: {}", e)),
+        Err(e) => return Err(format!("Error reading source file: {}", e)),
     };
 
-    // 编译源代码
+    // Compile source code
     let package = match build_code(&code) {
         Ok(p) => p,
-        Err(e) => return Err(format!("编译错误: {}", e)),
+        Err(e) => return Err(format!("Compilation error: {}", e)),
     };
 
-    // 确定输出路径
+    // Determine output path
     let output_path = match output {
         Some(path) => path,
         None => {
@@ -199,81 +240,251 @@ fn compile_file(input: &PathBuf, output: Option<PathBuf>) -> Result<(), String> 
         }
     };
 
-    // 创建目录（如果需要）
+    // Create directories if needed
     if let Some(parent) = output_path.parent() {
         if !parent.exists() {
             if let Err(e) = fs::create_dir_all(parent) {
-                return Err(format!("创建输出目录错误: {}", e));
+                return Err(format!("Error creating output directory: {}", e));
             }
         }
     }
 
-    // 写入编译后的 IR 到文件
+    // Write compiled IR to file
     match package.write_to_file(output_path.to_str().unwrap()) {
         Ok(_) => {
-            println!("成功将编译后的 IR 保存到: {}", output_path.display());
+            println!("Successfully saved compiled IR to: {}", output_path.display());
             Ok(())
         }
-        Err(e) => Err(format!("保存 IR 到文件错误: {}", e)),
+        Err(e) => Err(format!("Error saving IR to file: {}", e)),
     }
 }
 
 fn run_repl() -> Result<(), String> {
-    println!("XLang 交互式解释器");
-    println!("输入 'exit' 或 'quit' 退出");
+    use rustyline::Editor;
+    use rustyline::error::ReadlineError;
+    use colored::*;
+    use dirs::home_dir;
+    use std::path::PathBuf;
+
+    println!("{}", "XLang Interactive Shell".bright_blue().bold());
+    println!("{}", "Type 'exit' or 'quit' to exit".bright_blue());
+    println!("{}", "Use up/down arrows to navigate history".bright_blue());
+
+    // Set history file path
+    let history_path = home_dir()
+        .unwrap_or_else(|| PathBuf::from("."))
+        .join(".xlang_history");
+
+    // Create editor instance
+    let mut rl = Editor::<(), _>::new().map_err(|e| format!("Editor creation error: {}", e))?;
+    
+    // Try to load history
+    if history_path.exists() {
+        if let Err(e) = rl.load_history(&history_path) {
+            eprintln!("{}", format!("Warning: Could not load history: {}", e).yellow());
+        }
+    }
 
     let mut gc_system = GCSystem::new(None);
+    let input_arguments = gc_system.new_object(VMTuple::new(vec![]));
+    let _wrapper = gc_system.new_object(VMVariableWrapper::new(input_arguments.clone()));
+    input_arguments.offline();
+
+    let mut line_count = 0;
 
     loop {
-        print!("> ");
-        std::io::stdout().flush().unwrap();
-
-        let mut input = String::new();
-        if std::io::stdin().read_line(&mut input).is_err() {
-            println!("读取输入错误");
-            continue;
-        }
-
-        let input = input.trim();
-        if input == "exit" || input == "quit" {
-            break;
-        }
-
-        if input.is_empty() {
-            continue;
-        }
-
-        match build_code(input) {
-            Ok(package) => match execute_ir(package, Some(input.to_string())) {
-                Ok(_) => {}
-                Err(e) => println!("执行错误: {}", e.to_string()),
+        // Start with an empty buffer for collecting multi-line input
+        let mut input_buffer = String::new();
+        let mut is_multiline = false;
+        
+        // Main prompt for the first line
+        let main_prompt = format!("{} ", format!("In[{}]:", line_count).green().bold());
+        
+        // Read the first line
+        let readline = rl.readline(&main_prompt);
+        
+        match readline {
+            Ok(line) => {
+                let input = line.trim();
+                if input.is_empty() {
+                    continue;
+                }
+                
+                // Process exit commands on the first line
+                if !is_multiline && (input == "exit" || input == "quit") {
+                    println!("{}", "Goodbye!".bright_blue());
+                    break;
+                }
+                
+                // Add to input buffer
+                input_buffer.push_str(&line);
+                input_buffer.push('\n');
+                
+                // Check if input is complete
+                if !is_input_complete(&input_buffer) {
+                    is_multiline = true;
+                    
+                    // Continue reading lines until input is complete
+                    while is_multiline {
+                        // Continuation prompt
+                        let cont_prompt = format!("{} ", "...".bright_yellow());
+                        match rl.readline(&cont_prompt) {
+                            Ok(cont_line) => {
+                                // Add to input buffer
+                                input_buffer.push_str(&cont_line);
+                                input_buffer.push('\n');
+                                
+                                // Check if input is now complete
+                                if is_input_complete(&input_buffer) {
+                                    is_multiline = false;
+                                }
+                            },
+                            Err(ReadlineError::Interrupted) => {
+                                println!("{}", "Multiline input cancelled".yellow());
+                                input_buffer.clear();
+                                is_multiline = false;
+                                continue;
+                            },
+                            Err(err) => {
+                                println!("{}", format!("Input error: {}", err).red());
+                                is_multiline = false;
+                                continue;
+                            }
+                        }
+                    }
+                }
+                
+                // Add the complete input to history
+                let _ = rl.add_history_entry(input_buffer.clone());
+                
+                // Process the complete input
+                match build_code(&input_buffer) {
+                    Ok(package) => match execute_ir_repl(package, Some(input_buffer.to_string()), &mut gc_system, input_arguments.clone()) {
+                        Ok(lambda_ref) => {
+                            let executed = lambda_ref.as_const_type::<VMLambda>();
+                            let result_ref = executed.result.clone();
+                            let idx = input_arguments.as_type::<VMTuple>().values.len();
+                            match try_repr_vmobject(result_ref.clone(), None) {
+                                Ok(value) => {
+                                    if !result_ref.isinstance::<VMNull>() {
+                                        println!("{} = {}", format!("Out[{}]", idx).blue().bold(), value.bright_white().bold());
+                                    }
+                                    let mut result_ref = result_ref.clone();
+                                    input_arguments.get_traceable().add_reference(&mut result_ref);
+                                    input_arguments.as_type::<VMTuple>().values.push(result_ref.clone());
+                                    result_ref.offline();
+                                }
+                                Err(err) => {
+                                    println!("{}{}", 
+                                             format!("Out[{}]", idx).blue().bold(), 
+                                             format!("<Unable to repr: {}>", err.to_string()).red());
+                                }
+                            }
+                            lambda_ref.offline();
+                        }
+                        Err(e) => println!("{}", format!("Execution error: {}", e.to_string()).red().bold()),
+                    },
+                    Err(e) => println!("{}", format!("Compilation error: {}", e).red().bold()),
+                }
+                
+                line_count = input_arguments.as_type::<VMTuple>().values.len();
             },
-            Err(e) => println!("编译错误: {}", e),
+            Err(ReadlineError::Interrupted) => {
+                println!("{}", "Interrupted".yellow());
+                continue;
+            },
+            Err(ReadlineError::Eof) => {
+                println!("{}", "Goodbye!".bright_blue());
+                break;
+            },
+            Err(err) => {
+                println!("{}", format!("Input error: {}", err).red());
+                break;
+            }
         }
+    }
+
+    // Save history
+    if let Err(e) = rl.save_history(&history_path) {
+        eprintln!("{}", format!("Warning: Could not save history: {}", e).yellow());
     }
 
     Ok(())
 }
 
+// Function to check if input is complete
+fn is_input_complete(input: &str) -> bool {
+    // Simple bracket matching
+    let mut brace_count = 0;     // { }
+    let mut bracket_count = 0;   // [ ]
+    let mut paren_count = 0;     // ( )
+    
+    // Track string literals to ignore brackets inside them
+    let mut in_string = false;
+    let mut escape_next = false;
+    
+    for c in input.chars() {
+        if in_string {
+            if escape_next {
+                escape_next = false;
+            } else if c == '\\' {
+                escape_next = true;
+            } else if c == '"' {
+                in_string = false;
+            }
+            continue;
+        }
+        
+        match c {
+            '"' => in_string = true,
+            '{' => brace_count += 1,
+            '}' => brace_count -= 1,
+            '[' => bracket_count += 1,
+            ']' => bracket_count -= 1,
+            '(' => paren_count += 1,
+            ')' => paren_count -= 1,
+            _ => {}
+        }
+    }
+    
+    // Also try to tokenize the input using the lexer
+    let tokens = lexer::reject_comment(lexer::tokenize(input));
+    
+    // Input is incomplete if:
+    // 1. Any bracket count is unbalanced
+    // 2. We're still in a string
+    // 3. The input ends with an operator or other continuation indicator
+    let balanced = brace_count == 0 && bracket_count == 0 && paren_count == 0 && !in_string;
+    
+    // Check for trailing operators that indicate continuation
+    let last_token = tokens.last().map(|t| t.token).unwrap_or("");
+    let is_trailing_operator = ["+", "-", "*", "/", "=", ":=", ".", "->"].contains(&last_token);
+    
+    // Check for trailing semicolon
+    let trimmed = input.trim();
+    let ends_with_semicolon = trimmed.ends_with(';');
+    
+    balanced && !is_trailing_operator && (ends_with_semicolon || !trimmed.contains(';'))
+}
 fn main() {
     let cli = Cli::parse();
 
     match cli.command {
         Commands::Compile { input, output } => {
             if let Err(e) = compile_file(&input, output) {
-                eprintln!("错误: {}", e);
+                eprintln!("Error: {}", e);
                 std::process::exit(1);
             }
         }
         Commands::Run { input } => {
             if let Err(e) = run_file(&input) {
-                eprintln!("错误: {}", e);
+                eprintln!("Error: {}", e);
                 std::process::exit(1);
             }
         }
         Commands::Repl {} => {
             if let Err(e) = run_repl() {
-                eprintln!("REPL 错误: {}", e);
+                eprintln!("REPL error: {}", e);
                 std::process::exit(1);
             }
         }
