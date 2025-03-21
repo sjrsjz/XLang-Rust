@@ -6,7 +6,7 @@ use super::super::gc::gc::{GCObject, GCRef, GCSystem, GCTraceable};
 
 #[derive(Debug, Clone)]
 pub enum VMStackObject {
-    LastIP(usize, bool),
+    LastIP(GCRef, usize, bool),
     VMObject(GCRef),
 }
 
@@ -21,6 +21,7 @@ pub enum VMVariableError {
     CopyError(GCRef, String),
     AssignError(GCRef, String),
     ReferenceError(GCRef, String),
+    OverflowError(GCRef, GCRef, String),
 }
 
 impl VMVariableError {
@@ -71,6 +72,12 @@ impl VMVariableError {
                 "ReferenceError: {}: {}",
                 try_repr_vmobject(gc_ref.clone(), None).unwrap_or(format!("{:?}", gc_ref)),
                 msg
+            ),
+            VMVariableError::OverflowError(gc_ref, other, msg) => format!(
+                "OverflowError: {}: {} & {}",
+                msg,
+                try_repr_vmobject(gc_ref.clone(), None).unwrap_or(format!("{:?}", gc_ref)),
+                try_repr_vmobject(other.clone(), None).unwrap_or(format!("{:?}", other)),
             ),
         }
     }
@@ -905,7 +912,15 @@ impl VMInt {
     ) -> Result<GCRef, VMVariableError> {
         if other.isinstance::<VMInt>() {
             let other_int = other.as_const_type::<VMInt>();
-            return Ok(gc_system.new_object(VMInt::new(self.value.pow(other_int.value as u32))));
+            let r = self.value.checked_pow(other_int.value as u32);
+            if r.is_none() {
+                return Err(VMVariableError::OverflowError(
+                    GCRef::wrap(self),
+                    other,
+                    "Overflow when power".to_string(),
+                ));
+            }
+            return Ok(gc_system.new_object(VMInt::new(r.unwrap())));
         } else if other.isinstance::<VMFloat>() {
             let other_float = other.as_const_type::<VMFloat>();
             return Ok(gc_system.new_object(VMFloat::new((self.value as f64).powf(other_float.value))));

@@ -701,8 +701,14 @@ impl IRExecutor {
                         println!("{}: {:?}", i, obj);
                     }
                 }
-                VMStackObject::LastIP(ip, use_new_instructions) => {
-                    println!("{}: LastIP: {} {}", i, ip, use_new_instructions);
+                VMStackObject::LastIP(self_lambda, ip, use_new_instructions) => {
+                    println!(
+                        "{}: LastIP: {} {} {}",
+                        i,
+                        self_lambda,
+                        ip,
+                        use_new_instructions
+                    );
                 }
             }
         }
@@ -738,6 +744,7 @@ impl IRExecutor {
                 .push(lambda.lambda_instructions.clone());
         }
         self.stack.push(VMStackObject::LastIP(
+            lambda_object.clone(),
             self.ip as usize,
             use_new_instructions,
         ));
@@ -1170,7 +1177,7 @@ impl IRExecutor {
                 self.stack
                     .truncate(*self.context.stack_pointers.last().unwrap());
                 let ip_info = self.stack.pop().unwrap();
-                let VMStackObject::LastIP(ip, use_new_instructions) = ip_info else {
+                let VMStackObject::LastIP(self_lambda, ip, use_new_instructions) = ip_info else {
                     return Err(VMError::EmptyStack);
                 };
                 self.ip = ip as isize;
@@ -1181,6 +1188,8 @@ impl IRExecutor {
                 if result.is_err() {
                     return Err(VMError::ContextError(result.unwrap_err()));
                 }
+                let lambda_obj = self_lambda.as_type::<VMLambda>();
+                lambda_obj.set_result(obj_ref.clone());
                 self.stack.push(VMStackObject::VMObject(obj_ref));
                 self.offline_if_not_variable(&obj);
             }

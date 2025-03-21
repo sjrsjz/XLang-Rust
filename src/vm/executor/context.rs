@@ -218,10 +218,12 @@ pub fn format_context(&self, stack: &Vec<VMStackObject>) -> String {
     } else {
         for (i, item) in stack.iter().enumerate() {
             match item {
-                VMStackObject::LastIP(ip, is_function_call) => {
+                VMStackObject::LastIP(self_lambda, ip, is_function_call) => {
+                    let self_lambda_value = try_repr_vmobject(self_lambda.clone(), None)
+                        .unwrap_or_else(|_| format!("<cannot display>"));
                     let call_type = if *is_function_call { "function call" } else { "normal jump" };
-                    let ip_line = format!("+ [{}] Instruction Pointer: {} ({})\n", 
-                        i, ip, call_type);
+                    let ip_line = format!("+ [{}][{}] Instruction Pointer: {} ({})\n", 
+                        i, self_lambda_value, ip, call_type);
                     output.push_str(&ip_line.cyan().to_string());
                 },
                 VMStackObject::VMObject(obj_ref) => {

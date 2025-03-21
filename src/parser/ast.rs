@@ -992,21 +992,32 @@ fn match_let<'t>(
     }
     let left = left.unwrap();
 
-    if !matches!(
-        left.node_type,
-        ASTNodeType::Variable(_) | ASTNodeType::String(_)
-    ) {
-        return Err(ParserError::InvalidVariableName(&tokens[current][0]));
+    match left.node_type {
+        ASTNodeType::Variable(name) => {
+            return Ok((
+                Some(ASTNode::new(
+                    ASTNodeType::Let(name),
+                    Some(&tokens[current][0]),
+                    Some(vec![right]),
+                )),
+                right_offset + 2,
+            ));
+        },
+        ASTNodeType::String(name) => {
+            return Ok((
+                Some(ASTNode::new(
+                    ASTNodeType::Let(name),
+                    Some(&tokens[current][0]),
+                    Some(vec![right]),
+                )),
+                right_offset + 2,
+            ));
+        }
+        _ => {
+            return Err(ParserError::InvalidVariableName(&tokens[current][0]));
+        }
     }
 
-    return Ok((
-        Some(ASTNode::new(
-            ASTNodeType::Let(tokens[current][0].token.to_string()),
-            Some(&tokens[current][0]),
-            Some(vec![right]),
-        )),
-        right_offset + 2,
-    ));
 }
 
 fn match_assign<'t>(
@@ -2162,6 +2173,7 @@ fn match_alias<'t>(
 
     let type_name = match &type_node.node_type {
         ASTNodeType::Variable(name) => name.clone(),
+        ASTNodeType::String(name) => name.clone(),
         _ => {
             return Err(ParserError::InvalidSyntax(&tokens[current][0]));
         }
