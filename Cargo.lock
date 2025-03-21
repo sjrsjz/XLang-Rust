@@ -15,6 +15,7 @@ dependencies = [
  "rustyline",
  "rustyline-derive",
  "serde",
+ "unicode-segmentation",
 ]
 
 [[package]]

@@ -20,7 +20,6 @@
 // };
 
 
-
 extend := (obj?, methods => (,)) -> {
     new_obj := (,);
     n := 0; while(n < len(obj)) {
@@ -38,7 +37,6 @@ extend := (obj?, methods => (,)) -> {
     };
     return bind new_obj;
 };
-
 obj1 := bind {
     "A" : "This is A",
     "B" : "This is B",

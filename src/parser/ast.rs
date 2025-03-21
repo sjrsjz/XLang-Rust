@@ -14,128 +14,287 @@ pub enum ParserError<'t> {
 
 impl ParserError<'_> {
     pub fn format(&self, _tokens: &Vec<Token>, source_code: String) -> String {
+        use colored::*;
+        use unicode_segmentation::UnicodeSegmentation;
+
         // Split source code into lines
         let lines: Vec<&str> = source_code.lines().collect();
-        
+
         // Helper function to find line and column from position
-        let find_position = |pos: usize| -> (usize, usize) {
-            let mut current_pos = 0;
+        let find_position = |byte_pos: usize| -> (usize, usize) {
+            let mut current_byte = 0;
             for (line_num, line) in lines.iter().enumerate() {
-                let line_len = line.len() + 1; // +1 for newline
-                if current_pos + line_len > pos {
-                    return (line_num, pos - current_pos);
+                let line_bytes = line.len() + 1; // +1 for newline
+                if current_byte + line_bytes > byte_pos {
+                    // 计算行内的字节偏移
+                    let line_offset = byte_pos - current_byte;
+
+                    // 找到有效的字符边界
+                    let valid_offset = line
+                        .char_indices()
+                        .map(|(i, _)| i)
+                        .take_while(|&i| i <= line_offset)
+                        .last()
+                        .unwrap_or(0);
+
+                    // 使用有效的字节偏移获取文本
+                    let column_text = &line[..valid_offset];
+                    let column = column_text.graphemes(true).count();
+                    return (line_num, column);
                 }
-                current_pos += line_len;
+                current_byte += line_bytes;
             }
             (lines.len() - 1, 0) // Default to last line
         };
-        
+
         match self {
             ParserError::UnexpectedToken(token) => {
                 let (line_num, col) = find_position(token.position);
-                let line = if line_num < lines.len() { lines[line_num] } else { "" };
-                
-                let mut error_msg = format!("Parse Error: Unexpected token '{}'\n\n", token.token);
-                error_msg.push_str(&format!("Position {}:{}\n", line_num + 1, col + 1));
-                error_msg.push_str(&format!("{}\n", line));
-                error_msg.push_str(&format!("{}{}\n", " ".repeat(col), "^".repeat(token.origin_token.len())));
-                
+                let line = if line_num < lines.len() {
+                    lines[line_num]
+                } else {
+                    ""
+                };
+
+                let mut error_msg = format!(
+                    "{}: {}\n\n",
+                    "Parse Error".bright_red().bold(),
+                    format!("Unexpected token '{}'", token.token).yellow()
+                );
+                error_msg.push_str(&format!(
+                    "{} {}:{}\n",
+                    "Position".bright_blue(),
+                    (line_num + 1).to_string().bright_cyan(),
+                    (col + 1).to_string().bright_cyan()
+                ));
+                error_msg.push_str(&format!("{}\n", line.white()));
+                error_msg.push_str(&format!(
+                    "{}{}\n",
+                    " ".repeat(col),
+                    "^".repeat(token.origin_token.len()).bright_red().bold()
+                ));
+
                 error_msg
             }
-            
+
             ParserError::UnmatchedParenthesis(opening, closing) => {
                 let (opening_line, opening_col) = find_position(opening.position);
                 let (closing_line, closing_col) = find_position(closing.position);
-                
-                let mut error_msg = format!("Parse Error: Unmatched parenthesis\n\n");
-                
+
+                let mut error_msg = format!(
+                    "{}: {}\n\n",
+                    "Parse Error".bright_red().bold(),
+                    "Unmatched parenthesis".yellow()
+                );
+
                 // Display opening parenthesis position
                 if opening_line < lines.len() {
                     let line = lines[opening_line];
-                    error_msg.push_str(&format!("Opening '{}' at {}:{}\n", opening.token, opening_line + 1, opening_col + 1));
-                    error_msg.push_str(&format!("{}\n", line));
-                    error_msg.push_str(&format!("{}{}\n\n", " ".repeat(opening_col), "^"));
+                    error_msg.push_str(&format!(
+                        "{} '{}' at {}:{}\n",
+                        "Opening".bright_green(),
+                        opening.token.bright_white(),
+                        (opening_line + 1).to_string().bright_cyan(),
+                        (opening_col + 1).to_string().bright_cyan()
+                    ));
+                    error_msg.push_str(&format!("{}\n", line.white()));
+                    error_msg.push_str(&format!(
+                        "{}{}\n\n",
+                        " ".repeat(opening_col),
+                        "^".bright_red().bold()
+                    ));
                 }
-                
+
                 // Display closing parenthesis position
                 if closing_line < lines.len() {
                     let line = lines[closing_line];
-                    error_msg.push_str(&format!("Closing '{}' at {}:{}\n", closing.token, closing_line + 1, closing_col + 1));
-                    error_msg.push_str(&format!("{}\n", line));
-                    error_msg.push_str(&format!("{}{}\n", " ".repeat(closing_col), "^"));
+                    error_msg.push_str(&format!(
+                        "{} '{}' at {}:{}\n",
+                        "Closing".bright_green(),
+                        closing.token.bright_white(),
+                        (closing_line + 1).to_string().bright_cyan(),
+                        (closing_col + 1).to_string().bright_cyan()
+                    ));
+                    error_msg.push_str(&format!("{}\n", line.white()));
+                    error_msg.push_str(&format!(
+                        "{}{}\n",
+                        " ".repeat(closing_col),
+                        "^".bright_red().bold()
+                    ));
                 }
-                
+
                 error_msg
             }
-            
+
             ParserError::InvalidSyntax(token) => {
                 let (line_num, col) = find_position(token.position);
-                let line = if line_num < lines.len() { lines[line_num] } else { "" };
-                
-                let mut error_msg = format!("Syntax Error: Invalid syntax\n\n");
-                error_msg.push_str(&format!("Position {}:{}\n", line_num + 1, col + 1));
-                error_msg.push_str(&format!("{}\n", line));
-                error_msg.push_str(&format!("{}{}\n", " ".repeat(col), "^".repeat(token.origin_token.len())));
-                
+                let line = if line_num < lines.len() {
+                    lines[line_num]
+                } else {
+                    ""
+                };
+
+                let mut error_msg = format!(
+                    "{}: {}\n\n",
+                    "Syntax Error".bright_red().bold(),
+                    "Invalid syntax".yellow()
+                );
+                error_msg.push_str(&format!(
+                    "{} {}:{}\n",
+                    "Position".bright_blue(),
+                    (line_num + 1).to_string().bright_cyan(),
+                    (col + 1).to_string().bright_cyan()
+                ));
+                error_msg.push_str(&format!("{}\n", line.white()));
+                error_msg.push_str(&format!(
+                    "{}{}\n",
+                    " ".repeat(col),
+                    "^".repeat(token.origin_token.len()).bright_red().bold()
+                ));
+
                 error_msg
             }
-            
+
             ParserError::NotFullyMatched(start, end) => {
                 let (start_line, start_col) = find_position(start.position);
                 let (end_line, end_col) = find_position(end.position);
-                
-                let mut error_msg = format!("Parse Error: Expression not fully matched\n\n");
-                
+
+                let mut error_msg = format!(
+                    "{}: {}\n\n",
+                    "Parse Error".bright_red().bold(),
+                    "Expression not fully matched".yellow()
+                );
+
                 if start_line == end_line && start_line < lines.len() {
                     // If on the same line
                     let line = lines[start_line];
                     let underline_length = end.position + end.origin_token.len() - start.position;
-                    
-                    error_msg.push_str(&format!("Position {}:{}-{}:{}\n", 
-                        start_line + 1, start_col + 1, end_line + 1, end_col + 1 + end.origin_token.len()));
-                    error_msg.push_str(&format!("{}\n", line));
-                    error_msg.push_str(&format!("{}{}\n", " ".repeat(start_col), "~".repeat(underline_length)));
+
+                    error_msg.push_str(&format!(
+                        "{} {}:{}-{}:{}\n",
+                        "Position".bright_blue(),
+                        (start_line + 1).to_string().bright_cyan(),
+                        (start_col + 1).to_string().bright_cyan(),
+                        (end_line + 1).to_string().bright_cyan(),
+                        (end_col + 1 + end.origin_token.len())
+                            .to_string()
+                            .bright_cyan()
+                    ));
+                    error_msg.push_str(&format!("  {}\n", line.white()));
+                    error_msg.push_str(&format!(
+                        "  {}{}\n",
+                        " ".repeat(start_col),
+                        "~".repeat(underline_length).bright_red().bold()
+                    ));
                 } else {
                     // If spans multiple lines
-                    error_msg.push_str(&format!("Starting position {}:{}\n", start_line + 1, start_col + 1));
+                    error_msg.push_str(&format!(
+                        "{} {}:{}\n",
+                        "Starting position".bright_blue(),
+                        (start_line + 1).to_string().bright_cyan(),
+                        (start_col + 1).to_string().bright_cyan()
+                    ));
                     if start_line < lines.len() {
                         let line = lines[start_line];
-                        error_msg.push_str(&format!("{}\n", line));
-                        error_msg.push_str(&format!("{}{}\n\n", " ".repeat(start_col), "~".repeat(line.len() - start_col)));
+                        error_msg.push_str(&format!("    {}\n", line.white()));
+                        error_msg.push_str(&format!("   ┌{}^\n", "─".repeat(start_col),));
                     }
-                    
-                    error_msg.push_str(&format!("Ending position {}:{}\n", end_line + 1, end_col + 1));
+
+                    for line_num in (start_line + 1)..end_line {
+                        if line_num < lines.len() {
+                            let line = lines[line_num];
+                            error_msg.push_str(&format!("   │{}\n", line.white()));
+                        }
+                    }
+
                     if end_line < lines.len() {
                         let line = lines[end_line];
-                        error_msg.push_str(&format!("{}\n", line));
-                        error_msg.push_str(&format!("{}{}\n", " ".repeat(0), "~".repeat(end_col + end.origin_token.len())));
+                        error_msg.push_str(&format!("   │{}\n", line.white()));
+                        error_msg.push_str(&format!(
+                            "   └{}{}^\n",
+                            " ".repeat(0),
+                            "─"
+                                .repeat(end_col + end.origin_token.len())
+                                .bright_red()
+                                .bold(),
+                        ));
                     }
+
+                    error_msg.push_str(&format!(
+                        "{} {}:{}\n",
+                        "Ending position".bright_blue(),
+                        (end_line + 1).to_string().bright_cyan(),
+                        (end_col + 1).to_string().bright_cyan()
+                    ));
                 }
-                
+
                 error_msg
             }
-            
+
             ParserError::InvalidVariableName(token) => {
                 let (line_num, col) = find_position(token.position);
-                let line = if line_num < lines.len() { lines[line_num] } else { "" };
-                
-                let mut error_msg = format!("Parse Error: Invalid variable name '{}'\n\n", token.origin_token);
-                error_msg.push_str(&format!("Position {}:{}\n", line_num + 1, col + 1));
-                error_msg.push_str(&format!("{}\n", line));
-                error_msg.push_str(&format!("{}{}\n", " ".repeat(col), "^".repeat(token.origin_token.len())));
-                
+                let line = if line_num < lines.len() {
+                    lines[line_num]
+                } else {
+                    ""
+                };
+
+                let mut error_msg = format!(
+                    "{}: {}\n\n",
+                    "Parse Error".bright_red().bold(),
+                    format!("Invalid variable name '{}'", token.origin_token).yellow()
+                );
+                error_msg.push_str(&format!(
+                    "{} {}:{}\n",
+                    "Position".bright_blue(),
+                    (line_num + 1).to_string().bright_cyan(),
+                    (col + 1).to_string().bright_cyan()
+                ));
+                error_msg.push_str(&format!("{}\n", line.white()));
+                error_msg.push_str(&format!(
+                    "{}{}\n",
+                    " ".repeat(col),
+                    "^".repeat(token.origin_token.len()).bright_red().bold()
+                ));
+
                 error_msg
             }
-            
+
             ParserError::UnsupportedStructure(token) => {
                 let (line_num, col) = find_position(token.position);
-                let line = if line_num < lines.len() { lines[line_num] } else { "" };
-                
-                let mut error_msg = format!("Parse Error: Unsupported structure\n\n");
-                error_msg.push_str(&format!("Position {}:{}\n", line_num + 1, col + 1));
-                error_msg.push_str(&format!("{}\n", line));
-                error_msg.push_str(&format!("{}{}\n", " ".repeat(col), "^".repeat(token.origin_token.len())));
-                
+                let line = if line_num < lines.len() {
+                    lines[line_num]
+                } else {
+                    ""
+                };
+
+                let mut error_msg = format!(
+                    "{}: {}\n\n",
+                    "Parse Error".bright_red().bold(),
+                    "Unsupported structure".yellow()
+                );
+                error_msg.push_str(&format!(
+                    "{} {}:{}\n",
+                    "Position".bright_blue(),
+                    (line_num + 1).to_string().bright_cyan(),
+                    (col + 1).to_string().bright_cyan()
+                ));
+                error_msg.push_str(&format!("{}\n", line.white()));
+                error_msg.push_str(&format!(
+                    "{}{}\n",
+                    " ".repeat(col),
+                    "^".repeat(token.origin_token.len()).bright_red().bold()
+                ));
+
+                // 添加帮助提示
+                error_msg.push_str(&format!(
+                    "\n{} {}\n",
+                    "Hint:".bright_green().bold(),
+                    "Check syntax or try breaking down complex expressions"
+                        .bright_white()
+                        .italic()
+                ));
+
                 error_msg
             }
         }
@@ -272,9 +431,9 @@ pub enum ASTNodeOperation {
     Less,         // <
     GreaterEqual, // >=
     LessEqual,    // <=
-    LeftShift,  // << (left shift)
-    RightShift, // >> (right shift)
-    BitwiseNot, // ~ (bitwise NOT)
+    LeftShift,    // << (left shift)
+    RightShift,   // >> (right shift)
+    BitwiseNot,   // ~ (bitwise NOT)
 }
 
 #[derive(Debug, PartialEq, Eq, Clone)]
@@ -478,8 +637,8 @@ pub fn build_ast<'a>(tokens: GatheredTokens<'a>) -> Result<ASTNode<'a>, ParserEr
     let matched = matched.unwrap();
     if offset != gathered.len() {
         return Err(ParserError::NotFullyMatched(
-            &tokens[0],
-            &tokens[tokens.len() - 1],
+            gathered.first().unwrap().first().unwrap(),
+            gathered.last().unwrap().last().unwrap(),
         ));
     }
     return Ok(matched);
@@ -692,7 +851,7 @@ fn match_expressions<'t>(
             if node_offset != left_tokens.len() {
                 return Err(ParserError::NotFullyMatched(
                     &left_tokens.first().unwrap().first().unwrap(),
-                    &left_tokens.last().unwrap().last().unwrap()
+                    &left_tokens.last().unwrap().last().unwrap(),
                 ));
             }
 
@@ -771,7 +930,7 @@ fn match_tuple<'t>(
             if node_offset != left_tokens.len() {
                 return Err(ParserError::NotFullyMatched(
                     &left_tokens.first().unwrap().first().unwrap(),
-                    &left_tokens.last().unwrap().last().unwrap()
+                    &left_tokens.last().unwrap().last().unwrap(),
                 ));
             }
             separated.push(node.unwrap());
@@ -828,7 +987,7 @@ fn match_let<'t>(
     if left_offset != left_tokens.len() {
         return Err(ParserError::NotFullyMatched(
             &left_tokens.first().unwrap().first().unwrap(),
-            &left_tokens.last().unwrap().last().unwrap()
+            &left_tokens.last().unwrap().last().unwrap(),
         ));
     }
     let left = left.unwrap();
@@ -889,7 +1048,7 @@ fn match_assign<'t>(
     if left_offset != left_tokens.len() {
         return Err(ParserError::NotFullyMatched(
             &left_tokens.first().unwrap().first().unwrap(),
-            &left_tokens.last().unwrap().last().unwrap()
+            &left_tokens.last().unwrap().last().unwrap(),
         ));
     }
     let left = left.unwrap();
@@ -931,7 +1090,7 @@ fn match_named_to<'t>(
     if left_offset != left_tokens.len() {
         return Err(ParserError::NotFullyMatched(
             &left_tokens.first().unwrap().first().unwrap(),
-            &left_tokens.last().unwrap().last().unwrap()
+            &left_tokens.last().unwrap().last().unwrap(),
         ));
     }
     let mut left = left.unwrap();
@@ -976,7 +1135,7 @@ fn match_key_value<'t>(
     if left_offset != left_tokens.len() {
         return Err(ParserError::NotFullyMatched(
             &left_tokens.first().unwrap().first().unwrap(),
-            &left_tokens.last().unwrap().last().unwrap()
+            &left_tokens.last().unwrap().last().unwrap(),
         ));
     }
     let left = left.unwrap();
@@ -1018,7 +1177,7 @@ fn match_while<'t>(
     if condition_offset != condition_tokens.len() {
         return Err(ParserError::NotFullyMatched(
             &condition_tokens.first().unwrap().first().unwrap(),
-            &condition_tokens.last().unwrap().last().unwrap()
+            &condition_tokens.last().unwrap().last().unwrap(),
         ));
     }
     let condition = condition.unwrap();
@@ -1061,7 +1220,7 @@ fn match_if<'t>(
     if condition_offset != condition_tokens.len() {
         return Err(ParserError::NotFullyMatched(
             &condition_tokens.first().unwrap().first().unwrap(),
-            &condition_tokens.last().unwrap().last().unwrap()
+            &condition_tokens.last().unwrap().last().unwrap(),
         ));
     }
     let condition = condition.unwrap();
@@ -1073,7 +1232,7 @@ fn match_if<'t>(
     if true_condition_offset != true_condition_tokens.len() {
         return Err(ParserError::NotFullyMatched(
             &true_condition_tokens.first().unwrap().first().unwrap(),
-            &true_condition_tokens.last().unwrap().last().unwrap()
+            &true_condition_tokens.last().unwrap().last().unwrap(),
         ));
     }
     let true_condition = true_condition.unwrap();
@@ -1087,7 +1246,7 @@ fn match_if<'t>(
         if false_condition_offset != false_condition_tokens.len() {
             return Err(ParserError::NotFullyMatched(
                 &false_condition_tokens.first().unwrap().first().unwrap(),
-                &false_condition_tokens.last().unwrap().last().unwrap()
+                &false_condition_tokens.last().unwrap().last().unwrap(),
             ));
         }
         let false_condition = false_condition.unwrap();
@@ -1126,7 +1285,7 @@ fn match_control_flow<'t>(
         if right_offset != right_tokens.len() {
             return Err(ParserError::NotFullyMatched(
                 &right_tokens.first().unwrap().first().unwrap(),
-                &right_tokens.last().unwrap().last().unwrap()
+                &right_tokens.last().unwrap().last().unwrap(),
             ));
         }
         let right = right.unwrap();
@@ -1147,7 +1306,7 @@ fn match_control_flow<'t>(
         if right_offset != right_tokens.len() {
             return Err(ParserError::NotFullyMatched(
                 &right_tokens.first().unwrap().first().unwrap(),
-                &right_tokens.last().unwrap().last().unwrap()
+                &right_tokens.last().unwrap().last().unwrap(),
             ));
         }
         let right = right.unwrap();
@@ -1205,7 +1364,7 @@ fn match_or<'t>(
     if right_offset != right_tokens.len() {
         return Err(ParserError::NotFullyMatched(
             &right_tokens.first().unwrap().first().unwrap(),
-            &right_tokens.last().unwrap().last().unwrap()
+            &right_tokens.last().unwrap().last().unwrap(),
         ));
     }
     return Ok((
@@ -1249,7 +1408,7 @@ fn match_and<'t>(
     if left_offset != left_tokens.len() {
         return Err(ParserError::NotFullyMatched(
             &left_tokens.first().unwrap().first().unwrap(),
-            &left_tokens.last().unwrap().last().unwrap()
+            &left_tokens.last().unwrap().last().unwrap(),
         ));
     }
     let (right, right_offset) = match_all(right_tokens, 0)?;
@@ -1336,7 +1495,7 @@ fn match_operation_compare<'t>(
     if left_offset != left_tokens.len() {
         return Err(ParserError::NotFullyMatched(
             &left_tokens.first().unwrap().first().unwrap(),
-            &left_tokens.last().unwrap().last().unwrap()
+            &left_tokens.last().unwrap().last().unwrap(),
         ));
     }
     let (right, right_offset) = match_all(right_tokens, 0)?;
@@ -1347,7 +1506,7 @@ fn match_operation_compare<'t>(
     if right_offset != right_tokens.len() {
         return Err(ParserError::NotFullyMatched(
             &right_tokens.first().unwrap().first().unwrap(),
-            &right_tokens.last().unwrap().last().unwrap()
+            &right_tokens.last().unwrap().last().unwrap(),
         ));
     }
     let operation = match operator.unwrap() {
@@ -1426,7 +1585,7 @@ fn match_operation_add_sub<'t>(
     if left_offset != left_tokens.len() {
         return Err(ParserError::NotFullyMatched(
             &left_tokens.first().unwrap().first().unwrap(),
-            &left_tokens.last().unwrap().last().unwrap()
+            &left_tokens.last().unwrap().last().unwrap(),
         ));
     }
 
@@ -1442,7 +1601,7 @@ fn match_operation_add_sub<'t>(
     if right_offset != right_tokens.len() {
         return Err(ParserError::NotFullyMatched(
             &right_tokens.first().unwrap().first().unwrap(),
-            &right_tokens.last().unwrap().last().unwrap()
+            &right_tokens.last().unwrap().last().unwrap(),
         ));
     }
 
@@ -1501,7 +1660,7 @@ fn match_operation_mul_div_mod<'t>(
     if left_offset != left_tokens.len() {
         return Err(ParserError::NotFullyMatched(
             &left_tokens.first().unwrap().first().unwrap(),
-            &left_tokens.last().unwrap().last().unwrap()
+            &left_tokens.last().unwrap().last().unwrap(),
         ));
     }
 
@@ -1517,7 +1676,7 @@ fn match_operation_mul_div_mod<'t>(
     if right_offset != right_tokens.len() {
         return Err(ParserError::NotFullyMatched(
             &right_tokens.first().unwrap().first().unwrap(),
-            &right_tokens.last().unwrap().last().unwrap()
+            &right_tokens.last().unwrap().last().unwrap(),
         ));
     }
 
@@ -1538,7 +1697,6 @@ fn match_operation_mul_div_mod<'t>(
         tokens.len() - current, // 返回整个匹配长度
     ));
 }
-
 
 fn match_bitwise_or<'t>(
     tokens: &Vec<GatheredTokens<'t>>,
@@ -1571,7 +1729,7 @@ fn match_bitwise_or<'t>(
     if left_offset != left_tokens.len() {
         return Err(ParserError::NotFullyMatched(
             &left_tokens.first().unwrap().first().unwrap(),
-            &left_tokens.last().unwrap().last().unwrap()
+            &left_tokens.last().unwrap().last().unwrap(),
         ));
     }
     let (right, right_offset) = match_all(right_tokens, 0)?;
@@ -1582,7 +1740,7 @@ fn match_bitwise_or<'t>(
     if right_offset != right_tokens.len() {
         return Err(ParserError::NotFullyMatched(
             &right_tokens.first().unwrap().first().unwrap(),
-            &right_tokens.last().unwrap().last().unwrap()
+            &right_tokens.last().unwrap().last().unwrap(),
         ));
     }
     return Ok((
@@ -1626,7 +1784,7 @@ fn match_bitwise_and<'t>(
     if left_offset != left_tokens.len() {
         return Err(ParserError::NotFullyMatched(
             &left_tokens.first().unwrap().first().unwrap(),
-            &left_tokens.last().unwrap().last().unwrap()
+            &left_tokens.last().unwrap().last().unwrap(),
         ));
     }
     let (right, right_offset) = match_all(right_tokens, 0)?;
@@ -1637,7 +1795,7 @@ fn match_bitwise_and<'t>(
     if right_offset != right_tokens.len() {
         return Err(ParserError::NotFullyMatched(
             &right_tokens.first().unwrap().first().unwrap(),
-            &right_tokens.last().unwrap().last().unwrap()
+            &right_tokens.last().unwrap().last().unwrap(),
         ));
     }
     return Ok((
@@ -1681,7 +1839,7 @@ fn match_bitwise_xor<'t>(
     if left_offset != left_tokens.len() {
         return Err(ParserError::NotFullyMatched(
             &left_tokens.first().unwrap().first().unwrap(),
-            &left_tokens.last().unwrap().last().unwrap()
+            &left_tokens.last().unwrap().last().unwrap(),
         ));
     }
     let (right, right_offset) = match_all(right_tokens, 0)?;
@@ -1692,7 +1850,7 @@ fn match_bitwise_xor<'t>(
     if right_offset != right_tokens.len() {
         return Err(ParserError::NotFullyMatched(
             &right_tokens.first().unwrap().first().unwrap(),
-            &right_tokens.last().unwrap().last().unwrap()
+            &right_tokens.last().unwrap().last().unwrap(),
         ));
     }
     return Ok((
@@ -1735,7 +1893,7 @@ fn match_bitwise_shift<'t>(
     if left_offset != left_tokens.len() {
         return Err(ParserError::NotFullyMatched(
             &left_tokens.first().unwrap().first().unwrap(),
-            &left_tokens.last().unwrap().last().unwrap()
+            &left_tokens.last().unwrap().last().unwrap(),
         ));
     }
     let (right, right_offset) = match_all(right_tokens, 0)?;
@@ -1746,7 +1904,7 @@ fn match_bitwise_shift<'t>(
     if right_offset != right_tokens.len() {
         return Err(ParserError::NotFullyMatched(
             &right_tokens.first().unwrap().first().unwrap(),
-            &right_tokens.last().unwrap().last().unwrap()
+            &right_tokens.last().unwrap().last().unwrap(),
         ));
     }
     return Ok((
@@ -1770,7 +1928,10 @@ fn match_unary<'t>(
     if current >= tokens.len() {
         return Ok((None, 0));
     }
-    if is_symbol(&tokens[current], "-") || is_symbol(&tokens[current], "+") || is_symbol(&tokens[current], "~") {
+    if is_symbol(&tokens[current], "-")
+        || is_symbol(&tokens[current], "+")
+        || is_symbol(&tokens[current], "~")
+    {
         let (node, node_offset) = match_all(tokens, current + 1)?;
         if node.is_none() {
             return Ok((None, 0));
@@ -1780,7 +1941,7 @@ fn match_unary<'t>(
             "-" => ASTNodeOperation::Subtract,
             "+" => ASTNodeOperation::Add,
             "~" => ASTNodeOperation::BitwiseNot,
-            _ => unreachable!(),            
+            _ => unreachable!(),
         };
         return Ok((
             Some(ASTNode::new(
@@ -1823,7 +1984,7 @@ fn match_power<'t>(
     if left_offset != left_tokens.len() {
         return Err(ParserError::NotFullyMatched(
             &left_tokens.first().unwrap().first().unwrap(),
-            &left_tokens.last().unwrap().last().unwrap()
+            &left_tokens.last().unwrap().last().unwrap(),
         ));
     }
     let (right, right_offset) = match_all(right_tokens, 0)?;
@@ -1834,7 +1995,7 @@ fn match_power<'t>(
     if right_offset != right_tokens.len() {
         return Err(ParserError::NotFullyMatched(
             &right_tokens.first().unwrap().first().unwrap(),
-            &right_tokens.last().unwrap().last().unwrap()
+            &right_tokens.last().unwrap().last().unwrap(),
         ));
     }
     return Ok((
@@ -1845,7 +2006,6 @@ fn match_power<'t>(
         )),
         tokens.len() - current, // return full length of the tokens
     ));
-
 }
 
 fn match_lambda_def<'t>(
@@ -1868,7 +2028,7 @@ fn match_lambda_def<'t>(
     if left_offset != left_tokens.len() {
         return Err(ParserError::NotFullyMatched(
             &left_tokens.first().unwrap().first().unwrap(),
-            &left_tokens.last().unwrap().last().unwrap()
+            &left_tokens.last().unwrap().last().unwrap(),
         ));
     }
     let (right, right_offset) = match_all(tokens, current + 2)?;
@@ -1947,14 +2107,14 @@ fn match_named_to_null<'t>(
     }
     if is_symbol(&tokens[tokens.len() - 1], "?") {
         let left_tokens = tokens[..tokens.len() - 1].to_vec();
-        let (node, node_offset) = match_all(&left_tokens, 0 )?;
+        let (node, node_offset) = match_all(&left_tokens, 0)?;
         if node.is_none() {
             return Ok((None, 0));
         }
         if node_offset != left_tokens.len() {
             return Err(ParserError::NotFullyMatched(
                 &left_tokens.first().unwrap().first().unwrap(),
-                &left_tokens.last().unwrap().last().unwrap()
+                &left_tokens.last().unwrap().last().unwrap(),
             ));
         }
         let mut node = node.unwrap();
@@ -1996,7 +2156,7 @@ fn match_alias<'t>(
     if type_offset != type_tokens.len() {
         return Err(ParserError::NotFullyMatched(
             &type_tokens.first().unwrap().first().unwrap(),
-            &type_tokens.last().unwrap().last().unwrap()
+            &type_tokens.last().unwrap().last().unwrap(),
         ));
     }
 
@@ -2080,7 +2240,7 @@ fn match_member_access_and_call<'t>(
             if left_offset != left_tokens.len() {
                 return Err(ParserError::NotFullyMatched(
                     &left_tokens.first().unwrap().first().unwrap(),
-                    &left_tokens.last().unwrap().last().unwrap()
+                    &left_tokens.last().unwrap().last().unwrap(),
                 ));
             }
             // 解包索引括号中的内容
@@ -2121,7 +2281,7 @@ fn match_member_access_and_call<'t>(
             if left_offset != left_tokens.len() {
                 return Err(ParserError::NotFullyMatched(
                     &left_tokens.first().unwrap().first().unwrap(),
-                    &left_tokens.last().unwrap().last().unwrap()
+                    &left_tokens.last().unwrap().last().unwrap(),
                 ));
             }
             if access_pos + 1 >= tokens.len() {
@@ -2187,7 +2347,7 @@ fn match_member_access_and_call<'t>(
             if left_offset != left_tokens.len() {
                 return Err(ParserError::NotFullyMatched(
                     &left_tokens.first().unwrap().first().unwrap(),
-                    &left_tokens.last().unwrap().last().unwrap()
+                    &left_tokens.last().unwrap().last().unwrap(),
                 ));
             }
 
@@ -2253,7 +2413,7 @@ fn match_range<'t>(
     if left_offset != left_tokens.len() {
         return Err(ParserError::NotFullyMatched(
             &left_tokens.first().unwrap().first().unwrap(),
-            &left_tokens.last().unwrap().last().unwrap()
+            &left_tokens.last().unwrap().last().unwrap(),
         ));
     }
     let (right, right_offset) = match_all(tokens, current + 2)?;
@@ -2292,7 +2452,7 @@ fn match_in<'t>(
     if left_offset != left_tokens.len() {
         return Err(ParserError::NotFullyMatched(
             &left_tokens.first().unwrap().first().unwrap(),
-            &left_tokens.last().unwrap().last().unwrap()
+            &left_tokens.last().unwrap().last().unwrap(),
         ));
     }
     let (right, right_offset) = match_all(tokens, current + 2)?;

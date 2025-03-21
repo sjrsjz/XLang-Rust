@@ -1,5 +1,6 @@
 mod parser;
 pub mod vm;
+use colored::Colorize;
 use rustyline::highlight::CmdKind;
 use vm::executor::variable::VMInstructions;
 use vm::executor::variable::VMLambda;
@@ -123,7 +124,7 @@ fn execute_ir(package: IRPackage, source_code: Option<String>) -> Result<GCRef, 
 
     let result = coroutine_pool.run_until_finished(&mut gc_system);
     if let Err(e) = result {
-        eprintln!("VM Crashed!: {}", e.to_string());
+        eprintln!("{} {}", "VM Crashed!:".bright_red().underline().bold(), e.to_string());
         return Err(VMError::AssertFailed);
     }
 
@@ -198,9 +199,9 @@ fn run_file(path: &PathBuf) -> Result<(), String> {
         match IRPackage::read_from_file(path.to_str().unwrap()) {
             Ok(package) => match execute_ir(package, None) {
                 Ok(_) => Ok(()),
-                Err(e) => Err(format!("Execution error: {}", e.to_string())),
+                Err(e) => Err(format!("Execution error: {}", e.to_string()).bright_red().to_string()),
             },
-            Err(e) => Err(format!("Error reading IR file: {}", e)),
+            Err(e) => Err(format!("Error reading IR file: {}", e).bright_red().to_string()),
         }
     } else {
         // Assume it's a source file, compile and execute
@@ -208,11 +209,11 @@ fn run_file(path: &PathBuf) -> Result<(), String> {
             Ok(code) => match build_code(&code) {
                 Ok(package) => match execute_ir(package, Some(code)) {
                     Ok(_) => Ok(()),
-                    Err(e) => Err(format!("Execution error: {}", e.to_string())),
+                    Err(e) => Err(format!("Execution error: {}", e.to_string()).bright_red().to_string()),
                 },
-                Err(e) => Err(format!("Compilation error: {}", e)),
+                Err(e) => Err(format!("Compilation error: {}", e).bright_red().to_string()),
             },
-            Err(e) => Err(format!("File reading error: {}", e)),
+            Err(e) => Err(format!("File reading error: {}", e).bright_red().to_string()),
         }
     }
 }
@@ -221,13 +222,13 @@ fn compile_file(input: &PathBuf, output: Option<PathBuf>) -> Result<(), String> 
     // Read source code
     let code = match fs::read_to_string(input) {
         Ok(content) => content,
-        Err(e) => return Err(format!("Error reading source file: {}", e)),
+        Err(e) => return Err(format!("Error reading source file: {}", e).bright_red().to_string()),
     };
 
     // Compile source code
     let package = match build_code(&code) {
         Ok(p) => p,
-        Err(e) => return Err(format!("Compilation error: {}", e)),
+        Err(e) => return Err(format!("Compilation error: {}", e).bright_red().to_string()),
     };
 
     // Determine output path
@@ -244,7 +245,7 @@ fn compile_file(input: &PathBuf, output: Option<PathBuf>) -> Result<(), String> 
     if let Some(parent) = output_path.parent() {
         if !parent.exists() {
             if let Err(e) = fs::create_dir_all(parent) {
-                return Err(format!("Error creating output directory: {}", e));
+                return Err(format!("Error creating output directory: {}", e).bright_red().to_string());
             }
         }
     }
@@ -258,7 +259,7 @@ fn compile_file(input: &PathBuf, output: Option<PathBuf>) -> Result<(), String> 
             );
             Ok(())
         }
-        Err(e) => Err(format!("Error saving IR to file: {}", e)),
+        Err(e) => Err(format!("Error saving IR to file: {}", e).bright_red().to_string()),
     }
 }
 
@@ -717,13 +718,13 @@ fn main() {
     match cli.command {
         Commands::Compile { input, output } => {
             if let Err(e) = compile_file(&input, output) {
-                eprintln!("Error: {}", e);
+                eprintln!("{}", e);
                 std::process::exit(1);
             }
         }
         Commands::Run { input } => {
             if let Err(e) = run_file(&input) {
-                eprintln!("Error: {}", e);
+                eprintln!("{}", e);
                 std::process::exit(1);
             }
         }

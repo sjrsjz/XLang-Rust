@@ -30,38 +30,59 @@ pub enum VMError {
 
 impl VMError {
     pub fn to_string(&self) -> String {
+        use colored::*;
+
         match self {
             VMError::InvalidInstruction(instruction) => {
-                format!("InvalidInstruction: {:?}", instruction)
+                format!(
+                    "{}: {:?}",
+                    "InvalidInstruction".bright_red().bold(),
+                    instruction
+                )
             }
             VMError::TryEnterNotLambda(lambda) => format!(
-                "TryEnterNotLambda: {}",
+                "{}: {}",
+                "TryEnterNotLambda".bright_red().bold(),
                 try_repr_vmobject(lambda.clone(), None).unwrap_or(format!("{:?}", lambda))
             ),
-            VMError::EmptyStack => "EmptyStack".to_string(),
+            VMError::EmptyStack => "EmptyStack".bright_red().bold().to_string(),
             VMError::ArgumentIsNotTuple(tuple) => format!(
-                "ArgumentIsNotTuple: {}",
+                "{}: {}",
+                "ArgumentIsNotTuple".bright_red().bold(),
                 try_repr_vmobject(tuple.clone(), None).unwrap_or(format!("{:?}", tuple))
             ),
             VMError::UnableToReference(obj) => format!(
-                "UnableToReference: {}",
+                "{}: {}",
+                "UnableToReference".bright_red().bold(),
                 try_repr_vmobject(obj.clone(), None).unwrap_or(format!("{:?}", obj))
             ),
-            VMError::NotVMObject(obj) => format!("NotVMObject: {:?}", obj),
-            VMError::ContextError(err) => err.to_string(),
-            VMError::VMVariableError(err) => err.to_string(),
-            VMError::AssertFailed => "AssertFailed".to_string(),
+            VMError::NotVMObject(obj) => {
+                format!("{}: {:?}", "NotVMObject".bright_red().bold(), obj)
+            }
+            VMError::ContextError(err) => format!(
+                "{}: {}",
+                "ContextError".bright_red().bold(),
+                err.to_string()
+            ),
+            VMError::VMVariableError(err) => format!(
+                "{}: {}",
+                "VMVariableError".bright_red().bold(),
+                err.to_string()
+            ),
+            VMError::AssertFailed => "AssertFailed".bright_red().bold().to_string(),
             VMError::CannotGetSelf(obj) => format!(
-                "CannotGetSelf: {}",
+                "{}: {}",
+                "CannotGetSelf".bright_red().bold(),
                 try_repr_vmobject(obj.clone(), None).unwrap_or(format!("{:?}", obj))
             ),
             VMError::InvalidArgument(obj, msg) => format!(
-                "InvalidArgument: {} because {}",
+                "{}: {} {}",
+                "InvalidArgument".bright_red().bold(),
                 try_repr_vmobject(obj.clone(), None).unwrap_or(format!("{:?}", obj)),
-                msg,
+                format!("because {}", msg).yellow()
             ),
-            VMError::FileError(msg) => format!("FileError: {}", msg),
-            VMError::DetailedError(msg) => format!("DetailedError: {}", msg),
+            VMError::FileError(msg) => format!("{}: {}", "FileError".bright_red().bold(), msg),
+            VMError::DetailedError(msg) => format!("{}", msg),
         }
     }
 }
@@ -154,49 +175,71 @@ impl VMCoroutinePool {
     }
 
     pub fn run_until_finished(&mut self, gc_system: &mut GCSystem) -> Result<(), VMError> {
+        use colored::*;
+
         loop {
             let spawned_coroutines = self.step_all(gc_system).map_err(|e| {
                 if self.enable_dump {
                     let all_coroutines_contexts_repr = self
-                    .executors
-                    .iter()
-                    .map(|(e, _)| {
-                        let lambda = e
-                            .entry_lambda_wrapper
-                            .as_ref()
-                            .unwrap()
-                            .as_type::<VMVariableWrapper>()
-                            .value_ref
-                            .as_const_type::<VMLambda>();
-                        format!(
-                            "# {}: {}\n{}\n\n=== Code ===\n\n{}",
-                            lambda.signature,
-                            lambda.coroutine_status.to_string(),
-                            e.context.format_context(&e.stack),
-                            e.repr_current_code(Some(2))
-                        )
-                    })
-                    .collect::<Vec<String>>()
-                    .join("\n");
-                VMError::DetailedError(format!("** CoroutinePool Step Error! **\n\n# Main Error\n{}\n\nAll Coroutine Contexts:\n{}", e.to_string(),all_coroutines_contexts_repr))
+                        .executors
+                        .iter()
+                        .map(|(e, _)| {
+                            let lambda = e
+                                .entry_lambda_wrapper
+                                .as_ref()
+                                .unwrap()
+                                .as_type::<VMVariableWrapper>()
+                                .value_ref
+                                .as_const_type::<VMLambda>();
+                            format!(
+                                "{}\n{}\n\n{}\n\n{}",
+                                format!(
+                                    "# {}: {}",
+                                    lambda.signature,
+                                    lambda.coroutine_status.to_string()
+                                )
+                                .bright_yellow()
+                                .bold(),
+                                e.context.format_context(&e.stack),
+                                "=== Code ===".bright_blue().bold(),
+                                e.repr_current_code(Some(2))
+                            )
+                        })
+                        .collect::<Vec<String>>()
+                        .join("\n\n");
+
+                    VMError::DetailedError(format!(
+                        "{}\n\n{}\n{}\n\n{}",
+                        "** CoroutinePool Step Error! **".bright_red().bold(),
+                        "# Main Error".bright_yellow().bold(),
+                        e.to_string().red(),
+                        format!("All Coroutine Contexts:\n{}", all_coroutines_contexts_repr)
+                    ))
                 } else {
                     e
                 }
-
             })?;
+
             self.sweep_finished();
+
             if let Some(coroutines) = spawned_coroutines {
                 for coroutine in coroutines {
                     let lambda_object = coroutine.lambda_ref;
                     let source_code = coroutine.source_code;
-                    // println!("spawn coroutine: {}", try_repr_vmobject(lambda_object.clone()).unwrap_or(format!("{:?}", lambda_object.clone())));
+                    // 可选的调试信息：开发模式下可启用
+                    // println!("{}", format!("Spawning coroutine: {}",
+                    //     try_repr_vmobject(lambda_object.clone(), None)
+                    //         .unwrap_or(format!("{:?}", lambda_object.clone())))
+                    //     .bright_cyan());
                     self.new_coroutine(lambda_object, source_code, gc_system, false)?;
                 }
             }
+
             if self.executors.len() == 0 {
                 break;
             }
         }
+
         Ok(())
     }
 }
@@ -457,10 +500,16 @@ impl IRExecutor {
         self.debug_info = Some(debug_info);
     }
     pub fn repr_current_code(&self, context_lines: Option<usize>) -> String {
+        use colored::*;
+        use unicode_segmentation::UnicodeSegmentation;
+
         let context_lines = context_lines.unwrap_or(2); // Default to 2 lines of context
 
         if self.original_code.is_none() || self.debug_info.is_none() {
-            return String::from("[Source code information not available]");
+            return String::from("[Source code information not available]")
+                .bright_yellow()
+                .italic()
+                .to_string();
         }
 
         let source_code = self.original_code.as_ref().unwrap();
@@ -477,7 +526,10 @@ impl IRExecutor {
                     .instructions
                     .len()
         {
-            return format!("[IP out of range: {}]", self.ip);
+            return format!("[IP out of range: {}]", self.ip)
+                .bright_red()
+                .bold()
+                .to_string();
         }
 
         // Get source position for current instruction
@@ -486,15 +538,29 @@ impl IRExecutor {
         // Split source code into lines
         let lines: Vec<&str> = source_code.lines().collect();
 
-        // Helper function to find line and column from position
-        let find_position = |pos: usize| -> (usize, usize) {
-            let mut current_pos = 0;
+        // Helper function to find line and column from byte position
+        let find_position = |byte_pos: usize| -> (usize, usize) {
+            let mut current_byte = 0;
             for (line_num, line) in lines.iter().enumerate() {
-                let line_len = line.len() + 1; // +1 for newline
-                if current_pos + line_len > pos {
-                    return (line_num, pos - current_pos);
+                let line_bytes = line.len() + 1; // +1 for newline
+                if current_byte + line_bytes > byte_pos {
+                    // 计算行内的字节偏移
+                    let line_offset = byte_pos - current_byte;
+
+                    // 找到有效的字符边界
+                    let valid_offset = line
+                        .char_indices()
+                        .map(|(i, _)| i)
+                        .take_while(|&i| i <= line_offset)
+                        .last()
+                        .unwrap_or(0);
+
+                    // 使用有效的字节偏移获取文本
+                    let column_text = &line[..valid_offset];
+                    let column = column_text.graphemes(true).count();
+                    return (line_num, column);
                 }
-                current_pos += line_len;
+                current_byte += line_bytes;
             }
             (lines.len() - 1, 0) // Default to last line
         };
@@ -515,16 +581,38 @@ impl IRExecutor {
 
         // Add context lines with current line highlighted
         for i in start_line..=end_line {
+            // Format line number
             let line_prefix = format!("{:4} | ", i + 1);
-            result.push_str(&line_prefix);
-            result.push_str(lines[i]);
+
+            // Format line content - highlight current line
+            let line_content = if i == line_num {
+                lines[i].bright_white().bold().to_string()
+            } else {
+                lines[i].white().to_string()
+            };
+
+            result.push_str(&line_prefix.bright_black().to_string());
+            result.push_str(&line_content);
             result.push('\n');
 
             // Mark the current line with pointer
             if i == line_num {
-                let mut marker = String::from(" ".repeat(line_prefix.len()));
-                marker.push_str(&" ".repeat(col_num));
-                marker.push('^');
+                let mut marker = " ".repeat(line_prefix.len());
+
+                // Calculate grapheme-aware marker position
+                let prefix_graphemes = if col_num > 0 {
+                    lines[i][..lines[i]
+                        .grapheme_indices(true)
+                        .nth(col_num.saturating_sub(1))
+                        .map_or(lines[i].len(), |(idx, _)| idx)]
+                        .graphemes(true)
+                        .count()
+                } else {
+                    0
+                };
+
+                marker.push_str(&" ".repeat(prefix_graphemes));
+                marker.push_str(&"^".bright_green().bold().to_string());
 
                 result.push_str(&marker);
                 result.push('\n');
@@ -538,9 +626,13 @@ impl IRExecutor {
             .unwrap()
             .as_const_type::<VMInstructions>()
             .instructions[self.ip as usize];
+
+        // Format current instruction info
         result.push_str(&format!(
-            "Current instruction: {:?} (IP: {})\n",
-            instruction, self.ip
+            "{} {} ({})\n",
+            "Current instruction:".bright_yellow().bold(),
+            format!("{:?}", instruction).bright_cyan().bold(),
+            format!("IP: {}", self.ip).bright_magenta().italic()
         ));
 
         result
@@ -663,7 +755,8 @@ impl IRExecutor {
                     v.clone(),
                     format!(
                         "Not a VMNamed in Lambda arguments: {}",
-                        try_repr_vmobject(default_args.clone(), None).unwrap_or(format!("{:?}", default_args))
+                        try_repr_vmobject(default_args.clone(), None)
+                            .unwrap_or(format!("{:?}", default_args))
                     ),
                 ));
             }
