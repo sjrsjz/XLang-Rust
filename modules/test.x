@@ -19,7 +19,6 @@
 //     print(valueof asyncs[0])
 // };
 
-
 extend := (obj?, methods => (,)) -> {
     new_obj := (,);
     n := 0; while(n < len(obj)) {
