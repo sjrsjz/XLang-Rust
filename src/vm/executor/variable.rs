@@ -22,6 +22,7 @@ pub enum VMVariableError {
     AssignError(GCRef, String),
     ReferenceError(GCRef, String),
     OverflowError(GCRef, GCRef, String),
+    UnstableRef(GCRef, String),
 }
 
 impl VMVariableError {
@@ -78,6 +79,11 @@ impl VMVariableError {
                 msg,
                 try_repr_vmobject(gc_ref.clone(), None).unwrap_or(format!("{:?}", gc_ref)),
                 try_repr_vmobject(other.clone(), None).unwrap_or(format!("{:?}", other)),
+            ),
+            VMVariableError::UnstableRef(gc_ref, msg) => format!(
+                "UnstableRef: {}: {}",
+                try_repr_vmobject(gc_ref.clone(), None).unwrap_or(format!("{:?}", gc_ref)),
+                msg
             ),
         }
     }
@@ -194,8 +200,8 @@ pub fn try_repr_vmobject(value: GCRef, ref_path: Option<Vec<GCRef>>) -> Result<S
 }
 
 pub fn debug_print_repr(value: GCRef) {
-    match try_repr_vmobject(value, None) {
-        Ok(repr) => println!("Repr: {}", repr),
+    match try_repr_vmobject(value.clone(), None) {
+        Ok(repr) => println!("Repr: {:?}, {:?} {}", value.get_reference()  as *const(), value.get_traceable().references, repr),
         Err(err) => println!("Cannot repr: {:?}", err),
     }
 }
@@ -2392,9 +2398,11 @@ impl VMLambda {
     }
 
     pub fn set_result(&mut self, result_object: GCRef) {
-        self.traceable.remove_reference(&self.result);
+        let result = self.result.clone();
+        let mut new_result = result_object.clone();
+        self.traceable.add_reference(&mut new_result);
         self.result = result_object;
-        self.traceable.add_reference(&mut self.result);
+        self.traceable.remove_reference(&result);
     }
 
     pub fn set_self_object(&mut self, self_object: GCRef) {

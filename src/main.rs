@@ -119,8 +119,11 @@ fn execute_ir(package: IRPackage, source_code: Option<String>) -> Result<GCRef, 
     lambda_instructions.offline();
     lambda_result.offline();
 
+
+    let wrapped = gc_system.new_object(VMVariableWrapper::new(main_lambda.clone()));
+    main_lambda.offline();
     let _coro_id =
-        coroutine_pool.new_coroutine(main_lambda.clone(), source_code, &mut gc_system, true)?;
+        coroutine_pool.new_coroutine(wrapped.clone(), source_code, &mut gc_system)?;
 
     let result = coroutine_pool.run_until_finished(&mut gc_system);
     if let Err(e) = result {
@@ -128,7 +131,7 @@ fn execute_ir(package: IRPackage, source_code: Option<String>) -> Result<GCRef, 
         return Err(VMError::AssertFailed);
     }
 
-    let result = main_lambda.as_const_type::<VMLambda>().result.clone();
+    let result = wrapped.as_const_type::<VMVariableWrapper>().value_ref.as_const_type::<VMLambda>().result.clone();
 
     let result_ref =
         try_value_ref_as_vmobject(result.clone()).map_err(|e| VMError::VMVariableError(e))?;
@@ -143,7 +146,7 @@ fn execute_ir(package: IRPackage, source_code: Option<String>) -> Result<GCRef, 
             }
         }
     }
-    main_lambda.offline();
+    wrapped.offline();
 
     gc_system.collect();
 
@@ -183,12 +186,17 @@ fn execute_ir_repl(
     lambda_instructions.offline();
     lambda_result.offline();
 
+    let wrapped = gc_system.new_object(VMVariableWrapper::new(main_lambda.clone()));
+    main_lambda.offline();
+
     let _coro_id =
-        coroutine_pool.new_coroutine(main_lambda.clone(), source_code, gc_system, true)?;
+        coroutine_pool.new_coroutine(wrapped.clone(), source_code, gc_system)?;
+
+
     coroutine_pool.run_until_finished(gc_system)?;
     gc_system.collect();
 
-    Ok(main_lambda)
+    Ok(wrapped)
 }
 
 fn run_file(path: &PathBuf) -> Result<(), String> {

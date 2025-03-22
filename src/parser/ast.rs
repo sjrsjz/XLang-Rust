@@ -886,17 +886,24 @@ fn match_return_and_yield<'t>(
     tokens: &Vec<GatheredTokens<'t>>,
     current: usize,
 ) -> Result<(Option<ASTNode<'t>>, usize), ParserError<'t>> {
-    if current + 1 >= tokens.len() {
+    if current >= tokens.len() {
         return Ok((None, 0));
     }
     if !is_identifier(&tokens[current], "return") && !is_identifier(&tokens[current], "yield") {
         return Ok((None, 0));
     }
-    let (guess, guess_offset) = match_all(tokens, current + 1)?;
-    if guess.is_none() {
+    let right_tokens = tokens[current + 1..].to_vec();
+    let (right, right_offset) = match_all(&right_tokens, 0)?;
+    if right.is_none() {
         return Ok((None, 0));
     }
-    let guess = guess.unwrap();
+    if right_offset != right_tokens.len() {
+        return Err(ParserError::NotFullyMatched(
+            &right_tokens.first().unwrap().first().unwrap(),
+            &right_tokens.last().unwrap().last().unwrap(),
+        ));
+    }
+    let right = right.unwrap();
 
     let node_type = if is_identifier(&tokens[current], "return") {
         ASTNodeType::Return
@@ -907,9 +914,9 @@ fn match_return_and_yield<'t>(
         Some(ASTNode::new(
             node_type,
             Some(&tokens[current][0]),
-            Some(vec![guess]),
+            Some(vec![right]),
         )),
-        guess_offset + 1,
+        right_offset + 1,
     ));
 }
 
@@ -2501,7 +2508,7 @@ fn match_variable<'t>(
                 Some(ASTNode::new(
                     ASTNodeType::Tuple,
                     Some(&tokens[current][0]),
-                    None,
+                    Some(vec![]),
                 )),
                 1,
             ));

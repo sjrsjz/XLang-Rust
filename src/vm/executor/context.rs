@@ -84,65 +84,96 @@ impl Context {
         self.stack_pointers.push(stack.len());
     }
 
-    pub fn pop_frame(
-        &mut self,
-        stack: &mut Vec<VMStackObject>,
-        exit_function: bool,
-    ) -> Result<(), ContextError> {
-        if exit_function {
-            while self.frames.len() > 0 && !self.frames[self.frames.len() - 1].1 {
-                for variable in self.frames.last_mut().unwrap().0.values() {
-                    variable.offline();
-                }
+pub fn pop_frame(
+    &mut self,
+    stack: &mut Vec<VMStackObject>,
+    exit_function: bool,
+) -> Result<(), ContextError> {
+    // 先处理函数调用退出的情况
+    if exit_function {
+        while self.frames.len() > 0 && !self.frames[self.frames.len() - 1].1 {
+            // 1. 先复制要离线的变量
+            let variables_to_offline: Vec<GCRef> = if !self.frames.is_empty() {
+                self.frames.last().unwrap().0.values().cloned().collect()
+            } else {
+                Vec::new()
+            };
+            
+            // 2. 保存需要处理的栈范围
+            let stack_range_start = self.stack_pointers.last().cloned().unwrap_or(0);
+            let stack_range_end = stack.len();
+            
+            // 3. 安全地更新帧和栈指针
+            if !self.frames.is_empty() {
                 self.frames.pop();
-                let pointer = self.stack_pointers.pop();
-
-                for i in pointer.unwrap_or(0)..stack.len() {
-                    if let VMStackObject::VMObject(obj_ref) = &mut stack[i] {
-                        self.offline_if_not_variable(obj_ref);
-                    }
+            }
+            self.stack_pointers.pop();
+            
+            // 4. 离线变量（在数据结构已更新后）
+            for variable in variables_to_offline {
+                variable.offline();
+            }
+            
+            // 5. 处理栈上的对象
+            for i in stack_range_start..stack_range_end {
+                if let VMStackObject::VMObject(obj_ref) = &mut stack[i] {
+                    self.offline_if_not_variable(obj_ref);
                 }
-
-                stack.truncate(pointer.unwrap_or(0));
             }
+            
+            // 6. 截断栈
+            stack.truncate(stack_range_start);
         }
-        if self.frames.is_empty() {
-            return Err(ContextError::NoFrame);
-        }
-        for variable in self.frames.last_mut().unwrap().0.values() {
-            variable.offline();
-        }
-        self.frames.pop();
-        let pointer = self.stack_pointers.pop();
-        for i in pointer.unwrap_or(0)..stack.len() {
-            if let VMStackObject::VMObject(obj_ref) = &mut stack[i] {
-                self.offline_if_not_variable(obj_ref);
-            }
-        }
-        stack.truncate(pointer.unwrap_or(0));
-        Ok(())
     }
+    
+    // 处理单个帧弹出的情况
+    if self.frames.is_empty() {
+        return Err(ContextError::NoFrame);
+    }
+    
+    // 1. 收集当前帧的变量
+    let variables_to_offline: Vec<GCRef> = self.frames.last().unwrap().0.values().cloned().collect();
+    
+    // 2. 保存栈指针
+    let stack_pointer = self.stack_pointers.last().cloned().unwrap_or(0);
+    
+    // 3. 安全地更新帧和栈指针
+    self.frames.pop();
+    self.stack_pointers.pop();
+    
+    // 4. 离线变量（在数据结构已更新后）
+    for variable in variables_to_offline {
+        variable.offline();
+    }
+    
+    // 5. 处理栈上的对象
+    for i in stack_pointer..stack.len() {
+        if let VMStackObject::VMObject(obj_ref) = &mut stack[i] {
+            self.offline_if_not_variable(obj_ref);
+        }
+    }
+    
+    // 6. 截断栈
+    stack.truncate(stack_pointer);
+    
+    Ok(())
+}
 
     pub fn let_var(
         &mut self,
         name: String,
         value: GCRef,
-        wrap: bool,
         gc_system: &mut GCSystem,
     ) -> Result<(), ContextError> {
         if let Some((vars, _, _, _)) = self.frames.last_mut() {
             if vars.contains_key(&name) {
-                let var = vars.get(&name).unwrap();
+                let var = vars.get(&name).unwrap().clone();
+                vars.insert(name.clone(), gc_system.new_object(VMVariableWrapper::new(value)));
                 var.offline();
-                vars.insert(name.clone(), value.clone());
                 return Ok(());
             }
-            let wrapped_value = if wrap {
-                gc_system.new_object(VMVariableWrapper::new(value))
-            } else {
-                value
-            };
-            vars.insert(name, wrapped_value);
+
+            vars.insert(name, gc_system.new_object(VMVariableWrapper::new(value)));
             Ok(())
         } else {
             return Err(ContextError::NoFrame);

@@ -17,9 +17,9 @@
                 }
             },
             "args": [
-                "repl"
-                //"run",
-                //"modules/test.x"
+                //"repl"
+                "run",
+                "modules/test.x"
             ],
             "cwd": "${workspaceFolder}",
             "env": {
