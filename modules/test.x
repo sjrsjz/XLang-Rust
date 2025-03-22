@@ -1,24 +1,26 @@
-create_async_func := () -> (n=>0) -> {
-    while (n = n + 1; n < 16) {
-        yield n / 2;
-    };
-    return "success";
-};
-//n:=0;
-//asyncs := (,);
-// while(n = n + 1; n <= 1) {
-//     print("creating async function");
-    obj := create_async_func();
-    //asyncs = asyncs + (obj,);
-    async obj();
+// foo := (n=>0)->{a:=n;if(n<1){foo(a+1)}};foo();
 
-//};
-//print(asyncs);
-n:=0;
-while(n = n + 1; n < 18){
-//    print(valueof asyncs[0]);
-print(valueof obj)
-};
+// create_async_func := () -> (n=>0) -> {
+//     while (n = n + 1; n < 16) {
+//         yield n / 2;
+//     };
+//     return "success";
+// };
+// //n:=0;
+// //asyncs := (,);
+// // while(n = n + 1; n <= 1) {
+// //     print("creating async function");
+//     obj := create_async_func();
+//     //asyncs = asyncs + (obj,);
+//     async obj();
+
+// //};
+// //print(asyncs);
+// n:=0;
+// while(n = n + 1; n < 18){
+// //    print(valueof asyncs[0]);
+// print(valueof obj)
+// };
 
 
 // extend := (obj?, methods => (,)) -> {
@@ -191,3 +193,15 @@ print(valueof obj)
 
 // print(table.filter((row?, table?) -> {row[1] > 30}).project(("name",),));
 
+// fib := (n => 0) -> {
+//     if (n == 0) {
+//         return 0;
+//     } else if (n == 1) {
+//         return 1;
+//     } else {
+//         return fib(n - 1) + fib(n - 2);
+//     };
+// };
+// print(fib(10));
+
+a := 0;

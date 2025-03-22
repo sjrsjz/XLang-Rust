@@ -201,7 +201,7 @@ pub fn try_repr_vmobject(value: GCRef, ref_path: Option<Vec<GCRef>>) -> Result<S
 
 pub fn debug_print_repr(value: GCRef) {
     match try_repr_vmobject(value.clone(), None) {
-        Ok(repr) => println!("Repr: {:?}, {:?} {}", value.get_reference()  as *const(), value.get_traceable().references, repr),
+        Ok(repr) => println!("Repr:{}| {:?}, {:?} {}", value.get_traceable().native_gcref_object_count, value.get_reference()  as *const(), value.get_traceable().references, repr),
         Err(err) => println!("Cannot repr: {:?}", err),
     }
 }
@@ -2155,7 +2155,7 @@ impl VMObject for VMTuple {
         let mut new_values = Vec::with_capacity(self.values.len());
         for value in &self.values {
             let copied_value = try_deepcopy_as_vmobject(value.clone(), gc_system)?;
-            copied_value.offline();
+            //copied_value.offline();
             new_values.push(copied_value);
         }
         // 创建新的元组对象
@@ -2398,11 +2398,11 @@ impl VMLambda {
     }
 
     pub fn set_result(&mut self, result_object: GCRef) {
-        let result = self.result.clone();
-        let mut new_result = result_object.clone();
-        self.traceable.add_reference(&mut new_result);
-        self.result = result_object;
-        self.traceable.remove_reference(&result);
+        // let result = self.result.clone();
+        // let mut new_result = result_object.clone();
+        // self.traceable.add_reference(&mut new_result);
+        // self.result = result_object;
+        // self.traceable.remove_reference(&result);
     }
 
     pub fn set_self_object(&mut self, self_object: GCRef) {
@@ -2426,13 +2426,14 @@ impl VMLambda {
 
 impl GCObject for VMLambda {
     fn free(&mut self) {
-        if !self.self_object.is_none() {
-            self.traceable
-                .remove_reference(&self.self_object.clone().unwrap());
-        }
         self.traceable.remove_reference(&self.default_args_tuple);
         self.traceable.remove_reference(&self.lambda_instructions);
         self.traceable.remove_reference(&self.result);
+        if !self.self_object.is_none() {
+            self.traceable
+                .remove_reference(&self.self_object.as_ref().unwrap());
+        }
+
     }
 
     fn get_traceable(&mut self) -> &mut GCTraceable {

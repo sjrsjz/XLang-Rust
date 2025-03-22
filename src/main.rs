@@ -115,13 +115,13 @@ fn execute_ir(package: IRPackage, source_code: Option<String>) -> Result<GCRef, 
         lambda_instructions.clone(),
         lambda_result.clone(),
     ));
-    default_args_tuple.offline();
-    lambda_instructions.offline();
-    lambda_result.offline();
+    //default_args_tuple.offline();
+    //lambda_instructions.offline();
+    //lambda_result.offline();
 
 
     let wrapped = gc_system.new_object(VMVariableWrapper::new(main_lambda.clone()));
-    main_lambda.offline();
+    //main_lambda.offline();
     let _coro_id =
         coroutine_pool.new_coroutine(wrapped.clone(), source_code, &mut gc_system)?;
 
@@ -146,7 +146,7 @@ fn execute_ir(package: IRPackage, source_code: Option<String>) -> Result<GCRef, 
             }
         }
     }
-    wrapped.offline();
+    //wrapped.offline();
 
     gc_system.collect();
 
@@ -169,8 +169,8 @@ fn execute_ir_repl(
     let key = gc_system.new_object(VMString::new("Out".to_string()));
     let named = gc_system.new_object(VMNamed::new(key.clone(), input_arguments.clone()));
     let default_args_tuple = gc_system.new_object(VMTuple::new(vec![named.clone()]));
-    key.offline();
-    named.offline();
+    //key.offline();
+    //named.offline();
     let lambda_instructions = gc_system.new_object(VMInstructions::new(instructions, function_ips));
 
     let lambda_result: GCRef = gc_system.new_object(VMNull::new());
@@ -182,12 +182,12 @@ fn execute_ir_repl(
         lambda_instructions.clone(),
         lambda_result.clone(),
     ));
-    default_args_tuple.offline();
-    lambda_instructions.offline();
-    lambda_result.offline();
+    //default_args_tuple.offline();
+    //lambda_instructions.offline();
+    //lambda_result.offline();
 
     let wrapped = gc_system.new_object(VMVariableWrapper::new(main_lambda.clone()));
-    main_lambda.offline();
+    //main_lambda.offline();
 
     let _coro_id =
         coroutine_pool.new_coroutine(wrapped.clone(), source_code, gc_system)?;
@@ -513,7 +513,7 @@ fn run_repl() -> Result<(), String> {
     let mut gc_system = GCSystem::new(None);
     let input_arguments = gc_system.new_object(VMTuple::new(vec![]));
     let _wrapper = gc_system.new_object(VMVariableWrapper::new(input_arguments.clone()));
-    input_arguments.offline();
+    //input_arguments.offline();
 
     let mut line_count = 0;
 
@@ -599,7 +599,7 @@ fn run_repl() -> Result<(), String> {
                         input_arguments.clone(),
                     ) {
                         Ok(lambda_ref) => {
-                            let executed = lambda_ref.as_const_type::<VMLambda>();
+                            let executed = lambda_ref.as_const_type::<VMVariableWrapper>().value_ref.as_const_type::<VMLambda>();
                             let result_ref = executed.result.clone();
                             let idx = input_arguments.as_type::<VMTuple>().values.len();
                             match try_repr_vmobject(result_ref.clone(), None) {
@@ -619,7 +619,7 @@ fn run_repl() -> Result<(), String> {
                                         .as_type::<VMTuple>()
                                         .values
                                         .push(result_ref.clone());
-                                    result_ref.offline();
+                                    //result_ref.offline();
                                 }
                                 Err(err) => {
                                     println!(
@@ -629,7 +629,7 @@ fn run_repl() -> Result<(), String> {
                                     );
                                 }
                             }
-                            lambda_ref.offline();
+                            //lambda_ref.offline();
                         }
                         Err(e) => println!(
                             "{}",

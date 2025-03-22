@@ -64,7 +64,7 @@ impl Context {
 
     fn offline_if_not_variable(&self, object: &GCRef) {
         if !self.is_variable(object) {
-            object.offline();
+            //object.offline();
         }
     }
 
@@ -111,7 +111,7 @@ pub fn pop_frame(
             
             // 4. 离线变量（在数据结构已更新后）
             for variable in variables_to_offline {
-                variable.offline();
+                //variable.offline();
             }
             
             // 5. 处理栈上的对象
@@ -143,7 +143,7 @@ pub fn pop_frame(
     
     // 4. 离线变量（在数据结构已更新后）
     for variable in variables_to_offline {
-        variable.offline();
+        //variable.offline();
     }
     
     // 5. 处理栈上的对象
@@ -169,7 +169,7 @@ pub fn pop_frame(
             if vars.contains_key(&name) {
                 let var = vars.get(&name).unwrap().clone();
                 vars.insert(name.clone(), gc_system.new_object(VMVariableWrapper::new(value)));
-                var.offline();
+                //var.offline();
                 return Ok(());
             }
 

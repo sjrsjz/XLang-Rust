@@ -9,7 +9,8 @@
                 "args": [
                     "build",
                     "--bin=XLang-Rust",
-                    "--package=XLang-Rust"
+                    "--package=XLang-Rust",
+                    "--release"
                 ],
                 "filter": {
                     "name": "XLang-Rust",

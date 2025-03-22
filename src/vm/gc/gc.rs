@@ -35,6 +35,17 @@ impl std::fmt::Display for GCRef {
 }
 
 impl GCRef {
+    pub fn new(reference: *mut dyn GCObject, type_id: TypeId) -> Self {
+        unsafe {
+            if reference.is_null() {
+                panic!("Null pointer exception!");
+            }
+            let obj = reference as *mut dyn GCObject;
+            (*obj).get_traceable().native_gcref_object_count += 1; // 增加原生引用计数
+        }
+        GCRef { reference, type_id }
+    }
+
     pub fn get_reference(&self) -> *mut dyn GCObject {
         self.reference
     }
@@ -98,10 +109,11 @@ impl GCRef {
     }
 
     pub fn wrap<T: GCObject + 'static>(obj: &T) -> GCRef {
-        GCRef {
-            reference: obj as *const T as *mut T as *mut dyn GCObject,
-            type_id: TypeId::of::<T>(),
+        let obj = obj as *const T as *mut T as *mut dyn GCObject;
+        if obj.is_null() {
+            panic!("Failed to wrap object!");
         }
+        GCRef::new(obj, TypeId::of::<T>())
     }
 
     pub fn lock(&self) {
@@ -124,11 +136,33 @@ impl GCRef {
             (*obj).get_traceable().lock
         }
     }
+
+    pub(self) fn clone_no_check(&self) -> Self {
+        GCRef::new(self.reference, self.type_id)
+    }
+
+    pub fn clone_ref(&self) -> Self {
+        if !self.is_online() {
+            panic!("Cannot clone an offline object!");
+        }
+        GCRef::new(self.reference, self.type_id)
+    }
+
+    pub fn drop_ref(&mut self) {
+        unsafe {
+            let obj = self.reference as *mut dyn GCObject;
+            (*obj).get_traceable().native_gcref_object_count -= 1; // 减少原生引用计数
+            if (*obj).get_traceable().native_gcref_object_count <= 1 {
+                (*obj).get_traceable().offline();
+            }
+        }
+    }
 }
+
 
 #[derive(Debug)]
 pub struct GCTraceable {
-    pub native_ref_count: usize, // 原生引用计数, 当GCRef被创建时增加
+    pub native_gcref_object_count: usize, // 原生对象数量, 当GCRef被创建时增加
     pub ref_count: usize,
     pub should_free: bool,
     pub online: bool,
@@ -147,7 +181,7 @@ impl GCTraceable {
         }
 
         let obj = GCTraceable {
-            native_ref_count: 0,
+            native_gcref_object_count: 0,
             ref_count: 0,
             should_free: false,
             online: true,
@@ -278,11 +312,10 @@ impl GCSystem {
         if obj_ref.is_null() {
             panic!("Failed to allocate memory for object!");
         }
-        let gc_ref = GCRef {
-            reference: obj_ref,
-            type_id: TypeId::of::<T>(),
-        };
+        let gc_ref = GCRef::new(obj_ref, TypeId::of::<T>());
+
         self.objects.push(gc_ref.clone()); // add the object to the list of objects
+
         gc_ref
     }
 
@@ -298,7 +331,7 @@ impl GCSystem {
                     "Never set should_free to true! Use offline() instead! Object: {:?}",
                     obj
                 );
-            } else if gc_ref.is_online() || gc_ref.is_locked(){
+            } else if gc_ref.is_online() || gc_ref.is_locked() {
                 alive[i] = true;
             }
         }
@@ -366,8 +399,6 @@ impl GCSystem {
             }
         }
 
-
-
         // 第三步：从活跃对象出发，标记所有可达对象
         let mut worklist: Vec<usize> = Vec::new();
 
@@ -414,7 +445,7 @@ impl GCSystem {
         let mut new_objects = Vec::with_capacity(self.objects.len());
         for i in 0..self.objects.len() {
             if alive[i] {
-                new_objects.push(self.objects[i].clone());
+                new_objects.push(self.objects[i].clone_no_check());
             }
         }
 
@@ -424,7 +455,7 @@ impl GCSystem {
             .iter()
             .enumerate()
             .filter(|&(i, _)| !alive[i])
-            .map(|(_, obj)| obj.clone())
+            .map(|(_, obj)| obj.clone_no_check())
             .collect();
 
         // 替换对象列表
@@ -442,14 +473,17 @@ impl GCSystem {
         // 标记活对象
         for i in 0..self.objects.len() {
             let gc_ref = &self.objects[i];
-            alive[i] = !(gc_ref.get_traceable().ref_count == 0 && !gc_ref.is_online() && gc_ref.get_traceable().references.is_empty() && !gc_ref.is_locked()); // 检查孤岛对象
+            alive[i] = !(gc_ref.get_traceable().ref_count == 0
+                && !gc_ref.is_online()
+                && gc_ref.get_traceable().references.is_empty()
+                && !gc_ref.is_locked()); // 检查孤岛对象
         }
 
         // 先创建新的对象列表，仅包含活对象
         let mut new_objects = Vec::with_capacity(self.objects.len());
         for i in 0..self.objects.len() {
             if alive[i] {
-                new_objects.push(self.objects[i].clone());
+                new_objects.push(self.objects[i].clone_no_check());
             }
         }
 
@@ -459,7 +493,7 @@ impl GCSystem {
             .iter()
             .enumerate()
             .filter(|&(i, _)| !alive[i])
-            .map(|(_, obj)| obj.clone())
+            .map(|(_, obj)| obj.clone_no_check())
             .collect();
 
         // 更新对象列表
