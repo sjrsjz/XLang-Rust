@@ -5,6 +5,7 @@ use rustyline::highlight::CmdKind;
 use vm::executor::variable::VMInstructions;
 use vm::executor::variable::VMLambda;
 use vm::executor::variable::VMTuple;
+use vm::gc;
 use vm::gc::gc::GCRef;
 use vm::ir::IRPackage;
 use vm::ir::IR;
@@ -160,7 +161,6 @@ fn execute_ir_repl(
     let named: GCRef = gc_system.new_object(VMNamed::new(key.clone(), input_arguments.clone()));
     let default_args_tuple = gc_system.new_object(VMTuple::new(vec![named.clone()]));
     let lambda_instructions = gc_system.new_object(VMInstructions::new(instructions, function_ips));
-
     let lambda_result: GCRef = gc_system.new_object(VMNull::new());
     let main_lambda = gc_system.new_object(VMLambda::new(
         0,
@@ -170,20 +170,18 @@ fn execute_ir_repl(
         lambda_instructions.clone(),
         lambda_result.clone(),
     ));
+
     default_args_tuple.drop_ref();
     lambda_instructions.drop_ref();
     lambda_result.drop_ref();
-    lambda_instructions.drop_ref();
-    named.drop_ref();
     key.drop_ref();
-
+    named.drop_ref();
 
     let wrapped = gc_system.new_object(VMVariableWrapper::new(main_lambda.clone()));
-    main_lambda.drop_ref();
 
+    main_lambda.drop_ref();
     let _coro_id =
         coroutine_pool.new_coroutine(wrapped.clone(), source_code, gc_system)?;
-
 
     coroutine_pool.run_until_finished(gc_system)?;
     gc_system.collect();
@@ -507,7 +505,7 @@ fn run_repl() -> Result<(), String> {
 
     let mut gc_system = GCSystem::new(None);
     let input_arguments = gc_system.new_object(VMTuple::new(vec![]));
-    let _wrapper = gc_system.new_object(VMVariableWrapper::new(input_arguments.clone()));
+    //let _wrapper = gc_system.new_object(VMVariableWrapper::new(input_arguments.clone()));
     //input_arguments.offline();
 
     let mut line_count = 0;
@@ -606,14 +604,16 @@ fn run_repl() -> Result<(), String> {
                                             value.bright_white().bold()
                                         );
                                     }
-                                    let mut result_ref = result_ref.clone();
-                                    input_arguments
-                                        .get_traceable()
-                                        .add_reference(&mut result_ref);
-                                    input_arguments
+                                    let result_ref = result_ref.clone();
+                                    let result = input_arguments
                                         .as_type::<VMTuple>()
-                                        .values
-                                        .push(result_ref.clone());
+                                        .append(result_ref.clone());
+                                    if result.is_err() {
+                                        println!(
+                                            "{}",
+                                            format!("Error: {}", result.unwrap_err().to_string()).red()
+                                        );
+                                    }
                                 }
                                 Err(err) => {
                                     println!(
@@ -624,7 +624,6 @@ fn run_repl() -> Result<(), String> {
                                 }
                             }
                             lambda_ref.drop_ref();
-                            result_ref.drop_ref();
                         }
                         Err(e) => println!(
                             "{}",
@@ -642,10 +641,12 @@ fn run_repl() -> Result<(), String> {
             }
             Err(ReadlineError::Eof) => {
                 println!("{}", "Exit".yellow());
+                input_arguments.drop_ref();
                 break;
             }
             Err(err) => {
                 println!("{}", format!("Input error: {}", err).red());
+                line_count = input_arguments.as_type::<VMTuple>().values.len();
                 break;
             }
         }

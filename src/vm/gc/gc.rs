@@ -535,10 +535,11 @@ impl GCSystem {
 
             // 打印对象基本信息
             println!(
-                "Object #{}: {:?} (RefCount: {}, Online: {}, ShouldFree: {})",
+                "Object #{}: {:?} (RefCount: {}, NativeCount: {}, Online: {}, ShouldFree: {})",
                 i,
                 obj.type_id, // 或者使用自定义的类型名称映射
                 traceable.ref_count,
+                traceable.native_gcref_object_count,
                 traceable.online,
                 traceable.should_free
             );

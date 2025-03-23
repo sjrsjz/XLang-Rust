@@ -1735,11 +1735,11 @@ impl VMKeyVal {
     }
 
     pub fn get_key(&self) -> GCRef {
-        self.key.clone_ref()
+        self.key.clone()
     }
 
     pub fn get_value(&self) -> GCRef {
-        self.value.clone_ref()
+        self.value.clone()
     }
 
     pub fn check_key(&self, other: GCRef) -> bool {
@@ -1836,11 +1836,11 @@ impl VMNamed {
     }
 
     pub fn get_key(&self) -> GCRef {
-        self.key.clone_ref()
+        self.key.clone()
     }
 
     pub fn get_value(&self) -> GCRef {
-        self.value.clone_ref()
+        self.value.clone()
     }
 
     pub fn check_key(&self, other: GCRef) -> bool {
@@ -2166,6 +2166,12 @@ impl VMTuple {
             }
         }
     }
+
+    pub fn append(&mut self, value: GCRef) -> Result<GCRef, VMVariableError> {
+        self.values.push(value.clone_ref());
+        self.traceable.add_reference(&mut self.values.last().unwrap());
+        Ok(GCRef::wrap(self))
+    }
 }
 
 impl GCObject for VMTuple {
@@ -2469,11 +2475,11 @@ impl VMLambda {
     }
 
     pub fn get_value(&self) -> GCRef {
-        self.result.clone_ref()
+        self.result.clone()
     }
 
     pub fn get_key(&self) -> GCRef {
-        self.default_args_tuple.clone_ref()
+        self.default_args_tuple.clone()
     }
 }
 

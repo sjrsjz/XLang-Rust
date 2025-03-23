@@ -903,8 +903,8 @@ impl IRExecutor {
             //self.debug_output_stack(); // debug
             //println!("");
 
-            gc_system.collect(); // debug
-            println!("GC Count: {}", gc_system.count()); // debug
+            //gc_system.collect(); // debug
+            //println!("GC Count: {}", gc_system.count()); // debug
                                                          //gc_system.print_reference_graph(); // debug
             self.ip += 1;
         } else if *coroutine_status != VMCoroutineStatus::Finished {
@@ -1302,7 +1302,6 @@ impl IRExecutor {
                 for i in *self.context.stack_pointers.last().unwrap()..self.stack.len() {
                     let obj = self.stack[i].clone();
                     if let VMStackObject::VMObject(obj) = obj {
-                        debug_print_repr(obj.clone());
                         obj.drop_ref();
                     }
                 }
@@ -1315,7 +1314,7 @@ impl IRExecutor {
 
                 let result = try_get_attr_as_vmobject(ref_obj, attr_ref)
                     .map_err(|e| VMError::VMVariableError(e))?;
-                self.push_vmobject(result)?;
+                self.push_vmobject(result.clone_ref())?;
                 obj.drop_ref();
                 attr.drop_ref();
             }
@@ -1325,7 +1324,7 @@ impl IRExecutor {
                 let (obj, ref_obj) = self.pop_and_ref()?;
                 let result = try_index_of_as_vmobject(ref_obj, index_ref, gc_system)
                     .map_err(|e| VMError::VMVariableError(e))?;
-                self.push_vmobject(result)?;
+                self.push_vmobject(result)?; // 不clone是因为已经在try_index_of_as_vmobject产生了新的对象
                 obj.drop_ref();
                 index.drop_ref();
             }
@@ -1334,7 +1333,7 @@ impl IRExecutor {
                 let (obj, ref_obj) = self.pop_and_ref()?;
                 let result =
                     try_key_of_as_vmobject(ref_obj).map_err(|e| VMError::VMVariableError(e))?;
-                self.push_vmobject(result)?;
+                self.push_vmobject(result.clone_ref())?;
                 obj.drop_ref();
             }
 
@@ -1342,7 +1341,7 @@ impl IRExecutor {
                 let (obj, ref_obj) = self.pop_and_ref()?;
                 let result =
                     try_value_of_as_vmobject(ref_obj).map_err(|e| VMError::VMVariableError(e))?;
-                self.push_vmobject(result)?;
+                self.push_vmobject(result.clone_ref())?;
                 obj.drop_ref();
             }
 
