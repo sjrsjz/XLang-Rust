@@ -1138,7 +1138,6 @@ impl IRExecutor {
                         gc_system.new_object(VMBoolean::new(result))
                     }
                     IROperation::Subtract => {
-                        let ref_obj = ref_obj;
                         if ref_obj.isinstance::<VMInt>() {
                             let value = ref_obj.as_const_type::<VMInt>().value;
                             gc_system.new_object(VMInt::new(-value))
@@ -1150,7 +1149,6 @@ impl IRExecutor {
                         }
                     }
                     IROperation::Add => {
-                        let ref_obj = ref_obj;
                         if ref_obj.isinstance::<VMInt>() {
                             let value = ref_obj.as_const_type::<VMInt>().value;
                             gc_system.new_object(VMInt::new(value.abs()))

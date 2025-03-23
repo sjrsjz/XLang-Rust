@@ -218,9 +218,9 @@ pub fn debug_print_repr(value: GCRef) {
     match try_repr_vmobject(value.clone(), None) {
         Ok(repr) => println!(
             "Repr:{}| {:?}, {:?} {}",
-            value.get_traceable().native_gcref_object_count,
+            value.get_const_traceable().native_gcref_object_count,
             value.get_reference() as *const (),
-            value.get_traceable().references,
+            value.get_const_traceable().references,
             repr
         ),
         Err(err) => println!("Cannot repr: {:?}", err),

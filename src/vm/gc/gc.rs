@@ -50,7 +50,14 @@ impl GCRef {
     pub fn get_reference(&self) -> *mut dyn GCObject {
         self.reference
     }
-    pub fn get_traceable(&self) -> &mut GCTraceable {
+    pub fn get_traceable(&mut self) -> &mut GCTraceable {
+        unsafe {
+            let obj = self.reference;
+            (*obj).get_traceable()
+        }
+    }
+
+    pub fn get_const_traceable(&self) -> &GCTraceable {
         unsafe {
             let obj = self.reference;
             (*obj).get_traceable()
@@ -327,7 +334,7 @@ impl GCSystem {
 
         // 第一步：标记所有在线对象为活跃
         for i in 0..self.objects.len() {
-            let gc_ref = &self.objects[i];
+            let mut gc_ref = &mut self.objects[i];
             if gc_ref.get_traceable().should_free {
                 let obj = gc_ref.get_traceable();
                 panic!(
@@ -350,7 +357,8 @@ impl GCSystem {
         // 第二步：构建引用图
         let mut ref_graph: Vec<Vec<usize>> = vec![Vec::new(); self.objects.len()];
         for i in 0..self.objects.len() {
-            let gc_ref = &self.objects[i];
+            let gc_ref = &mut self.objects[i];
+            let type_id = gc_ref.type_id;
             for (ref_obj, _) in &gc_ref.get_traceable().references {
                 let ref_usize = ref_obj.reference as *const () as usize;
                 match idx_map.get(&ref_usize) {
@@ -364,7 +372,7 @@ impl GCSystem {
                         ));
                         error_msg.push_str(&format!(
                             "Object #{} (Type: {:?}) references an object not managed by the GC\n",
-                            i, gc_ref.type_id
+                            i, type_id
                         ));
                         error_msg.push_str(&format!("Reference target: {:?}\n", ref_obj));
                         error_msg.push_str(&format!("Reference address: 0x{:x}\n\n", ref_usize));
@@ -426,7 +434,7 @@ impl GCSystem {
         // 第四步：更新should_free标志
         for i in 0..self.objects.len() {
             if !alive[i] {
-                let gc_ref = &self.objects[i];
+                let gc_ref = &mut self.objects[i];
                 gc_ref.get_traceable().should_free = true;
             }
         }
@@ -437,7 +445,7 @@ impl GCSystem {
 
         // 标记存活对象
         for i in 0..self.objects.len() {
-            let gc_ref = &self.objects[i];
+            let gc_ref = &mut self.objects[i];
             if gc_ref.get_traceable().online || !gc_ref.get_traceable().should_free {
                 alive[i] = true;
             }
@@ -475,7 +483,7 @@ impl GCSystem {
 
         // 标记活对象
         for i in 0..self.objects.len() {
-            let gc_ref = &self.objects[i];
+            let gc_ref = &mut self.objects[i];
             alive[i] = !(gc_ref.get_traceable().ref_count == 0
                 && !gc_ref.is_online()
                 && gc_ref.get_traceable().references.is_empty()
@@ -516,7 +524,7 @@ impl GCSystem {
     pub fn debug_print(&self) {
         for i in 0..self.objects.len() {
             let gc_ref = &self.objects[i];
-            println!("Object {}: {:?}", i, gc_ref.get_traceable());
+            println!("Object {}: {:?}", i, gc_ref.get_const_traceable());
         }
     }
 
@@ -531,7 +539,7 @@ impl GCSystem {
 
         // 打印每个对象的信息和引用关系
         for (i, obj) in self.objects.iter().enumerate() {
-            let traceable = obj.get_traceable();
+            let traceable = obj.get_const_traceable();
 
             // 打印对象基本信息
             println!(
