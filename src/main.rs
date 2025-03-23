@@ -58,11 +58,6 @@ enum Commands {
 // Compile code and generate intermediate representation
 fn build_code(code: &str) -> Result<IRPackage, String> {
     let tokens = lexer::reject_comment(lexer::tokenize(code));
-    // Optional: Print tokens
-    // for token in &tokens {
-    //     print!("{:?} ", token.to_string());
-    // }
-
     let gathered = ast_token_stream::from_stream(&tokens);
     let ast = match build_ast(&gathered) {
         Ok(ast) => ast,
@@ -70,10 +65,6 @@ fn build_code(code: &str) -> Result<IRPackage, String> {
             return Err(format!("{}", err_token.format(&tokens, code.to_string())));
         }
     };
-
-    // Optional: Print AST
-    // println!("\n\nAST:\n");
-    // ast.formatted_print(0);
 
     let namespace = ir_generator::NameSpace::new("Main".to_string(), None);
     let mut functions = Functions::new();
@@ -105,7 +96,6 @@ fn execute_ir(package: IRPackage, source_code: Option<String>) -> Result<GCRef, 
 
     let default_args_tuple = gc_system.new_object(VMTuple::new(vec![]));
     let lambda_instructions = gc_system.new_object(VMInstructions::new(instructions, function_ips));
-
     let lambda_result = gc_system.new_object(VMNull::new());
     let main_lambda = gc_system.new_object(VMLambda::new(
         0,
@@ -115,13 +105,13 @@ fn execute_ir(package: IRPackage, source_code: Option<String>) -> Result<GCRef, 
         lambda_instructions.clone(),
         lambda_result.clone(),
     ));
-    //default_args_tuple.offline();
-    //lambda_instructions.offline();
-    //lambda_result.offline();
-
+    default_args_tuple.drop_ref();
+    lambda_instructions.drop_ref();
+    lambda_result.drop_ref();
 
     let wrapped = gc_system.new_object(VMVariableWrapper::new(main_lambda.clone()));
-    //main_lambda.offline();
+    main_lambda.drop_ref();
+
     let _coro_id =
         coroutine_pool.new_coroutine(wrapped.clone(), source_code, &mut gc_system)?;
 
@@ -146,7 +136,7 @@ fn execute_ir(package: IRPackage, source_code: Option<String>) -> Result<GCRef, 
             }
         }
     }
-    //wrapped.offline();
+    wrapped.drop_ref();
 
     gc_system.collect();
 
@@ -167,10 +157,8 @@ fn execute_ir_repl(
     let mut coroutine_pool = VMCoroutinePool::new(false);
 
     let key = gc_system.new_object(VMString::new("Out".to_string()));
-    let named = gc_system.new_object(VMNamed::new(key.clone(), input_arguments.clone()));
+    let named: GCRef = gc_system.new_object(VMNamed::new(key.clone(), input_arguments.clone()));
     let default_args_tuple = gc_system.new_object(VMTuple::new(vec![named.clone()]));
-    //key.offline();
-    //named.offline();
     let lambda_instructions = gc_system.new_object(VMInstructions::new(instructions, function_ips));
 
     let lambda_result: GCRef = gc_system.new_object(VMNull::new());
@@ -182,12 +170,16 @@ fn execute_ir_repl(
         lambda_instructions.clone(),
         lambda_result.clone(),
     ));
-    //default_args_tuple.offline();
-    //lambda_instructions.offline();
-    //lambda_result.offline();
+    default_args_tuple.drop_ref();
+    lambda_instructions.drop_ref();
+    lambda_result.drop_ref();
+    lambda_instructions.drop_ref();
+    named.drop_ref();
+    key.drop_ref();
+
 
     let wrapped = gc_system.new_object(VMVariableWrapper::new(main_lambda.clone()));
-    //main_lambda.offline();
+    main_lambda.drop_ref();
 
     let _coro_id =
         coroutine_pool.new_coroutine(wrapped.clone(), source_code, gc_system)?;
@@ -206,7 +198,10 @@ fn run_file(path: &PathBuf) -> Result<(), String> {
         // Execute IR file
         match IRPackage::read_from_file(path.to_str().unwrap()) {
             Ok(package) => match execute_ir(package, None) {
-                Ok(_) => Ok(()),
+                Ok(result) => {
+                    result.drop_ref();
+                    Ok(())
+                }
                 Err(e) => Err(format!("Execution error: {}", e.to_string()).bright_red().to_string()),
             },
             Err(e) => Err(format!("Error reading IR file: {}", e).bright_red().to_string()),
@@ -619,7 +614,6 @@ fn run_repl() -> Result<(), String> {
                                         .as_type::<VMTuple>()
                                         .values
                                         .push(result_ref.clone());
-                                    //result_ref.offline();
                                 }
                                 Err(err) => {
                                     println!(
@@ -629,7 +623,8 @@ fn run_repl() -> Result<(), String> {
                                     );
                                 }
                             }
-                            //lambda_ref.offline();
+                            lambda_ref.drop_ref();
+                            result_ref.drop_ref();
                         }
                         Err(e) => println!(
                             "{}",

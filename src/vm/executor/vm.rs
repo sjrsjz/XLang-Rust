@@ -2,7 +2,6 @@ use std::collections::HashMap;
 use std::fs::File;
 use std::io::Read;
 
-use crate::vm::gc;
 use crate::vm::ir::DebugInfo;
 use crate::vm::ir::IROperation;
 use crate::vm::ir::IRPackage;
@@ -140,7 +139,7 @@ impl VMCoroutinePool {
         }
 
         let mut executor = IRExecutor::new(original_code);
-        executor.entry_lambda_wrapper = Some(lambda_object.clone());
+        executor.entry_lambda_wrapper = Some(lambda_object.clone_ref());
         executor.init(lambda_ref.clone(), gc_system)?;
         self.executors.push((executor, self.gen_id));
         let id = self.gen_id;
@@ -172,30 +171,32 @@ impl VMCoroutinePool {
     }
 
     pub fn sweep_finished(&mut self) {
-        for (executor, _id) in &mut self.executors {
-            let coroutine_status = &executor
-                .entry_lambda_wrapper
-                .as_ref()
-                .unwrap()
-                .as_type::<VMVariableWrapper>()
-                .value_ref
-                .as_const_type::<VMLambda>()
-                .coroutine_status;
-            if *coroutine_status == VMCoroutineStatus::Finished {
-                //executor.entry_lambda_wrapper.as_mut().unwrap().offline();
+        // 第一阶段：收集已完成的协程索引
+        let mut finished_indices = Vec::new();
+        for (i, (executor, _id)) in self.executors.iter().enumerate() {
+            if let Some(wrapper) = &executor.entry_lambda_wrapper {
+                if wrapper
+                    .as_const_type::<VMVariableWrapper>()
+                    .value_ref
+                    .as_const_type::<VMLambda>()
+                    .coroutine_status
+                    == VMCoroutineStatus::Finished
+                {
+                    finished_indices.push(i);
+                }
             }
         }
-        self.executors.retain(|(executor, _)| {
-            let coroutine_status = &executor
-                .entry_lambda_wrapper
-                .as_ref()
-                .unwrap()
-                .as_type::<VMVariableWrapper>()
-                .value_ref
-                .as_const_type::<VMLambda>()
-                .coroutine_status;
-            *coroutine_status != VMCoroutineStatus::Finished
-        });
+
+        // 第二阶段：从后向前移除已完成的协程
+        for &idx in finished_indices.iter().rev() {
+            if idx < self.executors.len() {
+                // 安全地移除和释放资源
+                let (executor, _) = self.executors.remove(idx);
+                if let Some(wrapper) = executor.entry_lambda_wrapper {
+                    wrapper.drop_ref();
+                }
+            }
+        }
     }
 
     pub fn run_until_finished(&mut self, gc_system: &mut GCSystem) -> Result<(), VMError> {
@@ -741,7 +742,6 @@ impl IRExecutor {
             VMStackObject::VMObject(obj) => obj,
             _ => return Err(VMError::NotVMObject(obj)),
         };
-        println!("Pop object >>> {}", obj.get_traceable().native_gcref_object_count);
         let obj_ref =
             try_value_ref_as_vmobject(obj.clone()).map_err(|e| VMError::VMVariableError(e))?;
         Ok((obj, obj_ref))
@@ -763,7 +763,7 @@ impl IRExecutor {
             || lambda.lambda_instructions != *self.lambda_instructions.last().unwrap();
         if use_new_instructions {
             self.lambda_instructions
-                .push(lambda.lambda_instructions.clone());
+                .push(lambda.lambda_instructions.clone_ref());
         }
 
         let lambda_wrapper = gc_system.new_object(VMVariableWrapper::new(lambda_object.clone()));
@@ -890,9 +890,9 @@ impl IRExecutor {
                 .clone();
 
             //gc_system.collect(); // debug
-            if let IR::DebugInfo(_) = instruction {} else{
-            println!("# {} {}: {:?}", gc_system.count(), self.ip, instruction); // debug
-            }
+            // if let IR::DebugInfo(_) = instruction {} else{
+            // println!("# {} {}: {:?}", gc_system.count(), self.ip, instruction); // debug
+            // }
             //self.context.debug_print_all_vars();
             //self.debug_output_stack();
             // for refs in gc_system.get_all_objects(){
@@ -903,9 +903,9 @@ impl IRExecutor {
             //self.debug_output_stack(); // debug
             //println!("");
 
-            //gc_system.collect(); // debug
-                                 //println!("GC Count: {}", gc_system.count()); // debug
-                                 //gc_system.print_reference_graph(); // debug
+            gc_system.collect(); // debug
+            println!("GC Count: {}", gc_system.count()); // debug
+                                                         //gc_system.print_reference_graph(); // debug
             self.ip += 1;
         } else if *coroutine_status != VMCoroutineStatus::Finished {
             let (result, result_ref) = self.pop_and_ref()?;
@@ -921,7 +921,7 @@ impl IRExecutor {
             lambda_obj.coroutine_status = VMCoroutineStatus::Finished;
 
             lambda_obj.set_result(result_ref.clone());
-            self.offline_if_not_variable(&result);
+            result.drop_ref();
         }
 
         Ok(spawned_coroutines)
@@ -942,10 +942,7 @@ impl IRExecutor {
         // }
     }
 
-    fn push_vmobject(
-        &mut self,
-        obj: GCRef
-    ) -> Result<(), VMError> {
+    fn push_vmobject(&mut self, obj: GCRef) -> Result<(), VMError> {
         // if !obj.is_online() {
         //     return Err(VMError::VMVariableError(
         //         VMVariableError::UnstableRef(obj.clone(),
@@ -999,10 +996,9 @@ impl IRExecutor {
                     self.lambda_instructions.last().unwrap().clone(),
                     lambda_result.clone(),
                 ));
-                //lambda_result.offline();
-
                 self.push_vmobject(obj)?;
-                self.offline_if_not_variable(&default_args_tuple);
+                default_args_tuple.drop_ref();
+                lambda_result.drop_ref();
             }
             IR::BuildTuple(size) => {
                 let mut tuple = Vec::new();
@@ -1015,7 +1011,7 @@ impl IRExecutor {
                 let obj = gc_system.new_object(VMTuple::new(tuple_refs));
                 self.push_vmobject(obj)?;
                 for obj in tuple {
-                    self.offline_if_not_variable(&obj);
+                    obj.drop_ref();
                 }
             }
 
@@ -1031,7 +1027,7 @@ impl IRExecutor {
                     .map_err(|e| VMError::VMVariableError(e))?;
                 copied.as_type::<VMTuple>().set_lambda_self();
                 self.push_vmobject(copied)?;
-                self.offline_if_not_variable(&obj);
+                obj.drop_ref();
             }
 
             IR::BuildKeyValue => {
@@ -1039,8 +1035,8 @@ impl IRExecutor {
                 let (key, key_ref) = self.pop_and_ref()?;
                 let obj = gc_system.new_object(VMKeyVal::new(key_ref.clone(), value_ref.clone()));
                 self.push_vmobject(obj)?;
-                self.offline_if_not_variable(&key);
-                self.offline_if_not_variable(&value);
+                key.drop_ref();
+                value.drop_ref();
             }
 
             IR::BuildNamed => {
@@ -1048,8 +1044,8 @@ impl IRExecutor {
                 let (key, key_ref) = self.pop_and_ref()?;
                 let obj = gc_system.new_object(VMNamed::new(key_ref.clone(), value_ref.clone()));
                 self.push_vmobject(obj)?;
-                self.offline_if_not_variable(&key);
-                self.offline_if_not_variable(&value);
+                key.drop_ref();
+                value.drop_ref();
             }
 
             IR::BinaryOp(operation) => {
@@ -1129,8 +1125,8 @@ impl IRExecutor {
                     _ => return Err(VMError::InvalidInstruction(instruction)),
                 };
                 self.push_vmobject(obj)?;
-                self.offline_if_not_variable(&left_original);
-                self.offline_if_not_variable(&right_original);
+                left_original.drop_ref();
+                right_original.drop_ref();
             }
 
             IR::UnaryOp(operation) => {
@@ -1170,7 +1166,7 @@ impl IRExecutor {
                     _ => return Err(VMError::InvalidInstruction(instruction)),
                 };
                 self.push_vmobject(obj)?;
-                self.offline_if_not_variable(&original);
+                original.drop_ref();
             }
 
             IR::Let(name) => {
@@ -1199,9 +1195,9 @@ impl IRExecutor {
                 };
                 let result = try_assign_as_vmobject(reference.clone(), value_ref)
                     .map_err(|e| VMError::VMVariableError(e))?;
-                self.push_vmobject(result)?;
-                self.offline_if_not_variable(&value);
-                self.offline_if_not_variable(&reference);
+                self.push_vmobject(result.clone_ref())?;
+                value.drop_ref();
+                reference.drop_ref();
             }
 
             IR::Return => {
@@ -1209,14 +1205,14 @@ impl IRExecutor {
                     return Err(VMError::EmptyStack);
                 }
                 let (obj, obj_ref) = self.pop_and_ref()?;
-                //obj.lock();
                 let ip_info = self.stack.pop().unwrap();
                 let VMStackObject::LastIP(self_lambda, ip, use_new_instructions) = ip_info else {
                     return Err(VMError::EmptyStack);
                 };
                 self.ip = ip as isize;
                 if use_new_instructions {
-                    self.lambda_instructions.pop();
+                    let poped = self.lambda_instructions.pop();
+                    poped.unwrap().drop_ref();
                 }
                 let result = self.context.pop_frame(&mut self.stack, true);
                 if result.is_err() {
@@ -1225,16 +1221,15 @@ impl IRExecutor {
                 let lambda_obj_wrapper = self_lambda.as_type::<VMVariableWrapper>();
                 let lambda_obj = lambda_obj_wrapper.value_ref.as_type::<VMLambda>();
                 lambda_obj.set_result(obj_ref.clone());
-                //self_lambda.offline();
-                self.push_vmobject(obj_ref.clone())?;
-                //obj.unlock();
+                self.push_vmobject(obj_ref.clone_ref())?;
+                obj.drop_ref();
+                self_lambda.drop_ref();
             }
             IR::Yield => {
                 if self.stack.len() < *self.context.stack_pointers.last().unwrap() {
                     return Err(VMError::EmptyStack);
                 }
                 let (obj, obj_ref) = self.pop_and_ref()?;
-                obj.lock();
                 self.entry_lambda_wrapper
                     .as_mut()
                     .unwrap()
@@ -1242,8 +1237,8 @@ impl IRExecutor {
                     .value_ref
                     .as_type::<VMLambda>()
                     .set_result(obj_ref.clone());
-                self.push_vmobject(obj.clone())?;
-                obj.unlock();
+                self.push_vmobject(obj_ref.clone_ref())?;
+                obj.drop_ref();
             }
             IR::Await => {
                 if self.stack.len() < *self.context.stack_pointers.last().unwrap() {
@@ -1258,10 +1253,8 @@ impl IRExecutor {
                 }
                 let lambda = obj_ref.as_const_type::<VMLambda>();
                 let is_finished = lambda.coroutine_status == VMCoroutineStatus::Finished;
-                self.push_vmobject(
-                    gc_system.new_object(VMBoolean::new(is_finished)),
-                )?;
-                self.offline_if_not_variable(&obj);
+                self.push_vmobject(gc_system.new_object(VMBoolean::new(is_finished)))?;
+                obj.drop_ref();
             }
             IR::NewFrame => {
                 self.context.new_frame(&mut self.stack, false, 0, false);
@@ -1272,14 +1265,12 @@ impl IRExecutor {
                     VMStackObject::VMObject(obj) => obj,
                     _ => return Err(VMError::NotVMObject(obj)),
                 };
-                obj.lock();
 
                 let result = self.context.pop_frame(&mut self.stack, false);
                 if result.is_err() {
                     return Err(VMError::ContextError(result.unwrap_err()));
                 }
                 self.push_vmobject(obj.clone())?;
-                obj.unlock();
             }
 
             IR::Pop => {
@@ -1288,7 +1279,7 @@ impl IRExecutor {
                     VMStackObject::VMObject(obj) => obj,
                     _ => return Err(VMError::NotVMObject(obj)),
                 };
-                self.offline_if_not_variable(&obj);
+                obj.drop_ref();
             }
 
             IR::JumpOffset(offset) => {
@@ -1305,13 +1296,14 @@ impl IRExecutor {
                 if !ref_obj.as_const_type::<VMBoolean>().value {
                     self.ip += offset;
                 }
-                self.offline_if_not_variable(&obj);
+                obj.drop_ref();
             }
             IR::ResetStack => {
                 for i in *self.context.stack_pointers.last().unwrap()..self.stack.len() {
                     let obj = self.stack[i].clone();
                     if let VMStackObject::VMObject(obj) = obj {
-                        self.offline_if_not_variable(&obj);
+                        debug_print_repr(obj.clone());
+                        obj.drop_ref();
                     }
                 }
                 self.stack
@@ -1324,8 +1316,8 @@ impl IRExecutor {
                 let result = try_get_attr_as_vmobject(ref_obj, attr_ref)
                     .map_err(|e| VMError::VMVariableError(e))?;
                 self.push_vmobject(result)?;
-                self.offline_if_not_variable(&obj);
-                self.offline_if_not_variable(&attr);
+                obj.drop_ref();
+                attr.drop_ref();
             }
 
             IR::IndexOf => {
@@ -1334,8 +1326,8 @@ impl IRExecutor {
                 let result = try_index_of_as_vmobject(ref_obj, index_ref, gc_system)
                     .map_err(|e| VMError::VMVariableError(e))?;
                 self.push_vmobject(result)?;
-                self.offline_if_not_variable(&obj);
-                self.offline_if_not_variable(&index);
+                obj.drop_ref();
+                index.drop_ref();
             }
 
             IR::KeyOf => {
@@ -1343,7 +1335,7 @@ impl IRExecutor {
                 let result =
                     try_key_of_as_vmobject(ref_obj).map_err(|e| VMError::VMVariableError(e))?;
                 self.push_vmobject(result)?;
-                self.offline_if_not_variable(&obj);
+                obj.drop_ref();
             }
 
             IR::ValueOf => {
@@ -1351,7 +1343,7 @@ impl IRExecutor {
                 let result =
                     try_value_of_as_vmobject(ref_obj).map_err(|e| VMError::VMVariableError(e))?;
                 self.push_vmobject(result)?;
-                self.offline_if_not_variable(&obj);
+                obj.drop_ref();
             }
 
             IR::Assert => {
@@ -1362,7 +1354,8 @@ impl IRExecutor {
                 if !ref_obj.as_const_type::<VMBoolean>().value {
                     return Err(VMError::AssertFailed);
                 }
-                self.offline_if_not_variable(&obj);
+                obj.drop_ref();
+                self.push_vmobject(gc_system.new_object(VMBoolean::new(true)))?;
             }
 
             IR::SelfOf => {
@@ -1387,7 +1380,7 @@ impl IRExecutor {
                             .push(VMStackObject::VMObject(gc_system.new_object(VMNull::new())));
                     }
                 }
-                self.offline_if_not_variable(&obj);
+                obj.drop_ref();
             }
 
             IR::DeepCopyValue => {
@@ -1402,7 +1395,7 @@ impl IRExecutor {
                     })?;
                 self.push_vmobject(result)?;
 
-                self.offline_if_not_variable(&obj);
+                obj.drop_ref();
             }
             IR::CopyValue => {
                 let (obj, ref_obj) = self.pop_and_ref()?;
@@ -1415,7 +1408,7 @@ impl IRExecutor {
                 })?;
                 self.push_vmobject(result)?;
 
-                self.offline_if_not_variable(&obj);
+                obj.drop_ref();
             }
 
             IR::RefValue => return Err(VMError::InvalidInstruction(instruction.clone())),
@@ -1443,8 +1436,8 @@ impl IRExecutor {
                     }
                     let result = result.unwrap();
                     self.push_vmobject(result)?;
-                    self.offline_if_not_variable(&arg_tuple);
-                    self.offline_if_not_variable(&lambda);
+                    arg_tuple.drop_ref();
+                    lambda.drop_ref();
                     return Ok(None);
                 }
 
@@ -1455,15 +1448,13 @@ impl IRExecutor {
                 let lambda_obj = lambda_ref.as_const_type::<VMLambda>();
 
                 let signature = lambda_obj.signature.clone();
-                println!(">>> {}", lambda_obj.default_args_tuple.get_traceable().native_gcref_object_count);
-                println!("lambdaref >>> {}", lambda_ref.get_traceable().native_gcref_object_count);
-                // let result = lambda_obj.default_args_tuple
-                //     .as_type::<VMTuple>()
-                //     .assign_members(arg_tuple_ref.clone());
-                // if result.is_err() {
-                //     return Err(VMError::VMVariableError(result.unwrap_err()));
-                // }
-                debug_print_repr(lambda_ref.clone());
+                let result = lambda_obj
+                    .default_args_tuple
+                    .as_type::<VMTuple>()
+                    .assign_members(arg_tuple_ref.clone());
+                if result.is_err() {
+                    return Err(VMError::VMVariableError(result.unwrap_err()));
+                }
                 self.enter_lambda(lambda_ref.clone(), gc_system)?;
 
                 let func_ips = &self
@@ -1475,8 +1466,8 @@ impl IRExecutor {
                 let ip = func_ips.get(&signature).unwrap().clone() as isize;
                 self.ip = ip - 1;
 
-                self.offline_if_not_variable(&arg_tuple);
-                self.offline_if_not_variable(&lambda);
+                arg_tuple.drop_ref();
+                lambda.drop_ref();
             }
             IR::AsyncCallLambda => {
                 let (arg_tuple, arg_tuple_ref) = self.pop_and_ref()?;
@@ -1509,7 +1500,7 @@ impl IRExecutor {
                 }];
                 self.push_vmobject(lambda)?;
 
-                self.offline_if_not_variable(&arg_tuple);
+                arg_tuple.drop_ref();
 
                 return Ok(Some(spawned_coroutines));
             }
@@ -1518,7 +1509,7 @@ impl IRExecutor {
                 let wrapped = VMWrapper::new(ref_obj);
                 let wrapped = gc_system.new_object(wrapped);
                 self.push_vmobject(wrapped)?;
-                self.offline_if_not_variable(&obj);
+                obj.drop_ref();
             }
 
             IR::In => {
@@ -1531,11 +1522,9 @@ impl IRExecutor {
                         "Not a container".to_string(),
                     ))
                 })?;
-                self.push_vmobject(
-                    gc_system.new_object(VMBoolean::new(result)),
-                )?;
-                self.offline_if_not_variable(&obj);
-                self.offline_if_not_variable(&container);
+                self.push_vmobject(gc_system.new_object(VMBoolean::new(result)))?;
+                container.drop_ref();
+                obj.drop_ref();
             }
 
             IR::BuildRange => {
@@ -1559,8 +1548,8 @@ impl IRExecutor {
 
                 let result = gc_system.new_object(VMRange::new(start_ref.value, end_ref.value));
                 self.push_vmobject(result)?;
-                self.offline_if_not_variable(&start);
-                self.offline_if_not_variable(&end);
+                start.drop_ref();
+                end.drop_ref();
             }
             IR::TypeOf => {
                 let (obj, ref_obj) = self.pop_and_ref()?;
@@ -1605,7 +1594,7 @@ impl IRExecutor {
                     let result = gc_system.new_object(VMString::new("".to_string()));
                     self.push_vmobject(result)?;
                 }
-                self.offline_if_not_variable(&obj);
+                obj.drop_ref();
             }
 
             IR::Import(code_position) => {
@@ -1705,7 +1694,7 @@ impl IRExecutor {
                 //lambda_result.offline();
 
                 self.push_vmobject(lambda)?;
-                self.offline_if_not_variable(&path_arg_named);
+                path_arg_named.drop_ref();
                 //vm_instructions.offline();
             }
 
@@ -1717,7 +1706,7 @@ impl IRExecutor {
                     try_alias_as_vmobject(&copied).map_err(|e| VMError::VMVariableError(e))?;
                 obj_alias.push(alias.clone());
                 self.push_vmobject(copied)?;
-                self.offline_if_not_variable(&obj);
+                obj.drop_ref();
             }
 
             IR::WipeAlias => {
@@ -1728,7 +1717,7 @@ impl IRExecutor {
                     try_alias_as_vmobject(&copied).map_err(|e| VMError::VMVariableError(e))?;
                 obj_alias.clear();
                 self.push_vmobject(copied)?;
-                self.offline_if_not_variable(&obj);
+                obj.drop_ref();
             }
 
             IR::AliasOf => {
@@ -1744,7 +1733,7 @@ impl IRExecutor {
                     //i.offline();
                 }
                 self.push_vmobject(result)?;
-                self.offline_if_not_variable(&obj);
+                obj.drop_ref();
             }
 
             _ => return Err(VMError::InvalidInstruction(instruction.clone())),

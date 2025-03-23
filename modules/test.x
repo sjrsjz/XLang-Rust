@@ -1,7 +1,7 @@
-// foo := (n=>0)->{a:=n;if(n<1){foo(a+1)}};foo();
+// foo := (n=>0)->{a:=n;if(n<100){foo(a+1)}};foo();
 
 // create_async_func := () -> (n=>0) -> {
-//     while (n = n + 1; n < 16) {
+//     while (n = n + 1; n < 1000) {
 //         yield n / 2;
 //     };
 //     return "success";
@@ -17,7 +17,7 @@
 // //};
 // //print(asyncs);
 // n:=0;
-// while(n = n + 1; n < 18){
+// while(n = n + 1; n < 10000){
 // //    print(valueof asyncs[0]);
 // print(valueof obj)
 // };
@@ -204,4 +204,27 @@
 // };
 // print(fib(10));
 
-a := 0;
+// none := (n => 0) -> { 
+// 	return 1;
+// 	// if(n == 0) {
+//     //     return 0;
+//     // }
+// 	// else {
+// 	// 	return 1;//return none(0);
+// 	// };
+// };
+// none2 := () -> {
+// 	none(1)+ none(2);
+// };
+
+// n := 0;
+// while(n = n + 1; n < 100) {
+// 	// j := 0;
+// 	// while(j = j + 1; j < 100) {
+// 	// 	if (n == j) {
+// 	// 		break;
+// 	// 	};
+// 	// };
+// 	none2();
+// };
+

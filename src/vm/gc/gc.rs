@@ -36,13 +36,14 @@ impl std::fmt::Display for GCRef {
 
 impl GCRef {
     pub fn new(reference: *mut dyn GCObject, type_id: TypeId) -> Self {
-        unsafe {
-            if reference.is_null() {
-                panic!("Null pointer exception!");
-            }
-            let obj = reference as *mut dyn GCObject;
-            (*obj).get_traceable().native_gcref_object_count += 1; // 增加原生引用计数
+        if reference.is_null() {
+            panic!("Null pointer exception!");
         }
+
+        // unsafe {
+        //     let obj = reference as *mut dyn GCObject;
+        //     (*obj).get_traceable().native_gcref_object_count += 1; // 增加原生引用计数
+        // }
         GCRef { reference, type_id }
     }
 
@@ -137,28 +138,30 @@ impl GCRef {
         }
     }
 
-    pub(self) fn clone_no_check(&self) -> Self {
-        GCRef::new(self.reference, self.type_id)
-    }
-
     pub fn clone_ref(&self) -> Self {
         if !self.is_online() {
             panic!("Cannot clone an offline object!");
         }
+        unsafe {
+            let obj = self.reference as *mut dyn GCObject;
+            (*obj).get_traceable().native_gcref_object_count += 1; // 增加原生引用计数
+        }
         GCRef::new(self.reference, self.type_id)
     }
 
-    pub fn drop_ref(&mut self) {
+    pub fn drop_ref(&self) {
         unsafe {
             let obj = self.reference as *mut dyn GCObject;
-            (*obj).get_traceable().native_gcref_object_count -= 1; // 减少原生引用计数
-            if (*obj).get_traceable().native_gcref_object_count <= 1 {
+            if (*obj).get_traceable().native_gcref_object_count == 0 {
+                panic!("Reference count is already zero!");
+            }
+            (*obj).get_traceable().native_gcref_object_count -= 1;
+            if (*obj).get_traceable().native_gcref_object_count == 0 {
                 (*obj).get_traceable().offline();
             }
         }
     }
 }
-
 
 #[derive(Debug)]
 pub struct GCTraceable {
@@ -316,7 +319,7 @@ impl GCSystem {
 
         self.objects.push(gc_ref.clone()); // add the object to the list of objects
 
-        gc_ref
+        gc_ref.clone_ref()
     }
 
     fn mark(&mut self) {
@@ -445,7 +448,7 @@ impl GCSystem {
         let mut new_objects = Vec::with_capacity(self.objects.len());
         for i in 0..self.objects.len() {
             if alive[i] {
-                new_objects.push(self.objects[i].clone_no_check());
+                new_objects.push(self.objects[i].clone());
             }
         }
 
@@ -455,7 +458,7 @@ impl GCSystem {
             .iter()
             .enumerate()
             .filter(|&(i, _)| !alive[i])
-            .map(|(_, obj)| obj.clone_no_check())
+            .map(|(_, obj)| obj.clone())
             .collect();
 
         // 替换对象列表
@@ -483,7 +486,7 @@ impl GCSystem {
         let mut new_objects = Vec::with_capacity(self.objects.len());
         for i in 0..self.objects.len() {
             if alive[i] {
-                new_objects.push(self.objects[i].clone_no_check());
+                new_objects.push(self.objects[i].clone());
             }
         }
 
@@ -493,7 +496,7 @@ impl GCSystem {
             .iter()
             .enumerate()
             .filter(|&(i, _)| !alive[i])
-            .map(|(_, obj)| obj.clone_no_check())
+            .map(|(_, obj)| obj.clone())
             .collect();
 
         // 更新对象列表

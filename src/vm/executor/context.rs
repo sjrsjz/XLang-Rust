@@ -55,19 +55,6 @@ impl Context {
         }
     }
 
-    fn is_variable(&self, object: &GCRef) -> bool {
-        if object.isinstance::<VMVariableWrapper>() {
-            return true;
-        }
-        return false;
-    }
-
-    fn offline_if_not_variable(&self, object: &GCRef) {
-        if !self.is_variable(object) {
-            //object.offline();
-        }
-    }
-
     pub fn new_frame(
         &mut self,
         stack: &Vec<VMStackObject>,
@@ -111,13 +98,13 @@ pub fn pop_frame(
             
             // 4. 离线变量（在数据结构已更新后）
             for variable in variables_to_offline {
-                //variable.offline();
+                variable.drop_ref();
             }
             
             // 5. 处理栈上的对象
             for i in stack_range_start..stack_range_end {
                 if let VMStackObject::VMObject(obj_ref) = &mut stack[i] {
-                    self.offline_if_not_variable(obj_ref);
+                    obj_ref.drop_ref();
                 }
             }
             
@@ -143,13 +130,13 @@ pub fn pop_frame(
     
     // 4. 离线变量（在数据结构已更新后）
     for variable in variables_to_offline {
-        //variable.offline();
+        variable.drop_ref();
     }
     
     // 5. 处理栈上的对象
     for i in stack_pointer..stack.len() {
         if let VMStackObject::VMObject(obj_ref) = &mut stack[i] {
-            self.offline_if_not_variable(obj_ref);
+            obj_ref.drop_ref();
         }
     }
     
@@ -169,7 +156,7 @@ pub fn pop_frame(
             if vars.contains_key(&name) {
                 let var = vars.get(&name).unwrap().clone();
                 vars.insert(name.clone(), gc_system.new_object(VMVariableWrapper::new(value)));
-                //var.offline();
+                var.drop_ref(); // 扔掉旧的引用，因为已经被覆盖了
                 return Ok(());
             }
 
@@ -183,7 +170,7 @@ pub fn pop_frame(
     pub fn get_var(&self, name: &str) -> Result<GCRef, ContextError> {
         for (vars, _, _, _) in self.frames.iter().rev() {
             if let Some(value) = vars.get(name) {
-                return Ok(value.clone());
+                return Ok(value.clone_ref()); // 这里需要clone_ref，因为我们要返回一个新的引用
             }
         }
         Err(ContextError::NoVariable(name.to_string()))

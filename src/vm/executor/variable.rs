@@ -1,3 +1,12 @@
+/**
+ * 约定：
+ * - vmobject：虚拟机对象
+ * - value_ref：获得值引用，不产生clone_ref行为
+ * - 任何new对象的行为都需要使用gc_system，并且会产生一个native_gcref_object_count，虚拟机必须在某处drop_ref直到为0
+ * 
+ */
+
+
 use std::{collections::HashMap, fmt::Debug};
 
 use crate::vm::ir::IR;
@@ -106,7 +115,10 @@ pub fn try_contains_as_vmobject(value: GCRef, other: GCRef) -> Result<bool, VMVa
     ))
 }
 
-pub fn try_repr_vmobject(value: GCRef, ref_path: Option<Vec<GCRef>>) -> Result<String, VMVariableError> {
+pub fn try_repr_vmobject(
+    value: GCRef,
+    ref_path: Option<Vec<GCRef>>,
+) -> Result<String, VMVariableError> {
     // 检查循环引用
     if let Some(ref path) = ref_path {
         for prev_ref in path {
@@ -115,7 +127,7 @@ pub fn try_repr_vmobject(value: GCRef, ref_path: Option<Vec<GCRef>>) -> Result<S
             }
         }
     }
-    
+
     // 创建新的引用路径，将当前对象添加到路径中
     let new_ref_path = if let Some(mut path) = ref_path {
         path.push(value.clone());
@@ -123,7 +135,7 @@ pub fn try_repr_vmobject(value: GCRef, ref_path: Option<Vec<GCRef>>) -> Result<S
     } else {
         Some(vec![value.clone()])
     };
-    
+
     if value.isinstance::<VMInt>() {
         let int = value.as_const_type::<VMInt>();
         return Ok(int.value.to_string());
@@ -153,9 +165,12 @@ pub fn try_repr_vmobject(value: GCRef, ref_path: Option<Vec<GCRef>>) -> Result<S
         let mut repr = String::new();
         if tuple.values.len() == 0 {
             return Ok("(,)".to_string());
-        } 
+        }
         if tuple.values.len() == 1 {
-            return Ok(format!("({},)", try_repr_vmobject(tuple.values[0].clone(), new_ref_path)?));
+            return Ok(format!(
+                "({},)",
+                try_repr_vmobject(tuple.values[0].clone(), new_ref_path)?
+            ));
         }
         for (i, val) in tuple.values.iter().enumerate() {
             if i > 0 {
@@ -192,7 +207,7 @@ pub fn try_repr_vmobject(value: GCRef, ref_path: Option<Vec<GCRef>>) -> Result<S
         let range = value.as_const_type::<VMRange>();
         return Ok(format!("{}..{}", range.start, range.end));
     }
-    
+
     Err(VMVariableError::TypeError(
         value.clone(),
         "Cannot represent a non-representable type".to_string(),
@@ -201,7 +216,13 @@ pub fn try_repr_vmobject(value: GCRef, ref_path: Option<Vec<GCRef>>) -> Result<S
 
 pub fn debug_print_repr(value: GCRef) {
     match try_repr_vmobject(value.clone(), None) {
-        Ok(repr) => println!("Repr:{}| {:?}, {:?} {}", value.get_traceable().native_gcref_object_count, value.get_reference()  as *const(), value.get_traceable().references, repr),
+        Ok(repr) => println!(
+            "Repr:{}| {:?}, {:?} {}",
+            value.get_traceable().native_gcref_object_count,
+            value.get_reference() as *const (),
+            value.get_traceable().references,
+            repr
+        ),
         Err(err) => println!("Cannot repr: {:?}", err),
     }
 }
@@ -700,7 +721,7 @@ impl VMVariableWrapper {
         }
 
         VMVariableWrapper {
-            value_ref: value.clone(),
+            value_ref: value.clone_ref(),
             traceable: GCTraceable::new(Some(vec![value.clone()])),
             alias: Vec::new(),
         }
@@ -710,6 +731,7 @@ impl VMVariableWrapper {
 impl GCObject for VMVariableWrapper {
     fn free(&mut self) {
         self.traceable.remove_reference(&self.value_ref);
+        self.value_ref.drop_ref();
     }
 
     fn get_traceable(&mut self) -> &mut GCTraceable {
@@ -753,20 +775,21 @@ pub struct VMWrapper {
 impl VMWrapper {
     pub fn new(value: GCRef) -> Self {
         VMWrapper {
-            value_ref: value.clone(),
+            value_ref: value.clone_ref(),
             traceable: GCTraceable::new(Some(vec![value.clone()])),
             alias: Vec::new(),
         }
     }
 
     pub fn get_value(&self) -> GCRef {
-        return self.value_ref.clone();
+        return self.value_ref.clone_ref();
     }
 }
 
 impl GCObject for VMWrapper {
     fn free(&mut self) {
         self.traceable.remove_reference(&self.value_ref);
+        self.value_ref.drop_ref();
     }
 
     fn get_traceable(&mut self) -> &mut GCTraceable {
@@ -782,12 +805,13 @@ impl VMObject for VMWrapper {
         try_copy_as_vmobject(self.value_ref.clone(), gc_system)
     }
     fn assign(&mut self, value: GCRef) -> Result<GCRef, VMVariableError> {
+        let new_value = value.clone_ref();
         self.traceable.remove_reference(&self.value_ref);
-        self.value_ref = value;
+        self.value_ref.drop_ref();
+        self.value_ref = new_value;
         self.traceable.add_reference(&mut self.value_ref);
         Ok(self.value_ref.clone())
     }
-
     fn value_ref(&self) -> Result<GCRef, VMVariableError> {
         Ok(GCRef::wrap(self))
     }
@@ -911,11 +935,7 @@ impl VMInt {
         ))
     }
 
-    pub fn power(
-        &self,
-        other: GCRef,
-        gc_system: &mut GCSystem,
-    ) -> Result<GCRef, VMVariableError> {
+    pub fn power(&self, other: GCRef, gc_system: &mut GCSystem) -> Result<GCRef, VMVariableError> {
         if other.isinstance::<VMInt>() {
             let other_int = other.as_const_type::<VMInt>();
             let r = self.value.checked_pow(other_int.value as u32);
@@ -929,7 +949,9 @@ impl VMInt {
             return Ok(gc_system.new_object(VMInt::new(r.unwrap())));
         } else if other.isinstance::<VMFloat>() {
             let other_float = other.as_const_type::<VMFloat>();
-            return Ok(gc_system.new_object(VMFloat::new((self.value as f64).powf(other_float.value))));
+            return Ok(
+                gc_system.new_object(VMFloat::new((self.value as f64).powf(other_float.value)))
+            );
         }
         Err(VMVariableError::ValueError2Param(
             GCRef::wrap(self),
@@ -1388,11 +1410,7 @@ impl VMFloat {
         ))
     }
 
-    pub fn power(
-        &self,
-        other: GCRef,
-        gc_system: &mut GCSystem,
-    ) -> Result<GCRef, VMVariableError> {
+    pub fn power(&self, other: GCRef, gc_system: &mut GCSystem) -> Result<GCRef, VMVariableError> {
         if other.isinstance::<VMFloat>() {
             let other_float = other.as_const_type::<VMFloat>();
             return Ok(gc_system.new_object(VMFloat::new(self.value.powf(other_float.value))));
@@ -1700,8 +1718,8 @@ pub struct VMKeyVal {
 impl VMKeyVal {
     pub fn new(key: GCRef, value: GCRef) -> Self {
         VMKeyVal {
-            key: key.clone(),
-            value: value.clone(),
+            key: key.clone_ref(),
+            value: value.clone_ref(),
             traceable: GCTraceable::new(Some(vec![key, value])),
             alias: Vec::new(),
         }
@@ -1709,19 +1727,19 @@ impl VMKeyVal {
 
     pub fn new_with_alias(key: GCRef, value: GCRef, alias: &Vec<String>) -> Self {
         VMKeyVal {
-            key: key.clone(),
-            value: value.clone(),
+            key: key.clone_ref(),
+            value: value.clone_ref(),
             traceable: GCTraceable::new(Some(vec![key, value])),
             alias: alias.clone(),
         }
     }
 
     pub fn get_key(&self) -> GCRef {
-        self.key.clone()
+        self.key.clone_ref()
     }
 
     pub fn get_value(&self) -> GCRef {
-        self.value.clone()
+        self.value.clone_ref()
     }
 
     pub fn check_key(&self, other: GCRef) -> bool {
@@ -1743,7 +1761,9 @@ impl VMKeyVal {
 impl GCObject for VMKeyVal {
     fn free(&mut self) {
         self.traceable.remove_reference(&self.key);
+        self.key.drop_ref();
         self.traceable.remove_reference(&self.value);
+        self.value.drop_ref();
     }
 
     fn get_traceable(&mut self) -> &mut GCTraceable {
@@ -1767,10 +1787,12 @@ impl VMObject for VMKeyVal {
     }
 
     fn assign(&mut self, value: GCRef) -> Result<GCRef, VMVariableError> {
+        let new_value = value.clone_ref();
         self.traceable.remove_reference(&self.value);
-        self.value = value.clone();
+        self.value.drop_ref();
+        self.value = new_value;
         self.traceable.add_reference(&mut self.value);
-        Ok(value.clone())
+        Ok(self.value.clone())
     }
 
     fn value_ref(&self) -> Result<GCRef, VMVariableError> {
@@ -1797,8 +1819,8 @@ pub struct VMNamed {
 impl VMNamed {
     pub fn new(key: GCRef, value: GCRef) -> Self {
         VMNamed {
-            key: key.clone(),
-            value: value.clone(),
+            key: key.clone_ref(),
+            value: value.clone_ref(),
             traceable: GCTraceable::new(Some(vec![key, value])),
             alias: Vec::new(),
         }
@@ -1806,19 +1828,19 @@ impl VMNamed {
 
     pub fn new_with_alias(key: GCRef, value: GCRef, alias: &Vec<String>) -> Self {
         VMNamed {
-            key: key.clone(),
-            value: value.clone(),
+            key: key.clone_ref(),
+            value: value.clone_ref(),
             traceable: GCTraceable::new(Some(vec![key, value])),
             alias: alias.clone(),
         }
     }
 
     pub fn get_key(&self) -> GCRef {
-        self.key.clone()
+        self.key.clone_ref()
     }
 
     pub fn get_value(&self) -> GCRef {
-        self.value.clone()
+        self.value.clone_ref()
     }
 
     pub fn check_key(&self, other: GCRef) -> bool {
@@ -1840,7 +1862,9 @@ impl VMNamed {
 impl GCObject for VMNamed {
     fn free(&mut self) {
         self.traceable.remove_reference(&self.key);
+        self.key.drop_ref();
         self.traceable.remove_reference(&self.value);
+        self.value.drop_ref();
     }
 
     fn get_traceable(&mut self) -> &mut GCTraceable {
@@ -1864,10 +1888,12 @@ impl VMObject for VMNamed {
     }
 
     fn assign(&mut self, value: GCRef) -> Result<GCRef, VMVariableError> {
+        let new_value = value.clone_ref();
         self.traceable.remove_reference(&self.value);
-        self.value = value.clone();
+        self.value.drop_ref();
+        self.value = new_value;
         self.traceable.add_reference(&mut self.value);
-        Ok(value.clone())
+        Ok(self.value.clone())
     }
 
     fn value_ref(&self) -> Result<GCRef, VMVariableError> {
@@ -1893,10 +1919,14 @@ pub struct VMTuple {
 
 impl VMTuple {
     pub fn new(values: Vec<GCRef>) -> Self {
+        let mut cloned_refs = Vec::new();
+        for value in &values {
+            cloned_refs.push(value.clone_ref());
+        }
         // 创建对象并设置引用跟踪
         VMTuple {
-            values: values.clone(),
-            traceable: GCTraceable::new(Some(values)),
+            values: cloned_refs.clone(),
+            traceable: GCTraceable::new(Some(cloned_refs)),
             alias: Vec::new(),
             auto_bind: false,
         }
@@ -1904,9 +1934,13 @@ impl VMTuple {
 
     pub fn new_with_alias(values: Vec<GCRef>, alias: &Vec<String>) -> Self {
         // 创建对象并设置引用跟踪
+        let mut cloned_refs = Vec::new();
+        for value in &values {
+            cloned_refs.push(value.clone_ref());
+        }
         VMTuple {
-            values: values.clone(),
-            traceable: GCTraceable::new(Some(values)),
+            values: cloned_refs.clone(),
+            traceable: GCTraceable::new(Some(cloned_refs)),
             alias: alias.clone(),
             auto_bind: false,
         }
@@ -1914,7 +1948,7 @@ impl VMTuple {
 
     pub fn get(&self, index: usize) -> Option<GCRef> {
         if index < self.values.len() {
-            Some(self.values[index].clone())
+            Some(self.values[index].clone_ref())
         } else {
             None
         }
@@ -1987,9 +2021,7 @@ impl VMTuple {
             for i in start..end {
                 result.push(self.values[i as usize].clone());
             }
-            return Ok(
-                gc_system.new_object(VMTuple::new_with_alias(result, &self.alias)),
-            );
+            return Ok(gc_system.new_object(VMTuple::new_with_alias(result, &self.alias)));
         } else if index.isinstance::<VMInt>() {
             let idx = index.as_const_type::<VMInt>().value;
             if idx < 0 {
@@ -2006,7 +2038,7 @@ impl VMTuple {
                     "Index out of bounds".to_string(),
                 ));
             }
-            return Ok(self.values[idx].clone());
+            return Ok(self.values[idx].clone_ref());
         }
         return Err(VMVariableError::TypeError(
             index.clone(),
@@ -2066,7 +2098,7 @@ impl VMTuple {
                 // 如果没有找到匹配的键，添加新的键值对
                 self.values.push(kv);
                 self.traceable
-                    .add_reference(&mut self.values.last().unwrap().clone());
+                    .add_reference(&mut self.values.last().unwrap().clone_ref());
             }
         }
 
@@ -2089,7 +2121,7 @@ impl VMTuple {
                 // 没有更多位置，追加到末尾
                 self.values.push(value.clone());
                 self.traceable
-                    .add_reference(&mut self.values.last().unwrap().clone());
+                    .add_reference(&mut self.values.last().unwrap().clone_ref());
             }
         }
 
@@ -2141,6 +2173,7 @@ impl GCObject for VMTuple {
         // 移除对所有元素的引用
         for value in &self.values {
             self.traceable.remove_reference(value);
+            value.drop_ref();
         }
     }
 
@@ -2178,19 +2211,30 @@ impl VMObject for VMTuple {
 
     fn assign(&mut self, value: GCRef) -> Result<GCRef, VMVariableError> {
         if value.isinstance::<VMTuple>() {
-            // 移除对当前所有元素的引用
-            for val in &self.values {
-                self.traceable.remove_reference(val);
+            // 先克隆新元组的元素引用，确保它们不会在过程中被释放
+            let other_tuple = value.as_const_type::<VMTuple>();
+            let new_values = other_tuple.values.clone();
+
+            // 为所有新元素增加引用计数，确保它们保持在线状态
+            let mut cloned_values = Vec::with_capacity(new_values.len());
+            for val in &new_values {
+                cloned_values.push(val.clone_ref());
             }
 
-            // 复制新元组的元素引用
-            let other_tuple = value.as_const_type::<VMTuple>();
-            self.values = other_tuple.values.clone();
+            // 现在移除对当前所有元素的引用
+            for val in &self.values {
+                self.traceable.remove_reference(val);
+                val.drop_ref();
+            }
+
+            // 设置新的元素集合
+            self.values = cloned_values;
 
             // 添加对新元素的引用
             for val in &self.values {
                 self.traceable.add_reference(&mut val.clone());
             }
+
             Ok(GCRef::wrap(self))
         } else {
             Err(VMVariableError::ValueError2Param(
@@ -2341,9 +2385,12 @@ impl VMLambda {
         VMLambda {
             code_position,
             signature,
-            default_args_tuple: default_args_tuple.clone(),
-            self_object: self_object.clone(),
-            lambda_instructions: lambda_instructions.clone(),
+            default_args_tuple: default_args_tuple.clone_ref(),
+            self_object: match self_object {
+                Some(ref obj) => Some(obj.clone_ref()),
+                None => None,
+            },
+            lambda_instructions: lambda_instructions.clone_ref(),
             traceable: GCTraceable::new(Some(if self_object.is_some() {
                 vec![
                     default_args_tuple,
@@ -2354,7 +2401,7 @@ impl VMLambda {
             } else {
                 vec![default_args_tuple, lambda_instructions, result.clone()]
             })),
-            result: result,
+            result: result.clone_ref(),
             coroutine_status: VMCoroutineStatus::Running,
             alias: Vec::new(),
         }
@@ -2378,9 +2425,12 @@ impl VMLambda {
         VMLambda {
             code_position,
             signature,
-            default_args_tuple: default_args_tuple.clone(),
-            self_object: self_object.clone(),
-            lambda_instructions: lambda_instructions.clone(),
+            default_args_tuple: default_args_tuple.clone_ref(),
+            self_object: match self_object {
+                Some(ref obj) => Some(obj.clone_ref()),
+                None => None,
+            },
+            lambda_instructions: lambda_instructions.clone_ref(),
             traceable: GCTraceable::new(Some(if self_object.is_some() {
                 vec![
                     default_args_tuple,
@@ -2391,49 +2441,55 @@ impl VMLambda {
             } else {
                 vec![default_args_tuple, lambda_instructions, result.clone()]
             })),
-            result: result,
+            result: result.clone_ref(),
             coroutine_status: VMCoroutineStatus::Running,
             alias: alias.clone(),
         }
     }
 
     pub fn set_result(&mut self, result_object: GCRef) {
-        // let result = self.result.clone();
-        // let mut new_result = result_object.clone();
-        // self.traceable.add_reference(&mut new_result);
-        // self.result = result_object;
-        // self.traceable.remove_reference(&result);
+        let result = self.result.clone();
+        let mut new_result = result_object.clone();
+        self.traceable.add_reference(&mut new_result);
+        self.result = result_object.clone_ref();
+        self.traceable.remove_reference(&result);
+        result.drop_ref();
     }
 
     pub fn set_self_object(&mut self, self_object: GCRef) {
         if !self.self_object.is_none() {
             self.traceable
                 .remove_reference(&self.self_object.clone().unwrap());
+            self.self_object.as_ref().unwrap().drop_ref();
         }
         self.self_object = Some(self_object);
         self.traceable
             .add_reference(&mut self.self_object.clone().unwrap());
+        self.self_object.as_ref().unwrap().clone_ref();
     }
 
     pub fn get_value(&self) -> GCRef {
-        self.result.clone()
+        self.result.clone_ref()
     }
 
     pub fn get_key(&self) -> GCRef {
-        self.default_args_tuple.clone()
+        self.default_args_tuple.clone_ref()
     }
 }
 
 impl GCObject for VMLambda {
     fn free(&mut self) {
         self.traceable.remove_reference(&self.default_args_tuple);
+        self.default_args_tuple.drop_ref();
         self.traceable.remove_reference(&self.lambda_instructions);
+        self.lambda_instructions.drop_ref();
         self.traceable.remove_reference(&self.result);
+        self.result.drop_ref();
         if !self.self_object.is_none() {
             self.traceable
                 .remove_reference(&self.self_object.as_ref().unwrap());
+            self.self_object.as_ref().unwrap().drop_ref();
         }
-
     }
 
     fn get_traceable(&mut self) -> &mut GCTraceable {
@@ -2492,22 +2548,41 @@ impl VMObject for VMLambda {
                 "Cannot assign a value of non-lambda type".to_string(),
             ));
         }
-        let c_default_args_tuple = self.default_args_tuple.clone();
-        let c_lambda_instructions = self.lambda_instructions.clone();
-        let c_result = self.result.clone();
-        self.get_traceable().remove_reference(&c_default_args_tuple);
+
+        // 先获取新值的引用并增加引用计数，确保不会在过程中被释放
+        let v_lambda = value.as_const_type::<VMLambda>();
+        let mut new_default_args_tuple = v_lambda.default_args_tuple.clone_ref();
+        let mut new_lambda_instructions = v_lambda.lambda_instructions.clone_ref();
+        let mut new_result = v_lambda.result.clone_ref();
+        let old_default_args_tuple = self.default_args_tuple.clone();
+        let old_lambda_instructions = self.lambda_instructions.clone();
+        let old_result = self.result.clone();
+
+
+        // 移除旧引用
         self.get_traceable()
-            .remove_reference(&c_lambda_instructions);
-        self.get_traceable().remove_reference(&c_result);
-        let v_lambda = value.as_type::<VMLambda>();
-        self.default_args_tuple = v_lambda.default_args_tuple.clone();
-        self.lambda_instructions = v_lambda.lambda_instructions.clone();
-        self.result = v_lambda.result.clone();
+            .remove_reference(&old_default_args_tuple);
+        self.default_args_tuple.drop_ref();
+
         self.get_traceable()
-            .add_reference(&v_lambda.default_args_tuple);
+            .remove_reference(&old_lambda_instructions);
+        self.lambda_instructions.drop_ref();
+
+        self.get_traceable().remove_reference(&old_result);
+        self.result.drop_ref();
+
+        // 设置新引用
+        self.default_args_tuple = new_default_args_tuple.clone();
+        self.lambda_instructions = new_lambda_instructions.clone();
+        self.result = new_result.clone();
+
+        // 添加对新值的引用关系
         self.get_traceable()
-            .add_reference(&v_lambda.lambda_instructions);
-        self.get_traceable().add_reference(&v_lambda.result);
+            .add_reference(&mut new_default_args_tuple);
+        self.get_traceable()
+            .add_reference(&mut new_lambda_instructions);
+        self.get_traceable().add_reference(&mut new_result);
+
         Ok(GCRef::wrap(self))
     }
 
