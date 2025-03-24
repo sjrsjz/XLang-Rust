@@ -276,6 +276,15 @@ impl<'t> IRGenerator<'t> {
                     ASTNodeOperation::Power => {
                         instructions.push(IR::BinaryOp(IROperation::Power));
                     }
+                    ASTNodeOperation::LeftShift => {
+                        instructions.push(IR::BinaryOp(IROperation::ShiftLeft));
+                    }
+                    ASTNodeOperation::RightShift => {
+                        instructions.push(IR::BinaryOp(IROperation::ShiftRight));
+                    }
+                    ASTNodeOperation::BitwiseNot => {
+                        instructions.push(IR::UnaryOp(IROperation::BitwiseNot));
+                    }
                 }
                 Ok(instructions)
             }
@@ -506,6 +515,7 @@ impl<'t> IRGenerator<'t> {
                 instructions.extend(self.generate_without_redirect(&ast_node.children[0])?);
                 instructions.push(IR::RedirectJumpIfFalse(med_label.clone()));
                 instructions.extend(self.generate_without_redirect(&ast_node.children[1])?);
+                instructions.push(IR::Pop);
                 instructions.push(IR::RedirectJump(head_label.clone()));
                 instructions.push(IR::RedirectLabel(med_label.clone()));
                 instructions.push(IR::LoadNull);

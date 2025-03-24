@@ -13,7 +13,9 @@ dependencies = [
  "rand",
  "regex",
  "rustyline",
+ "rustyline-derive",
  "serde",
+ "unicode-segmentation",
 ]
 
 [[package]]
@@ -471,6 +473,17 @@ dependencies = [
  "unicode-width",
  "utf8parse",
  "windows-sys",
+]
+
+[[package]]
+name = "rustyline-derive"
+version = "0.11.0"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "327e9d075f6df7e25fbf594f1be7ef55cf0d567a6cb5112eeccbbd51ceb48e0d"
+dependencies = [
+ "proc-macro2",
+ "quote",
+ "syn",
 ]
 
 [[package]]

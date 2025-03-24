@@ -24,7 +24,7 @@ impl Eq for GCRef {}
 impl Hash for GCRef {
     fn hash<H: Hasher>(&self, state: &mut H) {
         (self.reference as *const () as usize).hash(state);
-        self.type_id.hash(state);
+        //self.type_id.hash(state);
     }
 }
 
@@ -57,13 +57,6 @@ impl GCRef {
         unsafe {
             let obj = self.reference as *mut dyn GCObject;
             (*obj).get_traceable().offline();
-        }
-    }
-
-    pub fn mark_as_online(&self) {
-        unsafe {
-            let obj = self.reference as *mut dyn GCObject;
-            (*obj).get_traceable().mark_as_online();
         }
     }
 
@@ -110,14 +103,36 @@ impl GCRef {
             type_id: TypeId::of::<T>(),
         }
     }
+
+    pub fn lock(&self) {
+        unsafe {
+            let obj = self.reference as *mut dyn GCObject;
+            (*obj).get_traceable().lock = true;
+        }
+    }
+
+    pub fn unlock(&self) {
+        unsafe {
+            let obj = self.reference as *mut dyn GCObject;
+            (*obj).get_traceable().lock = false;
+        }
+    }
+
+    pub fn is_locked(&self) -> bool {
+        unsafe {
+            let obj = self.reference as *mut dyn GCObject;
+            (*obj).get_traceable().lock
+        }
+    }
 }
 
 #[derive(Debug)]
 pub struct GCTraceable {
+    pub native_ref_count: usize, // 原生引用计数, 当GCRef被创建时增加
     pub ref_count: usize,
     pub should_free: bool,
     pub online: bool,
-    // 替换HashSet为HashMap，以便追踪引用计数
+    pub lock: bool, // 是否锁定对象禁止回收
     pub references: HashMap<GCRef, usize>,
 }
 
@@ -132,14 +147,19 @@ impl GCTraceable {
         }
 
         let obj = GCTraceable {
+            native_ref_count: 0,
             ref_count: 0,
             should_free: false,
             online: true,
+            lock: false,
             references: refs_map,
         };
 
         // 更新每个引用对象的引用计数
         for (ref_obj, count) in &obj.references {
+            if ref_obj.reference.is_null() {
+                panic!("Reference is null! {}", ref_obj);
+            }
             unsafe {
                 (*ref_obj.reference).get_traceable().ref_count += count; // 增加对象的引用计数
             }
@@ -152,11 +172,10 @@ impl GCTraceable {
         self.online = false;
     }
 
-    pub fn mark_as_online(&mut self) {
-        // 设置对象在线，以防止被回收
-        self.online = true;
-    }
     pub fn add_reference(&mut self, obj: &GCRef) {
+        if obj.reference.is_null() {
+            panic!("Reference is null! {}", obj);
+        }
         // 增加引用计数
         *self.references.entry(obj.clone()).or_insert(0) += 1;
         unsafe {
@@ -165,6 +184,9 @@ impl GCTraceable {
     }
 
     pub fn remove_reference(&mut self, obj: &GCRef) {
+        if obj.reference.is_null() {
+            panic!("Reference is null! {}", obj);
+        }
         let count = self.references.get(obj).cloned();
 
         match count {
@@ -196,7 +218,7 @@ impl Drop for GCTraceable {
         let total_refs: usize = self.references.values().sum();
         if total_refs > 0 {
             eprintln!(
-                "[GC警告] 对象被销毁时仍有非零引用! 引用计数: {}, 引用详情: {:?}",
+                "[GC] Warning: {} references are not cleaned up! References: {:?}",
                 total_refs, self.references
             );
 
@@ -253,6 +275,9 @@ impl GCSystem {
             self.new_objects_count = 0;
         }
         let obj_ref = Box::into_raw(Box::new(object)) as *mut dyn GCObject;
+        if obj_ref.is_null() {
+            panic!("Failed to allocate memory for object!");
+        }
         let gc_ref = GCRef {
             reference: obj_ref,
             type_id: TypeId::of::<T>(),
@@ -273,7 +298,7 @@ impl GCSystem {
                     "Never set should_free to true! Use offline() instead! Object: {:?}",
                     obj
                 );
-            } else if gc_ref.get_traceable().online {
+            } else if gc_ref.is_online() || gc_ref.is_locked(){
                 alive[i] = true;
             }
         }
@@ -307,6 +332,13 @@ impl GCSystem {
                         ));
                         error_msg.push_str(&format!("Reference target: {:?}\n", ref_obj));
                         error_msg.push_str(&format!("Reference address: 0x{:x}\n\n", ref_usize));
+                        error_msg.push_str(&format!("All References:\n"));
+                        for (ref_obj, count) in &gc_ref.get_traceable().references {
+                            error_msg.push_str(&format!(
+                                "  - Object {:?} (Type: {:?}): {} references\n",
+                                ref_obj.reference, ref_obj.type_id, count
+                            ));
+                        }
 
                         // Include index mapping for diagnostics
                         error_msg.push_str(&format!("Current GC object map:\n"));
@@ -334,35 +366,7 @@ impl GCSystem {
             }
         }
 
-        // let mut ref_graph: Vec<Vec<usize>> = vec![Vec::new(); self.objects.len()];
-        // for i in 0..self.objects.len() {
-        //     let gc_ref = &self.objects[i];
-        //     for (ref_obj, _) in &gc_ref.get_traceable().references {
-        //         // 线性搜索而非使用HashMap
-        //         let mut found = false;
-        //         let mut ref_idx = 0;
-        //         for (j, obj) in self.objects.iter().enumerate() {
-        //             if std::ptr::addr_eq(obj.reference, ref_obj.reference) {
-        //                 found = true;
-        //                 ref_idx = j;
-        //                 break;
-        //             }
-        //         }
 
-        //         if !found {
-        //             println!("Mapping: {:?}", idx_map);
-        //             println!("Reference graph: {:?}", ref_graph);
-
-        //             panic!("警告：对象 #{} 引用了不在GC管理下的对象: {:?}", i, ref_obj);
-
-        //             // 可以在这里继续处理
-        //             // 如果想要严格行为，可以保留panic
-        //             // panic!("Reference object not found in index map! Object: {:?}", ref_obj);
-        //         } else {
-        //             ref_graph[i].push(ref_idx);
-        //         }
-        //     }
-        // }
 
         // 第三步：从活跃对象出发，标记所有可达对象
         let mut worklist: Vec<usize> = Vec::new();
@@ -438,7 +442,7 @@ impl GCSystem {
         // 标记活对象
         for i in 0..self.objects.len() {
             let gc_ref = &self.objects[i];
-            alive[i] = !(gc_ref.get_traceable().ref_count == 0 && !gc_ref.is_online() && gc_ref.get_traceable().references.is_empty()); // 检查孤岛对象
+            alive[i] = !(gc_ref.get_traceable().ref_count == 0 && !gc_ref.is_online() && gc_ref.get_traceable().references.is_empty() && !gc_ref.is_locked()); // 检查孤岛对象
         }
 
         // 先创建新的对象列表，仅包含活对象
@@ -467,10 +471,9 @@ impl GCSystem {
         }
     }
     pub fn collect(&mut self) {
-        self.immediate_collect(); // panic! corrupt double-linked list
+        self.immediate_collect();
         self.mark();
         self.sweep();
-        
     }
 
     pub fn debug_print(&self) {
@@ -546,6 +549,10 @@ impl GCSystem {
 
     pub fn count(&self) -> usize {
         self.objects.len()
+    }
+
+    pub fn get_all_objects(&self) -> &Vec<GCRef> {
+        &self.objects
     }
 }
 
