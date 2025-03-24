@@ -159,10 +159,21 @@ impl VMCoroutinePool {
     pub fn step_all(
         &mut self,
         gc_system: &mut GCSystem,
-    ) -> Result<Option<Vec<SpawnedCoroutine>>, VMError> {
+    ) -> Result<Option<Vec<SpawnedCoroutine>>, (isize, VMError)> {
         let mut spawned_coroutines = Vec::<SpawnedCoroutine>::new();
-        for (e, _id) in &mut self.executors {
-            let new_coroutines = e.step(gc_system)?;
+        for (e, id) in &mut self.executors {
+            let new_coroutines = e.step(gc_system);
+            if new_coroutines.is_err() {
+                e.entry_lambda_wrapper
+                    .as_ref()
+                    .unwrap()
+                    .as_type::<VMVariableWrapper>()
+                    .value_ref
+                    .as_type::<VMLambda>()
+                    .coroutine_status = VMCoroutineStatus::Crashed;
+                return Err((*id, new_coroutines.err().unwrap()));
+            }
+            let new_coroutines = new_coroutines.unwrap();
             if let Some(new_coroutines) = new_coroutines {
                 spawned_coroutines.extend(new_coroutines);
             }
@@ -203,7 +214,7 @@ impl VMCoroutinePool {
         use colored::*;
 
         loop {
-            let spawned_coroutines = self.step_all(gc_system).map_err(|e| {
+            let spawned_coroutines = self.step_all(gc_system).map_err(|vm_error| {
                 if self.enable_dump {
                     let all_coroutines_contexts_repr = self
                         .executors
@@ -219,7 +230,7 @@ impl VMCoroutinePool {
                             format!(
                                 "{}\n{}\n\n{}\n\n{}",
                                 format!(
-                                    "# {}: {}",
+                                    "-> {}: {}",
                                     lambda.signature,
                                     lambda.coroutine_status.to_string()
                                 )
@@ -236,12 +247,12 @@ impl VMCoroutinePool {
                     VMError::DetailedError(format!(
                         "{}\n\n{}\n{}\n\n{}",
                         "** CoroutinePool Step Error! **".bright_red().bold(),
-                        "# Main Error".bright_yellow().bold(),
-                        e.to_string().red(),
+                        "# Main Error".bright_red().bold().underline(),
+                        vm_error.1.to_string().red(),
                         format!("All Coroutine Contexts:\n{}", all_coroutines_contexts_repr)
                     ))
                 } else {
-                    e
+                    vm_error.1
                 }
             })?;
 
@@ -654,10 +665,10 @@ impl IRExecutor {
 
         // Format current instruction info
         result.push_str(&format!(
-            "{} {} ({})\n",
-            "Current instruction:".bright_yellow().bold(),
-            format!("{:?}", instruction).bright_cyan().bold(),
-            format!("IP: {}", self.ip).bright_magenta().italic()
+            "{} {} {}\n",
+            "Current instruction:".bright_blue().bold(),
+            format!("{:?}", instruction).bright_cyan().bold().underline(),
+            format!("(IP: {})", self.ip).bright_blue().bold()
         ));
 
         result

@@ -9,6 +9,8 @@
 
 use std::{collections::HashMap, fmt::Debug};
 
+use colored::Colorize;
+
 use crate::vm::ir::IR;
 
 use super::super::gc::gc::{GCObject, GCRef, GCSystem, GCTraceable};
@@ -2348,14 +2350,16 @@ pub enum VMCoroutineStatus {
     Running,
     Pending,
     Finished,
+    Crashed,
 }
 
 impl VMCoroutineStatus {
     pub fn to_string(&self) -> String {
         match self {
-            VMCoroutineStatus::Running => "Running".to_string(),
-            VMCoroutineStatus::Pending => "Pending".to_string(),
-            VMCoroutineStatus::Finished => "Finished".to_string(),
+            VMCoroutineStatus::Running => "Running".bright_green().bold().to_string(),
+            VMCoroutineStatus::Pending => "Pending".bright_yellow().bold().to_string(),
+            VMCoroutineStatus::Finished => "Finished".bright_yellow().bold().to_string(),
+            VMCoroutineStatus::Crashed => "Crashed".bright_red().bold().to_string(),
         }
     }
 }
