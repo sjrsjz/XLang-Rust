@@ -1213,7 +1213,7 @@ impl IRExecutor {
                     return Err(VMError::ContextError(result.unwrap_err()));
                 }
                 let lambda_obj_wrapper = self_lambda.as_type::<VMVariableWrapper>();
-                let lambda_obj = lambda_obj_wrapper.value_ref.as_type::<VMLambda>();
+                let lambda_obj: &mut VMLambda = lambda_obj_wrapper.value_ref.as_type::<VMLambda>();
                 lambda_obj.set_result(obj_ref.clone());
                 self.push_vmobject(obj_ref.clone_ref())?;
                 obj.drop_ref();

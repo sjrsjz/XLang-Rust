@@ -160,7 +160,7 @@ impl GCRef {
         unsafe {
             let obj = self.reference as *mut dyn GCObject;
             if (*obj).get_traceable().native_gcref_object_count == 0 {
-                panic!("Reference count is already zero!");
+                return; //panic!("Reference count is already zero!");
             }
             (*obj).get_traceable().native_gcref_object_count -= 1;
             if (*obj).get_traceable().native_gcref_object_count == 0 {
@@ -250,7 +250,7 @@ impl GCTraceable {
 
         unsafe {
             if (*obj.reference).get_traceable().ref_count == 0 {
-                panic!("Reference count is already zero!");
+                return; //panic!("Reference count is already zero!");
             }
             (*obj.reference).get_traceable().ref_count -= 1; // 减少被引用对象的引用计数
         }
