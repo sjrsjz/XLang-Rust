@@ -149,7 +149,7 @@ pub fn pop_frame(
     pub fn let_var(
         &mut self,
         name: String,
-        value: GCRef,
+        value: &mut GCRef,
         gc_system: &mut GCSystem,
     ) -> Result<(), ContextError> {
         if let Some((vars, _, _, _)) = self.frames.last_mut() {
@@ -271,7 +271,7 @@ pub fn pop_frame(
                         let obj_value = try_repr_vmobject(obj_ref.clone(), None)
                             .unwrap_or_else(|_| format!("<cannot display>"));
                         
-                        let object_line = format!("• [{}] {}\n", i, obj_value);
+                        let object_line = format!("+ [{}] {}\n", i, obj_value);
                         output.push_str(&object_line.color(value_color).to_string());
                     }
                 }

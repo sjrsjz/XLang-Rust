@@ -166,7 +166,7 @@ pub fn try_repr_vmobject(
         let tuple = value.as_const_type::<VMTuple>();
         let mut repr = String::new();
         if tuple.values.len() == 0 {
-            return Ok("(,)".to_string());
+            return Ok("()".to_string());
         }
         if tuple.values.len() == 1 {
             return Ok(format!(
@@ -194,15 +194,15 @@ pub fn try_repr_vmobject(
     } else if value.isinstance::<VMVariableWrapper>() {
         let wrapper = value.as_const_type::<VMVariableWrapper>();
         return Ok(format!(
-            "wrap({})",
+            "variable({})",
             try_repr_vmobject(wrapper.value_ref.clone(), new_ref_path)?
         ));
     } else if value.isinstance::<VMNativeFunction>() {
-        return Ok(format!("VMNativeFunction()"));
+        return Ok(format!("VMNativeFunction({:?})", value.as_const_type::<VMNativeFunction>().function));
     } else if value.isinstance::<VMWrapper>() {
         let wrapper = value.as_const_type::<VMWrapper>();
         return Ok(format!(
-            "VMWrapper({})",
+            "wrap({})",
             try_repr_vmobject(wrapper.value_ref.clone(), new_ref_path)?
         ));
     } else if value.isinstance::<VMRange>() {
@@ -717,7 +717,7 @@ pub struct VMVariableWrapper {
 }
 
 impl VMVariableWrapper {
-    pub fn new(value: GCRef) -> Self {
+    pub fn new(value:&mut GCRef) -> Self {
         if value.isinstance::<VMVariableWrapper>() {
             panic!("Cannot wrap a variable as a variable");
         }

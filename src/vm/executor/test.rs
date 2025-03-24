@@ -65,11 +65,11 @@ fn test_variable_wrapping_restriction() {
     let mut gc_system = GCSystem::new(None);
     
     // 创建一个变量
-    let int_obj = gc_system.new_object(VMInt::new(42));
-    let var = gc_system.new_object(VMVariableWrapper::new(int_obj));
+    let mut int_obj = gc_system.new_object(VMInt::new(42));
+    let mut var = gc_system.new_object(VMVariableWrapper::new(&mut int_obj));
     
     // 尝试用另一个变量包装这个变量，应该会失败
-    let _double_wrapped = VMVariableWrapper::new(var);
+    let _double_wrapped = VMVariableWrapper::new(&mut var);
 }
 
 

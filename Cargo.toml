@@ -18,7 +18,5 @@ unicode-segmentation = "1.12.0"
 [profile.release]
 # 保留一些调试信息，帮助排查问题
 debug = 1
-# 避免激进优化
-opt-level = 2
-# 启用溢出检查
-overflow-checks = true
+opt-level = 3
+overflow-checks = false

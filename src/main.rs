@@ -98,7 +98,7 @@ fn execute_ir(package: IRPackage, source_code: Option<String>) -> Result<(), VME
     let default_args_tuple = gc_system.new_object(VMTuple::new(vec![]));
     let lambda_instructions = gc_system.new_object(VMInstructions::new(instructions, function_ips));
     let lambda_result = gc_system.new_object(VMNull::new());
-    let main_lambda = gc_system.new_object(VMLambda::new(
+    let mut main_lambda = gc_system.new_object(VMLambda::new(
         0,
         "__main__".to_string(),
         default_args_tuple.clone(),
@@ -110,7 +110,7 @@ fn execute_ir(package: IRPackage, source_code: Option<String>) -> Result<(), VME
     lambda_instructions.drop_ref();
     lambda_result.drop_ref();
 
-    let wrapped = gc_system.new_object(VMVariableWrapper::new(main_lambda.clone()));
+    let wrapped = gc_system.new_object(VMVariableWrapper::new(&mut main_lambda));
     main_lambda.drop_ref();
 
     let _coro_id =
@@ -160,7 +160,7 @@ fn execute_ir_repl(
     let default_args_tuple = gc_system.new_object(VMTuple::new(vec![named.clone()]));
     let lambda_instructions = gc_system.new_object(VMInstructions::new(instructions, function_ips));
     let lambda_result: GCRef = gc_system.new_object(VMNull::new());
-    let main_lambda = gc_system.new_object(VMLambda::new(
+    let mut main_lambda = gc_system.new_object(VMLambda::new(
         0,
         "__main__".to_string(),
         default_args_tuple.clone(),
@@ -175,7 +175,7 @@ fn execute_ir_repl(
     key.drop_ref();
     named.drop_ref();
 
-    let wrapped = gc_system.new_object(VMVariableWrapper::new(main_lambda.clone()));
+    let wrapped = gc_system.new_object(VMVariableWrapper::new(&mut main_lambda));
 
     main_lambda.drop_ref();
     let _coro_id =
