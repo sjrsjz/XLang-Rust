@@ -595,7 +595,7 @@ fn run_repl() -> Result<(), String> {
                             let executed = lambda_ref.as_const_type::<VMVariableWrapper>().value_ref.as_const_type::<VMLambda>();
                             let result_ref = executed.result.clone();
                             let idx = input_arguments.as_type::<VMTuple>().values.len();
-                            match try_repr_vmobject(result_ref.clone(), Some((0, 10))) {
+                            match try_repr_vmobject(result_ref.clone(), None) {
                                 Ok(value) => {
                                     if !result_ref.isinstance::<VMNull>() {
                                         println!(

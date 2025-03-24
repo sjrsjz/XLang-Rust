@@ -894,10 +894,7 @@ impl IRExecutor {
             // println!("# {} {}: {:?}", gc_system.count(), self.ip, instruction); // debug
             // }
             //self.context.debug_print_all_vars();
-            //self.debug_output_stack();
-            // for refs in gc_system.get_all_objects(){
-            //     debug_print_repr(refs.clone());
-            // }
+            self.debug_output_stack();
             spawned_coroutines = self.execute_instruction(instruction, gc_system)?;
 
             //self.debug_output_stack(); // debug
