@@ -189,7 +189,7 @@ pub struct GCTraceable {
 }
 
 impl GCTraceable {
-    pub fn new(references: Option<Vec<GCRef>>) -> GCTraceable {
+    pub fn new(references: Option<Vec<&mut GCRef>>) -> GCTraceable {
         let mut refs_map = HashMap::new();
 
         if let Some(refs) = references {
@@ -342,7 +342,7 @@ impl GCSystem {
 
         // 第一步：标记所有在线对象为活跃
         for i in 0..self.objects.len() {
-            let mut gc_ref = &mut self.objects[i];
+            let gc_ref = &mut self.objects[i];
             if gc_ref.get_traceable().should_free {
                 let obj = gc_ref.get_traceable();
                 panic!(

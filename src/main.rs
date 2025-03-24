@@ -95,16 +95,16 @@ fn execute_ir(package: IRPackage, source_code: Option<String>) -> Result<(), VME
     let mut coroutine_pool = VMCoroutinePool::new(true);
     let mut gc_system = GCSystem::new(None);
 
-    let default_args_tuple = gc_system.new_object(VMTuple::new(vec![]));
-    let lambda_instructions = gc_system.new_object(VMInstructions::new(instructions, function_ips));
-    let lambda_result = gc_system.new_object(VMNull::new());
+    let mut default_args_tuple = gc_system.new_object(VMTuple::new(vec![]));
+    let mut lambda_instructions = gc_system.new_object(VMInstructions::new(instructions, function_ips));
+    let mut lambda_result = gc_system.new_object(VMNull::new());
     let mut main_lambda = gc_system.new_object(VMLambda::new(
         0,
         "__main__".to_string(),
-        default_args_tuple.clone(),
+        &mut default_args_tuple,
         None,
-        lambda_instructions.clone(),
-        lambda_result.clone(),
+        &mut lambda_instructions,
+        &mut lambda_result,
     ));
     default_args_tuple.drop_ref();
     lambda_instructions.drop_ref();
@@ -146,7 +146,7 @@ fn execute_ir_repl(
     package: IRPackage,
     source_code: Option<String>,
     gc_system: &mut GCSystem,
-    input_arguments: GCRef,
+    input_arguments: &mut GCRef,
 ) -> Result<GCRef, VMError> {
     let IRPackage {
         instructions,
@@ -155,18 +155,18 @@ fn execute_ir_repl(
 
     let mut coroutine_pool = VMCoroutinePool::new(false);
 
-    let key = gc_system.new_object(VMString::new("Out".to_string()));
-    let named: GCRef = gc_system.new_object(VMNamed::new(key.clone(), input_arguments.clone()));
-    let default_args_tuple = gc_system.new_object(VMTuple::new(vec![named.clone()]));
-    let lambda_instructions = gc_system.new_object(VMInstructions::new(instructions, function_ips));
-    let lambda_result: GCRef = gc_system.new_object(VMNull::new());
+    let mut key = gc_system.new_object(VMString::new("Out".to_string()));
+    let mut named: GCRef = gc_system.new_object(VMNamed::new(&mut key, input_arguments));
+    let mut default_args_tuple = gc_system.new_object(VMTuple::new(vec![&mut named]));
+    let mut lambda_instructions = gc_system.new_object(VMInstructions::new(instructions, function_ips));
+    let mut lambda_result: GCRef = gc_system.new_object(VMNull::new());
     let mut main_lambda = gc_system.new_object(VMLambda::new(
         0,
         "__main__".to_string(),
-        default_args_tuple.clone(),
+        &mut default_args_tuple,
         None,
-        lambda_instructions.clone(),
-        lambda_result.clone(),
+        &mut lambda_instructions,
+        &mut lambda_result,
     ));
 
     default_args_tuple.drop_ref();
@@ -501,7 +501,7 @@ fn run_repl() -> Result<(), String> {
     }
 
     let mut gc_system = GCSystem::new(None);
-    let input_arguments = gc_system.new_object(VMTuple::new(vec![]));
+    let mut input_arguments = gc_system.new_object(VMTuple::new(vec![]));
     //let _wrapper = gc_system.new_object(VMVariableWrapper::new(input_arguments.clone()));
     //input_arguments.offline();
 
@@ -586,7 +586,7 @@ fn run_repl() -> Result<(), String> {
                         package,
                         Some(input_buffer.to_string()),
                         &mut gc_system,
-                        input_arguments.clone(),
+                        &mut input_arguments,
                     ) {
                         Ok(lambda_ref) => {
                             let executed = lambda_ref.as_const_type::<VMVariableWrapper>().value_ref.as_const_type::<VMLambda>();

@@ -945,20 +945,7 @@ impl IRExecutor {
         return false;
     }
 
-    pub fn offline_if_not_variable(&self, object: &GCRef) {
-        // if !self.is_variable(object) {
-        //     //object.offline();
-        // }
-    }
-
     fn push_vmobject(&mut self, obj: GCRef) -> Result<(), VMError> {
-        // if !obj.is_online() {
-        //     return Err(VMError::VMVariableError(
-        //         VMVariableError::UnstableRef(obj.clone(),
-        //             "Attempted to push an offline object onto the stack".to_string(),
-        //         ),
-        //     ));
-        // }
         self.stack.push(VMStackObject::VMObject(obj.clone()));
         Ok(())
     }
@@ -990,20 +977,20 @@ impl IRExecutor {
                 self.push_vmobject(obj)?;
             }
             IR::LoadLambda(signature, code_position) => {
-                let (default_args_tuple, default_args_tuple_ref) = self.pop_and_ref()?;
+                let (default_args_tuple, default_args_tuple_ref) = &mut self.pop_and_ref()?;
                 if !default_args_tuple_ref.isinstance::<VMTuple>() {
-                    return Err(VMError::ArgumentIsNotTuple(default_args_tuple_ref));
+                    return Err(VMError::ArgumentIsNotTuple(default_args_tuple_ref.clone()));
                 }
 
-                let lambda_result = gc_system.new_object(VMNull::new());
+                let mut lambda_result = gc_system.new_object(VMNull::new());
 
                 let obj = gc_system.new_object(VMLambda::new(
                     *code_position,
                     signature.clone(),
-                    default_args_tuple_ref.clone(),
+                    default_args_tuple_ref,
                     None,
-                    self.lambda_instructions.last().unwrap().clone(),
-                    lambda_result.clone(),
+                    self.lambda_instructions.last_mut().as_mut().unwrap(),
+                    &mut lambda_result,
                 ));
                 self.push_vmobject(obj)?;
                 default_args_tuple.drop_ref();
@@ -1011,13 +998,13 @@ impl IRExecutor {
             }
             IR::BuildTuple(size) => {
                 let mut tuple = Vec::new();
-                let mut tuple_refs: Vec<GCRef> = Vec::new();
+                let mut tuple_refs = Vec::new();
                 for _ in 0..*size {
                     let (obj, obj_ref) = self.pop_and_ref()?;
                     tuple.insert(0, obj);
                     tuple_refs.insert(0, obj_ref);
                 }
-                let obj = gc_system.new_object(VMTuple::new(tuple_refs));
+                let obj = gc_system.new_object(VMTuple::new(tuple_refs.iter_mut().collect()));
                 self.push_vmobject(obj)?;
                 for obj in tuple {
                     obj.drop_ref();
@@ -1025,7 +1012,7 @@ impl IRExecutor {
             }
 
             IR::BindSelf => {
-                let (obj, obj_ref) = self.pop_and_ref()?;
+                let (obj, obj_ref) = &mut self.pop_and_ref()?;
                 if !obj_ref.isinstance::<VMTuple>() {
                     return Err(VMError::VMVariableError(VMVariableError::TypeError(
                         obj_ref.clone(),
@@ -1040,18 +1027,18 @@ impl IRExecutor {
             }
 
             IR::BuildKeyValue => {
-                let (value, value_ref) = self.pop_and_ref()?;
-                let (key, key_ref) = self.pop_and_ref()?;
-                let obj = gc_system.new_object(VMKeyVal::new(key_ref.clone(), value_ref.clone()));
+                let (value, value_ref) = &mut self.pop_and_ref()?;
+                let (key, key_ref) = &mut self.pop_and_ref()?;
+                let obj = gc_system.new_object(VMKeyVal::new(key_ref, value_ref));
                 self.push_vmobject(obj)?;
                 key.drop_ref();
                 value.drop_ref();
             }
 
             IR::BuildNamed => {
-                let (value, value_ref) = self.pop_and_ref()?;
-                let (key, key_ref) = self.pop_and_ref()?;
-                let obj = gc_system.new_object(VMNamed::new(key_ref.clone(), value_ref.clone()));
+                let (value, value_ref) = &mut self.pop_and_ref()?;
+                let (key, key_ref) = &mut self.pop_and_ref()?;
+                let obj = gc_system.new_object(VMNamed::new(key_ref, value_ref));
                 self.push_vmobject(obj)?;
                 key.drop_ref();
                 value.drop_ref();
@@ -1328,7 +1315,7 @@ impl IRExecutor {
 
             IR::IndexOf => {
                 let (index, index_ref) = self.pop_and_ref()?;
-                let (obj, ref_obj) = self.pop_and_ref()?;
+                let (obj, ref_obj) = &mut self.pop_and_ref()?;
                 let result = try_index_of_as_vmobject(ref_obj, index_ref, gc_system)
                     .map_err(|e| VMError::VMVariableError(e))?;
                 self.push_vmobject(result)?; // 不clone是因为已经在try_index_of_as_vmobject产生了新的对象
@@ -1390,10 +1377,10 @@ impl IRExecutor {
             }
 
             IR::DeepCopyValue => {
-                let (obj, ref_obj) = self.pop_and_ref()?;
+                let (obj, ref_obj) = &mut self.pop_and_ref()?;
 
                 let result =
-                    try_deepcopy_as_vmobject(ref_obj.clone(), gc_system).map_err(|_| {
+                    try_deepcopy_as_vmobject(ref_obj, gc_system).map_err(|_| {
                         VMError::VMVariableError(VMVariableError::TypeError(
                             ref_obj.clone(),
                             "Not a copyable object".to_string(),
@@ -1404,9 +1391,9 @@ impl IRExecutor {
                 obj.drop_ref();
             }
             IR::CopyValue => {
-                let (obj, ref_obj) = self.pop_and_ref()?;
+                let (obj, ref_obj) = &mut self.pop_and_ref()?;
 
-                let result = try_copy_as_vmobject(ref_obj.clone(), gc_system).map_err(|_| {
+                let result = try_copy_as_vmobject(ref_obj, gc_system).map_err(|_| {
                     VMError::VMVariableError(VMVariableError::TypeError(
                         ref_obj.clone(),
                         "Not a copyable object".to_string(),
@@ -1511,7 +1498,7 @@ impl IRExecutor {
                 return Ok(Some(spawned_coroutines));
             }
             IR::Wrap => {
-                let (obj, ref_obj) = self.pop_and_ref()?;
+                let (obj, ref_obj) = &mut self.pop_and_ref()?;
                 let wrapped = VMWrapper::new(ref_obj);
                 let wrapped = gc_system.new_object(wrapped);
                 self.push_vmobject(wrapped)?;
@@ -1635,7 +1622,7 @@ impl IRExecutor {
                 let path_ref = path_ref.as_const_type::<VMString>();
 
                 let arg_tuple = path_arg_named_ref.value.clone();
-                let arg_tuple_ref = try_value_ref_as_vmobject(arg_tuple.clone())
+                let mut arg_tuple_ref = try_value_ref_as_vmobject(arg_tuple.clone())
                     .map_err(|_| VMError::UnableToReference(path_arg_named_ref.value.clone()))?;
                 if !arg_tuple_ref.isinstance::<VMTuple>() {
                     return Err(VMError::InvalidArgument(
@@ -1680,32 +1667,29 @@ impl IRExecutor {
                     function_ips,
                 } = ir_package.unwrap();
 
-                let vm_instructions = gc_system.new_object(VMInstructions::new(
+                let mut vm_instructions = gc_system.new_object(VMInstructions::new(
                     instructions.clone(),
                     function_ips.clone(),
                 ));
 
-                let lambda_result = gc_system.new_object(VMNull::new());
+                let mut lambda_result = gc_system.new_object(VMNull::new());
 
                 let lambda = VMLambda::new(
                     *code_position,
                     "__main__".to_string(),
-                    arg_tuple_ref,
+                    &mut arg_tuple_ref, // !!!
                     None,
-                    vm_instructions.clone(),
-                    lambda_result.clone(),
+                    &mut vm_instructions,
+                    &mut lambda_result,
                 );
 
                 let lambda = gc_system.new_object(lambda);
-                //lambda_result.offline();
-
                 self.push_vmobject(lambda)?;
                 path_arg_named.drop_ref();
-                //vm_instructions.offline();
             }
 
             IR::Alias(alias) => {
-                let (obj, ref_obj) = self.pop_and_ref()?;
+                let (obj, ref_obj) = &mut self.pop_and_ref()?;
                 let copied = try_copy_as_vmobject(ref_obj, gc_system)
                     .map_err(|e| VMError::VMVariableError(e))?;
                 let obj_alias =
@@ -1716,7 +1700,7 @@ impl IRExecutor {
             }
 
             IR::WipeAlias => {
-                let (obj, ref_obj) = self.pop_and_ref()?;
+                let (obj, ref_obj) = &mut self.pop_and_ref()?;
                 let copied = try_copy_as_vmobject(ref_obj, gc_system)
                     .map_err(|e| VMError::VMVariableError(e))?;
                 let obj_alias =
@@ -1734,10 +1718,7 @@ impl IRExecutor {
                 for alias in obj_alias.iter() {
                     tuple.push(gc_system.new_object(VMString::new(alias.clone())));
                 }
-                let result = gc_system.new_object(VMTuple::new(tuple));
-                for i in result.as_type::<VMTuple>().values.iter() {
-                    //i.offline();
-                }
+                let result = gc_system.new_object(VMTuple::new(tuple.iter_mut().collect()));
                 self.push_vmobject(result)?;
                 obj.drop_ref();
             }

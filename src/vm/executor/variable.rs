@@ -534,19 +534,19 @@ pub fn try_get_attr_as_vmobject(value: GCRef, attr: GCRef) -> Result<GCRef, VMVa
 }
 
 pub fn try_index_of_as_vmobject(
-    value: GCRef,
+    value: &mut GCRef,
     index: GCRef,
     gc_system: &mut GCSystem,
 ) -> Result<GCRef, VMVariableError> {
     if value.isinstance::<VMTuple>() {
-        let tuple = value.as_const_type::<VMTuple>();
+        let tuple = value.as_type::<VMTuple>();
         return tuple.index_of(index, gc_system);
     }
     if value.isinstance::<VMString>() {
-        let string = value.as_const_type::<VMString>();
+        let string = value.as_type::<VMString>();
         return string.index_of(index, gc_system);
     }
-    Err(VMVariableError::IndexNotFound(index, value))
+    Err(VMVariableError::IndexNotFound(index.clone(), value.clone()))
 }
 
 pub fn try_key_of_as_vmobject(value: GCRef) -> Result<GCRef, VMVariableError> {
@@ -585,14 +585,14 @@ macro_rules! try_deepcopy_as_type {
     ($value:expr, $gc_system:expr; $($t:ty),+) => {
         $(
             if $value.isinstance::<$t>() {
-                return $value.as_const_type::<$t>().deepcopy($gc_system);
+                return $value.as_type::<$t>().deepcopy($gc_system);
             }
         )+
     };
 }
 
 pub fn try_deepcopy_as_vmobject(
-    value: GCRef,
+    value: &mut GCRef,
     gc_system: &mut GCSystem,
 ) -> Result<GCRef, VMVariableError> {
     try_deepcopy_as_type!(value, gc_system; VMInt, VMString, VMFloat, VMBoolean, VMNull, VMKeyVal, VMTuple, VMNamed, VMLambda, VMInstructions, VMVariableWrapper, VMNativeFunction, VMWrapper, VMRange);
@@ -607,14 +607,14 @@ macro_rules! try_copy_as_type {
     ($value:expr, $gc_system:expr; $($t:ty),+) => {
         $(
             if $value.isinstance::<$t>() {
-                return $value.as_const_type::<$t>().copy($gc_system);
+                return $value.as_type::<$t>().copy($gc_system);
             }
         )+
     };
 }
 
 pub fn try_copy_as_vmobject(
-    value: GCRef,
+    value: &mut GCRef,
     gc_system: &mut GCSystem,
 ) -> Result<GCRef, VMVariableError> {
     try_copy_as_type!(value, gc_system; VMInt, VMString, VMFloat, VMBoolean, VMNull, VMKeyVal, VMTuple, VMNamed, VMLambda, VMInstructions, VMVariableWrapper, VMNativeFunction, VMWrapper, VMRange);
@@ -698,8 +698,8 @@ pub fn try_eq_as_vmobject(value: GCRef, other: GCRef) -> bool {
 }
 
 pub trait VMObject {
-    fn deepcopy(&self, gc_system: &mut GCSystem) -> Result<GCRef, VMVariableError>;
-    fn copy(&self, gc_system: &mut GCSystem) -> Result<GCRef, VMVariableError>;
+    fn deepcopy(&mut self, gc_system: &mut GCSystem) -> Result<GCRef, VMVariableError>;
+    fn copy(&mut self, gc_system: &mut GCSystem) -> Result<GCRef, VMVariableError>;
     fn value_ref(&self) -> Result<GCRef, VMVariableError>;
     fn assign(&mut self, value: GCRef) -> Result<GCRef, VMVariableError>;
     fn alias(&mut self) -> &mut Vec<String>;
@@ -724,7 +724,7 @@ impl VMVariableWrapper {
 
         VMVariableWrapper {
             value_ref: value.clone_ref(),
-            traceable: GCTraceable::new(Some(vec![value.clone()])),
+            traceable: GCTraceable::new(Some(vec![value])),
             alias: Vec::new(),
         }
     }
@@ -742,11 +742,11 @@ impl GCObject for VMVariableWrapper {
 }
 
 impl VMObject for VMVariableWrapper {
-    fn deepcopy(&self, gc_system: &mut GCSystem) -> Result<GCRef, VMVariableError> {
-        try_deepcopy_as_vmobject(self.value_ref.clone(), gc_system)
+    fn deepcopy(&mut self, gc_system: &mut GCSystem) -> Result<GCRef, VMVariableError> {
+        try_deepcopy_as_vmobject(&mut self.value_ref, gc_system)
     }
-    fn copy(&self, gc_system: &mut GCSystem) -> Result<GCRef, VMVariableError> {
-        try_copy_as_vmobject(self.value_ref.clone(), gc_system)
+    fn copy(&mut self, gc_system: &mut GCSystem) -> Result<GCRef, VMVariableError> {
+        try_copy_as_vmobject(&mut self.value_ref, gc_system)
     }
 
     fn assign(&mut self, value: GCRef) -> Result<GCRef, VMVariableError> {
@@ -775,10 +775,10 @@ pub struct VMWrapper {
 }
 
 impl VMWrapper {
-    pub fn new(value: GCRef) -> Self {
+    pub fn new(value: &mut GCRef) -> Self {
         VMWrapper {
             value_ref: value.clone_ref(),
-            traceable: GCTraceable::new(Some(vec![value.clone()])),
+            traceable: GCTraceable::new(Some(vec![value])),
             alias: Vec::new(),
         }
     }
@@ -800,11 +800,11 @@ impl GCObject for VMWrapper {
 }
 
 impl VMObject for VMWrapper {
-    fn deepcopy(&self, gc_system: &mut GCSystem) -> Result<GCRef, VMVariableError> {
-        try_deepcopy_as_vmobject(self.value_ref.clone(), gc_system)
+    fn deepcopy(&mut self, gc_system: &mut GCSystem) -> Result<GCRef, VMVariableError> {
+        try_deepcopy_as_vmobject(&mut self.value_ref, gc_system)
     }
-    fn copy(&self, gc_system: &mut GCSystem) -> Result<GCRef, VMVariableError> {
-        try_copy_as_vmobject(self.value_ref.clone(), gc_system)
+    fn copy(&mut self, gc_system: &mut GCSystem) -> Result<GCRef, VMVariableError> {
+        try_copy_as_vmobject(&mut self.value_ref, gc_system)
     }
     fn assign(&mut self, value: GCRef) -> Result<GCRef, VMVariableError> {
         let new_value = value.clone_ref();
@@ -1101,11 +1101,11 @@ impl GCObject for VMInt {
 }
 
 impl VMObject for VMInt {
-    fn deepcopy(&self, gc_system: &mut GCSystem) -> Result<GCRef, VMVariableError> {
+    fn deepcopy(&mut self, gc_system: &mut GCSystem) -> Result<GCRef, VMVariableError> {
         Ok(gc_system.new_object(VMInt::new_with_alias(self.value, &self.alias)))
     }
 
-    fn copy(&self, gc_system: &mut GCSystem) -> Result<GCRef, VMVariableError> {
+    fn copy(&mut self, gc_system: &mut GCSystem) -> Result<GCRef, VMVariableError> {
         Ok(gc_system.new_object(VMInt::new_with_alias(self.value, &self.alias)))
     }
 
@@ -1270,11 +1270,11 @@ impl GCObject for VMString {
 }
 
 impl VMObject for VMString {
-    fn deepcopy(&self, gc_system: &mut GCSystem) -> Result<GCRef, VMVariableError> {
+    fn deepcopy(&mut self, gc_system: &mut GCSystem) -> Result<GCRef, VMVariableError> {
         Ok(gc_system.new_object(VMString::new_with_alias(self.value.clone(), &self.alias)))
     }
 
-    fn copy(&self, gc_system: &mut GCSystem) -> Result<GCRef, VMVariableError> {
+    fn copy(&mut self, gc_system: &mut GCSystem) -> Result<GCRef, VMVariableError> {
         Ok(gc_system.new_object(VMString::new_with_alias(self.value.clone(), &self.alias)))
     }
 
@@ -1482,11 +1482,11 @@ impl GCObject for VMFloat {
 }
 
 impl VMObject for VMFloat {
-    fn deepcopy(&self, gc_system: &mut GCSystem) -> Result<GCRef, VMVariableError> {
+    fn deepcopy(&mut self, gc_system: &mut GCSystem) -> Result<GCRef, VMVariableError> {
         Ok(gc_system.new_object(VMFloat::new_with_alias(self.value, &self.alias)))
     }
 
-    fn copy(&self, gc_system: &mut GCSystem) -> Result<GCRef, VMVariableError> {
+    fn copy(&mut self, gc_system: &mut GCSystem) -> Result<GCRef, VMVariableError> {
         Ok(gc_system.new_object(VMFloat::new_with_alias(self.value, &self.alias)))
     }
 
@@ -1603,11 +1603,11 @@ impl GCObject for VMBoolean {
 }
 
 impl VMObject for VMBoolean {
-    fn deepcopy(&self, gc_system: &mut GCSystem) -> Result<GCRef, VMVariableError> {
+    fn deepcopy(&mut self, gc_system: &mut GCSystem) -> Result<GCRef, VMVariableError> {
         Ok(gc_system.new_object(VMBoolean::new_with_alias(self.value, &self.alias)))
     }
 
-    fn copy(&self, gc_system: &mut GCSystem) -> Result<GCRef, VMVariableError> {
+    fn copy(&mut self, gc_system: &mut GCSystem) -> Result<GCRef, VMVariableError> {
         Ok(gc_system.new_object(VMBoolean::new_with_alias(self.value, &self.alias)))
     }
 
@@ -1676,11 +1676,11 @@ impl GCObject for VMNull {
 }
 
 impl VMObject for VMNull {
-    fn deepcopy(&self, gc_system: &mut GCSystem) -> Result<GCRef, VMVariableError> {
+    fn deepcopy(&mut self, gc_system: &mut GCSystem) -> Result<GCRef, VMVariableError> {
         Ok(gc_system.new_object(VMNull::new_with_alias(&self.alias)))
     }
 
-    fn copy(&self, gc_system: &mut GCSystem) -> Result<GCRef, VMVariableError> {
+    fn copy(&mut self, gc_system: &mut GCSystem) -> Result<GCRef, VMVariableError> {
         Ok(gc_system.new_object(VMNull::new_with_alias(&self.alias)))
     }
 
@@ -1718,7 +1718,7 @@ pub struct VMKeyVal {
 }
 
 impl VMKeyVal {
-    pub fn new(key: GCRef, value: GCRef) -> Self {
+    pub fn new(key: &mut GCRef, value: &mut GCRef) -> Self {
         VMKeyVal {
             key: key.clone_ref(),
             value: value.clone_ref(),
@@ -1727,7 +1727,7 @@ impl VMKeyVal {
         }
     }
 
-    pub fn new_with_alias(key: GCRef, value: GCRef, alias: &Vec<String>) -> Self {
+    pub fn new_with_alias(key: &mut GCRef, value: &mut GCRef, alias: &Vec<String>) -> Self {
         VMKeyVal {
             key: key.clone_ref(),
             value: value.clone_ref(),
@@ -1774,16 +1774,16 @@ impl GCObject for VMKeyVal {
 }
 
 impl VMObject for VMKeyVal {
-    fn deepcopy(&self, gc_system: &mut GCSystem) -> Result<GCRef, VMVariableError> {
-        let new_key = try_deepcopy_as_vmobject(self.key.clone(), gc_system)?;
-        let new_value = try_deepcopy_as_vmobject(self.value.clone(), gc_system)?;
-        Ok(gc_system.new_object(VMKeyVal::new_with_alias(new_key, new_value, &self.alias)))
+    fn deepcopy(&mut self, gc_system: &mut GCSystem) -> Result<GCRef, VMVariableError> {
+        let mut new_key = try_deepcopy_as_vmobject(&mut self.key, gc_system)?;
+        let mut new_value = try_deepcopy_as_vmobject(&mut self.value, gc_system)?;
+        Ok(gc_system.new_object(VMKeyVal::new_with_alias(&mut new_key, &mut new_value, &self.alias)))
     }
 
-    fn copy(&self, gc_system: &mut GCSystem) -> Result<GCRef, VMVariableError> {
+    fn copy(&mut self, gc_system: &mut GCSystem) -> Result<GCRef, VMVariableError> {
         Ok(gc_system.new_object(VMKeyVal::new_with_alias(
-            self.key.clone(),
-            self.value.clone(),
+            &mut self.key,
+            &mut self.value,
             &self.alias,
         )))
     }
@@ -1819,7 +1819,7 @@ pub struct VMNamed {
 }
 
 impl VMNamed {
-    pub fn new(key: GCRef, value: GCRef) -> Self {
+    pub fn new(key: &mut GCRef, value: &mut GCRef) -> Self {
         VMNamed {
             key: key.clone_ref(),
             value: value.clone_ref(),
@@ -1828,7 +1828,7 @@ impl VMNamed {
         }
     }
 
-    pub fn new_with_alias(key: GCRef, value: GCRef, alias: &Vec<String>) -> Self {
+    pub fn new_with_alias(key: &mut GCRef, value: &mut GCRef, alias: &Vec<String>) -> Self {
         VMNamed {
             key: key.clone_ref(),
             value: value.clone_ref(),
@@ -1875,16 +1875,16 @@ impl GCObject for VMNamed {
 }
 
 impl VMObject for VMNamed {
-    fn deepcopy(&self, gc_system: &mut GCSystem) -> Result<GCRef, VMVariableError> {
-        let new_key = try_deepcopy_as_vmobject(self.key.clone(), gc_system)?;
-        let new_value = try_deepcopy_as_vmobject(self.value.clone(), gc_system)?;
-        Ok(gc_system.new_object(VMNamed::new_with_alias(new_key, new_value, &self.alias)))
+    fn deepcopy(&mut self, gc_system: &mut GCSystem) -> Result<GCRef, VMVariableError> {
+        let mut new_key = try_deepcopy_as_vmobject(&mut self.key, gc_system)?;
+        let mut new_value = try_deepcopy_as_vmobject(&mut self.value, gc_system)?;
+        Ok(gc_system.new_object(VMNamed::new_with_alias(&mut new_key, &mut new_value, &self.alias)))
     }
 
-    fn copy(&self, gc_system: &mut GCSystem) -> Result<GCRef, VMVariableError> {
+    fn copy(&mut self, gc_system: &mut GCSystem) -> Result<GCRef, VMVariableError> {
         Ok(gc_system.new_object(VMNamed::new_with_alias(
-            self.key.clone(),
-            self.value.clone(),
+            &mut self.key,
+            &mut self.value,
             &self.alias,
         )))
     }
@@ -1920,29 +1920,29 @@ pub struct VMTuple {
 }
 
 impl VMTuple {
-    pub fn new(values: Vec<GCRef>) -> Self {
+    pub fn new(values: Vec<&mut GCRef>) -> Self {
         let mut cloned_refs = Vec::new();
         for value in &values {
             cloned_refs.push(value.clone_ref());
         }
         // 创建对象并设置引用跟踪
         VMTuple {
-            values: cloned_refs.clone(),
-            traceable: GCTraceable::new(Some(cloned_refs)),
+            values: cloned_refs,
+            traceable: GCTraceable::new(Some(values)),
             alias: Vec::new(),
             auto_bind: false,
         }
     }
 
-    pub fn new_with_alias(values: Vec<GCRef>, alias: &Vec<String>) -> Self {
+    pub fn new_with_alias(values: Vec<&mut GCRef>, alias: &Vec<String>) -> Self {
         // 创建对象并设置引用跟踪
         let mut cloned_refs = Vec::new();
         for value in &values {
             cloned_refs.push(value.clone_ref());
         }
         VMTuple {
-            values: cloned_refs.clone(),
-            traceable: GCTraceable::new(Some(cloned_refs)),
+            values: cloned_refs,
+            traceable: GCTraceable::new(Some(values)),
             alias: alias.clone(),
             auto_bind: false,
         }
@@ -2004,7 +2004,7 @@ impl VMTuple {
     }
 
     pub fn index_of(
-        &self,
+        &mut self,
         index: GCRef,
         gc_system: &mut GCSystem,
     ) -> Result<GCRef, VMVariableError> {
@@ -2019,11 +2019,26 @@ impl VMTuple {
                     "Index out of bounds".to_string(),
                 ));
             }
-            let mut result = Vec::new();
-            for i in start..end {
-                result.push(self.values[i as usize].clone());
+            
+            // Collect references first to avoid multiple mutable borrows
+            let mut slice_refs: Vec<GCRef> = self.values[start as usize..end as usize]
+                .iter()
+                .map(|r| r.clone_ref())
+                .collect();
+                
+            let refs_as_mut: Vec<&mut GCRef> = slice_refs
+                .iter_mut()
+                .map(|r| r)
+                .collect();
+                
+            let result = gc_system.new_object(VMTuple::new_with_alias(refs_as_mut, &self.alias));
+            
+            // Drop the temporary references
+            for r in slice_refs {
+                r.drop_ref();
             }
-            return Ok(gc_system.new_object(VMTuple::new_with_alias(result, &self.alias)));
+            
+            return Ok(result);
         } else if index.isinstance::<VMInt>() {
             let idx = index.as_const_type::<VMInt>().value;
             if idx < 0 {
@@ -2135,7 +2150,15 @@ impl VMTuple {
             let other_tuple = other.as_const_type::<VMTuple>();
             let mut new_values = self.values.clone();
             new_values.extend(other_tuple.values.clone());
-            let new_tuple = gc_system.new_object(VMTuple::new(new_values));
+            
+            // Convert Vec<GCRef> to Vec<&mut GCRef>
+            let refs_as_mut: Vec<&mut GCRef> = new_values
+                .iter_mut()
+                .map(|r| r)
+                .collect();
+                
+            let new_tuple = gc_system.new_object(VMTuple::new(refs_as_mut));
+            
             return Ok(new_tuple);
         }
         Err(VMVariableError::ValueError2Param(
@@ -2191,15 +2214,18 @@ impl GCObject for VMTuple {
 }
 
 impl VMObject for VMTuple {
-    fn deepcopy(&self, gc_system: &mut GCSystem) -> Result<GCRef, VMVariableError> {
+    fn deepcopy(&mut self, gc_system: &mut GCSystem) -> Result<GCRef, VMVariableError> {
         // 深拷贝元组中的每个元素
         let mut new_values = Vec::with_capacity(self.values.len());
-        for value in &self.values {
-            let copied_value = try_deepcopy_as_vmobject(value.clone(), gc_system)?;
+        for value in &mut self.values {
+            let copied_value = try_deepcopy_as_vmobject(value, gc_system)?;
             new_values.push(copied_value);
         }
+        // 将 Vec<GCRef> 转换为 Vec<&mut GCRef>
+        let refs_as_mut: Vec<&mut GCRef> = new_values.iter_mut().collect();
+        
         // 创建新的元组对象
-        let new_tuple = gc_system.new_object(VMTuple::new_with_alias(new_values.clone(), &self.alias));
+        let new_tuple = gc_system.new_object(VMTuple::new_with_alias(refs_as_mut, &self.alias));
         for v in new_values {
             v.drop_ref();
         }
@@ -2209,10 +2235,11 @@ impl VMObject for VMTuple {
         Ok(new_tuple)
     }
 
-    fn copy(&self, gc_system: &mut GCSystem) -> Result<GCRef, VMVariableError> {
+    fn copy(&mut self, gc_system: &mut GCSystem) -> Result<GCRef, VMVariableError> {
         // 浅拷贝元组中的每个元素
+        let mut_refs = self.values.iter_mut().collect();
         let new_tuple =
-            gc_system.new_object(VMTuple::new_with_alias(self.values.clone(), &self.alias));
+            gc_system.new_object(VMTuple::new_with_alias(mut_refs, &self.alias));
         if self.auto_bind {
             new_tuple.as_type::<VMTuple>().set_lambda_self();
         }
@@ -2308,7 +2335,7 @@ impl GCObject for VMInstructions {
     }
 }
 impl VMObject for VMInstructions {
-    fn deepcopy(&self, gc_system: &mut GCSystem) -> Result<GCRef, VMVariableError> {
+    fn deepcopy(&mut self, gc_system: &mut GCSystem) -> Result<GCRef, VMVariableError> {
         Ok(gc_system.new_object(VMInstructions::new_with_alias(
             self.instructions.clone(),
             self.func_ips.clone(),
@@ -2316,7 +2343,7 @@ impl VMObject for VMInstructions {
         )))
     }
 
-    fn copy(&self, gc_system: &mut GCSystem) -> Result<GCRef, VMVariableError> {
+    fn copy(&mut self, gc_system: &mut GCSystem) -> Result<GCRef, VMVariableError> {
         Ok(gc_system.new_object(VMInstructions::new_with_alias(
             self.instructions.clone(),
             self.func_ips.clone(),
@@ -2381,10 +2408,10 @@ impl VMLambda {
     pub fn new(
         code_position: usize,
         signature: String,
-        default_args_tuple: GCRef,
-        self_object: Option<GCRef>,
-        lambda_instructions: GCRef,
-        result: GCRef,
+        default_args_tuple: &mut GCRef,
+        self_object: Option<&mut GCRef>,
+        lambda_instructions: &mut GCRef,
+        result: &mut GCRef,
     ) -> Self {
         if !lambda_instructions.isinstance::<VMInstructions>() {
             panic!("lambda_instructions must be a VMInstructions");
@@ -2406,10 +2433,10 @@ impl VMLambda {
                     default_args_tuple,
                     lambda_instructions,
                     self_object.unwrap(),
-                    result.clone(),
+                    result,
                 ]
             } else {
-                vec![default_args_tuple, lambda_instructions, result.clone()]
+                vec![default_args_tuple, lambda_instructions, result]
             })),
             result: result.clone_ref(),
             coroutine_status: VMCoroutineStatus::Running,
@@ -2420,10 +2447,10 @@ impl VMLambda {
     pub fn new_with_alias(
         code_position: usize,
         signature: String,
-        default_args_tuple: GCRef,
-        self_object: Option<GCRef>,
-        lambda_instructions: GCRef,
-        result: GCRef,
+        default_args_tuple: &mut GCRef,
+        self_object: Option<&mut GCRef>,
+        lambda_instructions: &mut GCRef,
+        result: &mut GCRef,
         alias: &Vec<String>,
     ) -> Self {
         if !lambda_instructions.isinstance::<VMInstructions>() {
@@ -2446,10 +2473,10 @@ impl VMLambda {
                     default_args_tuple,
                     lambda_instructions,
                     self_object.unwrap(),
-                    result.clone(),
+                    result,
                 ]
             } else {
-                vec![default_args_tuple, lambda_instructions, result.clone()]
+                vec![default_args_tuple, lambda_instructions, result]
             })),
             result: result.clone_ref(),
             coroutine_status: VMCoroutineStatus::Running,
@@ -2508,44 +2535,44 @@ impl GCObject for VMLambda {
 }
 
 impl VMObject for VMLambda {
-    fn deepcopy(&self, gc_system: &mut GCSystem) -> Result<GCRef, VMVariableError> {
-        let new_default_args_tuple = self
+    fn deepcopy(&mut self, gc_system: &mut GCSystem) -> Result<GCRef, VMVariableError> {
+        let mut new_default_args_tuple = self
             .default_args_tuple
-            .as_const_type::<VMTuple>()
+            .as_type::<VMTuple>()
             .deepcopy(gc_system)?;
 
-        let new_result = self.result.as_const_type::<VMNull>().deepcopy(gc_system)?;
-        let new_lambda_instructions = self
+        let mut new_result = self.result.as_type::<VMNull>().deepcopy(gc_system)?;
+        let mut new_lambda_instructions = self
             .lambda_instructions
-            .as_const_type::<VMInstructions>()
+            .as_type::<VMInstructions>()
             .deepcopy(gc_system)?;
 
         Ok(gc_system.new_object(VMLambda::new_with_alias(
             self.code_position,
             self.signature.clone(),
-            new_default_args_tuple,
-            self.self_object.clone(),
-            new_lambda_instructions,
-            new_result,
+            &mut new_default_args_tuple,
+            self.self_object.as_mut(),
+            &mut new_lambda_instructions,
+            &mut new_result,
             &self.alias,
         )))
     }
 
-    fn copy(&self, gc_system: &mut GCSystem) -> Result<GCRef, VMVariableError> {
-        let new_default_args_tuple = self
+    fn copy(&mut self, gc_system: &mut GCSystem) -> Result<GCRef, VMVariableError> {
+        let mut new_default_args_tuple = self
             .default_args_tuple
-            .as_const_type::<VMTuple>()
+            .as_type::<VMTuple>()
             .copy(gc_system)?;
 
-        let new_result = self.result.as_const_type::<VMNull>().copy(gc_system)?;
+        let mut new_result = self.result.as_type::<VMNull>().copy(gc_system)?;
 
         Ok(gc_system.new_object(VMLambda::new_with_alias(
             self.code_position,
             self.signature.clone(),
-            new_default_args_tuple,
-            self.self_object.clone(),
-            self.lambda_instructions.clone(),
-            new_result,
+            &mut new_default_args_tuple,
+            self.self_object.as_mut(),
+            &mut self.lambda_instructions,
+            &mut new_result,
             &self.alias,
         )))
     }
@@ -2651,11 +2678,11 @@ impl GCObject for VMNativeFunction {
 }
 
 impl VMObject for VMNativeFunction {
-    fn deepcopy(&self, gc_system: &mut GCSystem) -> Result<GCRef, VMVariableError> {
+    fn deepcopy(&mut self, gc_system: &mut GCSystem) -> Result<GCRef, VMVariableError> {
         Ok(gc_system.new_object(VMNativeFunction::new_with_alias(self.function, &self.alias)))
     }
 
-    fn copy(&self, gc_system: &mut GCSystem) -> Result<GCRef, VMVariableError> {
+    fn copy(&mut self, gc_system: &mut GCSystem) -> Result<GCRef, VMVariableError> {
         Ok(gc_system.new_object(VMNativeFunction::new_with_alias(self.function, &self.alias)))
     }
 
@@ -2773,11 +2800,11 @@ impl GCObject for VMRange {
 }
 
 impl VMObject for VMRange {
-    fn deepcopy(&self, gc_system: &mut GCSystem) -> Result<GCRef, VMVariableError> {
+    fn deepcopy(&mut self, gc_system: &mut GCSystem) -> Result<GCRef, VMVariableError> {
         Ok(gc_system.new_object(VMRange::new_with_alias(self.start, self.end, &self.alias)))
     }
 
-    fn copy(&self, gc_system: &mut GCSystem) -> Result<GCRef, VMVariableError> {
+    fn copy(&mut self, gc_system: &mut GCSystem) -> Result<GCRef, VMVariableError> {
         Ok(gc_system.new_object(VMRange::new_with_alias(self.start, self.end, &self.alias)))
     }
 
