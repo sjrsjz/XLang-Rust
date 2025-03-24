@@ -137,10 +137,8 @@ fn execute_ir(package: IRPackage, source_code: Option<String>) -> Result<(), VME
             }
         }
     }
-    wrapped.drop_ref();
-    
     gc_system.collect();
-
+    wrapped.drop_ref();
     Ok(())
 }
 

@@ -2194,11 +2194,13 @@ impl VMObject for VMTuple {
         let mut new_values = Vec::with_capacity(self.values.len());
         for value in &self.values {
             let copied_value = try_deepcopy_as_vmobject(value.clone(), gc_system)?;
-            //copied_value.offline();
             new_values.push(copied_value);
         }
         // 创建新的元组对象
-        let new_tuple = gc_system.new_object(VMTuple::new_with_alias(new_values, &self.alias));
+        let new_tuple = gc_system.new_object(VMTuple::new_with_alias(new_values.clone(), &self.alias));
+        for v in new_values {
+            v.drop_ref();
+        }
         if self.auto_bind {
             new_tuple.as_type::<VMTuple>().set_lambda_self();
         }
@@ -2226,20 +2228,18 @@ impl VMObject for VMTuple {
             for val in &new_values {
                 cloned_values.push(val.clone_ref());
             }
+            // 添加对新元素的引用
+            for val in &cloned_values {
+                self.traceable.add_reference(&mut val.clone());
+            }
 
             // 现在移除对当前所有元素的引用
             for val in &self.values {
                 self.traceable.remove_reference(val);
                 val.drop_ref();
             }
-
             // 设置新的元素集合
             self.values = cloned_values;
-
-            // 添加对新元素的引用
-            for val in &self.values {
-                self.traceable.add_reference(&mut val.clone());
-            }
 
             Ok(GCRef::wrap(self))
         } else {
@@ -2568,14 +2568,14 @@ impl VMObject for VMLambda {
         // 移除旧引用
         self.get_traceable()
             .remove_reference(&old_default_args_tuple);
-        self.default_args_tuple.drop_ref();
+        old_default_args_tuple.drop_ref();
 
         self.get_traceable()
             .remove_reference(&old_lambda_instructions);
-        self.lambda_instructions.drop_ref();
+        old_lambda_instructions.drop_ref();
 
         self.get_traceable().remove_reference(&old_result);
-        self.result.drop_ref();
+        old_result.drop_ref();
 
         // 设置新引用
         self.default_args_tuple = new_default_args_tuple.clone();
