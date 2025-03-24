@@ -891,10 +891,9 @@ impl IRExecutor {
 
             //gc_system.collect(); // debug
             // if let IR::DebugInfo(_) = instruction {} else{
-            // println!("# {} {}: {:?}", gc_system.count(), self.ip, instruction); // debug
             // }
             //self.context.debug_print_all_vars();
-            self.debug_output_stack();
+            //self.debug_output_stack();
             spawned_coroutines = self.execute_instruction(instruction, gc_system)?;
 
             //self.debug_output_stack(); // debug

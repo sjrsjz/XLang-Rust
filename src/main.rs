@@ -86,7 +86,7 @@ fn build_code(code: &str) -> Result<IRPackage, String> {
 }
 
 // Execute compiled code
-fn execute_ir(package: IRPackage, source_code: Option<String>) -> Result<GCRef, VMError> {
+fn execute_ir(package: IRPackage, source_code: Option<String>) -> Result<(), VMError> {
     let IRPackage {
         instructions,
         function_ips,
@@ -141,7 +141,7 @@ fn execute_ir(package: IRPackage, source_code: Option<String>) -> Result<GCRef, 
 
     gc_system.collect();
 
-    Ok(result)
+    Ok(())
 }
 
 fn execute_ir_repl(
@@ -196,8 +196,7 @@ fn run_file(path: &PathBuf) -> Result<(), String> {
         // Execute IR file
         match IRPackage::read_from_file(path.to_str().unwrap()) {
             Ok(package) => match execute_ir(package, None) {
-                Ok(result) => {
-                    result.drop_ref();
+                Ok(_) => {
                     Ok(())
                 }
                 Err(e) => Err(format!("Execution error: {}", e.to_string()).bright_red().to_string()),
