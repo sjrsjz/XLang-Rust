@@ -111,6 +111,7 @@ fn execute_ir(package: IRPackage, source_code: Option<String>) -> Result<(), VME
     lambda_result.drop_ref();
 
     let mut wrapped = gc_system.new_object(VMVariableWrapper::new(&mut main_lambda));
+    wrapped.clone_ref();
     main_lambda.drop_ref();
 
     let _coro_id =

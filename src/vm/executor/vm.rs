@@ -296,8 +296,8 @@ mod native_functions {
 
     use crate::vm::{
         executor::variable::{
-            try_repr_vmobject, try_value_ref_as_vmobject, VMBoolean, VMFloat, VMInt, VMNull,
-            VMString, VMTuple, VMVariableError,
+            try_repr_vmobject, try_value_ref_as_vmobject, VMBoolean, VMBytes, VMFloat, VMInt,
+            VMNull, VMString, VMTuple, VMVariableError,
         },
         gc::gc::{GCRef, GCSystem},
     };
@@ -343,6 +343,10 @@ mod native_functions {
         } else if tuple_obj.values[0].isinstance::<VMString>() {
             let inner_string = tuple_obj.values[0].as_type::<VMString>();
             let obj = gc_system.new_object(VMInt::new(inner_string.value.len() as i64));
+            return Ok(obj);
+        } else if tuple_obj.values[0].isinstance::<VMBytes>() {
+            let inner_bytes = tuple_obj.values[0].as_type::<VMBytes>();
+            let obj = gc_system.new_object(VMInt::new(inner_bytes.value.len() as i64));
             return Ok(obj);
         } else {
             return Err(VMVariableError::TypeError(
@@ -448,6 +452,10 @@ mod native_functions {
             let data = tuple_obj.values[0].as_type::<VMBoolean>().to_string()?;
             return Ok(gc_system.new_object(VMString::new(data)));
         }
+        if tuple_obj.values[0].isinstance::<VMBytes>() {
+            let data = tuple_obj.values[0].as_type::<VMBytes>().to_string()?;
+            return Ok(gc_system.new_object(VMString::new(data)));
+        }
         Err(VMVariableError::TypeError(
             tuple.clone(),
             "to_string function's input should be a string".to_string(),
@@ -485,6 +493,66 @@ mod native_functions {
         Err(VMVariableError::TypeError(
             tuple.clone(),
             "to_bool function's input should be a bool".to_string(),
+        ))
+    }
+    pub fn to_bytes(tuple: GCRef, gc_system: &mut GCSystem) -> Result<GCRef, VMVariableError> {
+        check_if_tuple(tuple.clone())?;
+        let tuple_obj = tuple.as_type::<VMTuple>();
+        if tuple_obj.values.len() != 1 {
+            return Err(VMVariableError::TypeError(
+                tuple.clone(),
+                "to_bytes function's input should be one element".to_string(),
+            ));
+        }
+        if tuple_obj.values[0].isinstance::<VMBytes>() {
+            return Ok(gc_system.new_object(VMBytes::new(
+                tuple_obj.values[0].as_type::<VMBytes>().value.clone(),
+            )));
+        } else if tuple_obj.values[0].isinstance::<VMString>() {
+            // 将字符串转换为字节序列
+            let string_value = tuple_obj.values[0].as_type::<VMString>().value.clone();
+            return Ok(gc_system.new_object(VMBytes::new(string_value.as_bytes().to_vec())));
+        } else if tuple_obj.values[0].isinstance::<VMInt>() {
+            // 支持单字节的整数转字节
+            let int_value = tuple_obj.values[0].as_type::<VMInt>().value;
+            if int_value < 0 || int_value > 255 {
+                return Err(VMVariableError::ValueError(
+                    tuple_obj.values[0].clone(),
+                    "Integer values for bytes conversion must be between 0 and 255".to_string(),
+                ));
+            }
+            return Ok(gc_system.new_object(VMBytes::new(vec![int_value as u8])));
+        } else if tuple_obj.values[0].isinstance::<VMTuple>() {
+            // 支持整数元组转字节序列
+            let inner_tuple = tuple_obj.values[0].as_type::<VMTuple>();
+            let mut byte_vec = Vec::with_capacity(inner_tuple.values.len());
+
+            for value in &inner_tuple.values {
+                if !value.isinstance::<VMInt>() {
+                    return Err(VMVariableError::ValueError(
+                        value.clone(),
+                        "All elements in tuple must be integers for bytes conversion".to_string(),
+                    ));
+                }
+
+                let int_value = value.as_const_type::<VMInt>().value;
+                if int_value < 0 || int_value > 255 {
+                    return Err(VMVariableError::ValueError(
+                        value.clone(),
+                        "Integer values for bytes conversion must be between 0 and 255".to_string(),
+                    ));
+                }
+
+                byte_vec.push(int_value as u8);
+            }
+
+            return Ok(gc_system.new_object(VMBytes::new(byte_vec)));
+        }
+
+        Err(VMVariableError::TypeError(
+            tuple.clone(),
+            "to_bytes function's input should be a bytes, string, integer, or tuple of integers"
+                .to_string(),
         ))
     }
 
@@ -662,7 +730,10 @@ impl IRExecutor {
         result.push_str(&format!(
             "{} {} {}\n",
             "Current instruction:".bright_blue().bold(),
-            format!("{:?}", instruction).bright_cyan().bold().underline(),
+            format!("{:?}", instruction)
+                .bright_cyan()
+                .bold()
+                .underline(),
             format!("(IP: {})", self.ip).bright_blue().bold()
         ));
 
@@ -700,6 +771,10 @@ impl IRExecutor {
         built_in_functions.insert(
             "string".to_string(),
             gc_system.new_object(VMNativeFunction::new(native_functions::to_string)),
+        );
+        built_in_functions.insert(
+            "bytes".to_string(),
+            gc_system.new_object(VMNativeFunction::new(native_functions::to_bytes)),
         );
         built_in_functions.insert(
             "bool".to_string(),
@@ -775,7 +850,6 @@ impl IRExecutor {
                 .push(lambda.lambda_instructions.clone_ref());
         }
 
-
         self.stack.push(VMStackObject::LastIP(
             lambda_wrapper,
             self.ip as usize,
@@ -844,7 +918,11 @@ impl IRExecutor {
         return Ok(());
     }
 
-    pub fn init(&mut self, lambda_object: &mut GCRef, gc_system: &mut GCSystem) -> Result<(), VMError> {
+    pub fn init(
+        &mut self,
+        lambda_object: &mut GCRef,
+        gc_system: &mut GCSystem,
+    ) -> Result<(), VMError> {
         self.enter_lambda(lambda_object, gc_system)?;
 
         self.ip = self
@@ -909,7 +987,7 @@ impl IRExecutor {
 
             //gc_system.collect(); // debug
             //println!("GC Count: {}", gc_system.count()); // debug
-                                                         //gc_system.print_reference_graph(); // debug
+            //gc_system.print_reference_graph(); // debug
             self.ip += 1;
         } else if *coroutine_status != VMCoroutineStatus::Finished {
             let (result, result_ref) = &mut self.pop_and_ref()?;
@@ -971,6 +1049,10 @@ impl IRExecutor {
                 let obj = gc_system.new_object(VMNull::new());
                 self.push_vmobject(obj)?;
             }
+            IR::LoadBytes(value) => {
+                let obj = gc_system.new_object(VMBytes::new(value.clone()));
+                self.push_vmobject(obj)?;
+            }
             IR::LoadLambda(signature, code_position) => {
                 let (default_args_tuple, default_args_tuple_ref) = &mut self.pop_and_ref()?;
                 if !default_args_tuple_ref.isinstance::<VMTuple>() {
@@ -984,7 +1066,7 @@ impl IRExecutor {
                     signature.clone(),
                     default_args_tuple_ref,
                     None,
-                    self.lambda_instructions.last_mut().as_mut().unwrap(),
+                    self.lambda_instructions.last_mut().unwrap(),
                     &mut lambda_result,
                 ));
                 self.push_vmobject(obj)?;
@@ -1195,14 +1277,11 @@ impl IRExecutor {
                 }
                 let (obj, obj_ref) = &mut self.pop_and_ref()?;
                 let ip_info = self.stack.pop().unwrap();
-                let VMStackObject::LastIP(mut self_lambda, ip, use_new_instructions) = ip_info else {
+                let VMStackObject::LastIP(mut self_lambda, ip, use_new_instructions) = ip_info
+                else {
                     return Err(VMError::EmptyStack);
                 };
                 self.ip = ip as isize;
-                if use_new_instructions {
-                    let poped = self.lambda_instructions.pop();
-                    poped.unwrap().drop_ref();
-                }
                 let result = self.context.pop_frame(&mut self.stack, true);
                 if result.is_err() {
                     return Err(VMError::ContextError(result.unwrap_err()));
@@ -1213,6 +1292,10 @@ impl IRExecutor {
                 self.push_vmobject(obj_ref.clone_ref())?;
                 obj.drop_ref();
                 self_lambda.drop_ref();
+                if use_new_instructions {
+                    let poped = self.lambda_instructions.pop();
+                    poped.unwrap().drop_ref();
+                }
             }
             IR::Yield => {
                 if self.stack.len() < *self.context.stack_pointers.last().unwrap() {
@@ -1360,8 +1443,8 @@ impl IRExecutor {
                         if self_obj_ref.is_err() {
                             return Err(VMError::UnableToReference(self_obj));
                         }
-                        let self_obj_ref = self_obj_ref.unwrap();
-                        self.push_vmobject(self_obj_ref)?;
+                        let mut self_obj_ref = self_obj_ref.unwrap();
+                        self.push_vmobject(self_obj_ref.clone_ref())?;
                     }
                     None => {
                         self.stack
@@ -1374,13 +1457,12 @@ impl IRExecutor {
             IR::DeepCopyValue => {
                 let (obj, ref_obj) = &mut self.pop_and_ref()?;
 
-                let result =
-                    try_deepcopy_as_vmobject(ref_obj, gc_system).map_err(|_| {
-                        VMError::VMVariableError(VMVariableError::TypeError(
-                            ref_obj.clone(),
-                            "Not a copyable object".to_string(),
-                        ))
-                    })?;
+                let result = try_deepcopy_as_vmobject(ref_obj, gc_system).map_err(|_| {
+                    VMError::VMVariableError(VMVariableError::TypeError(
+                        ref_obj.clone(),
+                        "Not a copyable object".to_string(),
+                    ))
+                })?;
                 self.push_vmobject(result)?;
 
                 obj.drop_ref();

@@ -259,7 +259,7 @@ impl GCTraceable {
 
         unsafe {
             if (*obj.reference).get_traceable().ref_count == 0 {
-                panic!("Reference count is already zero!");
+                return; //panic!("Reference count is already zero! {}", obj);
             }
             (*obj.reference).get_traceable().ref_count -= 1; // 减少被引用对象的引用计数
         }

@@ -1,3 +1,5 @@
+use base64::{self, Engine};
+use colored::Colorize;
 /**
  * 约定：
  * - vmobject：虚拟机对象
@@ -6,8 +8,6 @@
  *
  */
 use std::{collections::HashMap, fmt::Debug};
-
-use colored::Colorize;
 
 use crate::vm::ir::IR;
 
@@ -209,8 +209,16 @@ pub fn try_repr_vmobject(
     } else if value.isinstance::<VMRange>() {
         let range = value.as_const_type::<VMRange>();
         return Ok(format!("{}..{}", range.start, range.end));
+    } else if value.isinstance::<VMBytes>() {
+        let bytes = value.as_const_type::<VMBytes>();
+        return Ok(format!(
+            "$\"{}\"",
+            base64::engine::general_purpose::STANDARD
+                .encode(&bytes.value)
+                .chars()
+                .collect::<String>()
+        ));
     }
-
     Err(VMVariableError::TypeError(
         value.clone(),
         "Cannot represent a non-representable type".to_string(),
@@ -250,6 +258,9 @@ pub fn try_add_as_vmobject(
     } else if value.isinstance::<VMRange>() {
         let named = value.as_const_type::<VMRange>();
         return named.add(other, gc_system);
+    } else if value.isinstance::<VMBytes>() {
+        let bytes = value.as_const_type::<VMBytes>();
+        return bytes.add(other, gc_system);
     }
     Err(VMVariableError::ValueError2Param(
         value.clone(),
@@ -516,7 +527,10 @@ pub fn try_not_as_vmobject(value: GCRef) -> Result<bool, VMVariableError> {
     ))
 }
 
-pub fn try_get_attr_as_vmobject(value: &mut GCRef, attr: GCRef) -> Result<&mut GCRef, VMVariableError> {
+pub fn try_get_attr_as_vmobject(
+    value: &mut GCRef,
+    attr: GCRef,
+) -> Result<&mut GCRef, VMVariableError> {
     if value.isinstance::<VMNamed>() {
         let named = value.as_type::<VMNamed>();
         if named.check_key(attr.clone()) {
@@ -546,6 +560,10 @@ pub fn try_index_of_as_vmobject(
     if value.isinstance::<VMString>() {
         let string = value.as_type::<VMString>();
         return string.index_of(index, gc_system);
+    }
+    if value.isinstance::<VMBytes>() {
+        let range = value.as_type::<VMBytes>();
+        return range.index_of(index, gc_system);
     }
     Err(VMVariableError::IndexNotFound(index.clone(), value.clone()))
 }
@@ -596,7 +614,7 @@ pub fn try_deepcopy_as_vmobject(
     value: &mut GCRef,
     gc_system: &mut GCSystem,
 ) -> Result<GCRef, VMVariableError> {
-    try_deepcopy_as_type!(value, gc_system; VMInt, VMString, VMFloat, VMBoolean, VMNull, VMKeyVal, VMTuple, VMNamed, VMLambda, VMInstructions, VMVariableWrapper, VMNativeFunction, VMWrapper, VMRange);
+    try_deepcopy_as_type!(value, gc_system; VMInt, VMString, VMFloat, VMBoolean, VMNull, VMKeyVal, VMTuple, VMNamed, VMLambda, VMInstructions, VMVariableWrapper, VMNativeFunction, VMWrapper, VMRange, VMBytes);
     Err(VMVariableError::CopyError(
         value.clone(),
         "Cannot deepcopy a value of non-copyable type".to_string(),
@@ -618,7 +636,7 @@ pub fn try_copy_as_vmobject(
     value: &mut GCRef,
     gc_system: &mut GCSystem,
 ) -> Result<GCRef, VMVariableError> {
-    try_copy_as_type!(value, gc_system; VMInt, VMString, VMFloat, VMBoolean, VMNull, VMKeyVal, VMTuple, VMNamed, VMLambda, VMInstructions, VMVariableWrapper, VMNativeFunction, VMWrapper, VMRange);
+    try_copy_as_type!(value, gc_system; VMInt, VMString, VMFloat, VMBoolean, VMNull, VMKeyVal, VMTuple, VMNamed, VMLambda, VMInstructions, VMVariableWrapper, VMNativeFunction, VMWrapper, VMRange, VMBytes);
     Err(VMVariableError::CopyError(
         value.clone(),
         "Cannot copy a value of non-copyable type".to_string(),
@@ -640,7 +658,7 @@ pub fn try_assign_as_vmobject<'t>(
     value: &mut GCRef,
     other: &'t mut GCRef,
 ) -> Result<&'t mut GCRef, VMVariableError> {
-    try_assign_as_type!(value, other; VMInt, VMString, VMFloat, VMBoolean, VMNull, VMKeyVal, VMTuple, VMNamed, VMLambda, VMInstructions, VMVariableWrapper, VMNativeFunction, VMWrapper, VMRange);
+    try_assign_as_type!(value, other; VMInt, VMString, VMFloat, VMBoolean, VMNull, VMKeyVal, VMTuple, VMNamed, VMLambda, VMInstructions, VMVariableWrapper, VMNativeFunction, VMWrapper, VMRange, VMBytes);
     Err(VMVariableError::AssignError(
         value.clone(),
         "Cannot assign a value of non-assignable type".to_string(),
@@ -659,7 +677,7 @@ macro_rules! try_value_ref_as_type {
 }
 
 pub fn try_value_ref_as_vmobject(value: GCRef) -> Result<GCRef, VMVariableError> {
-    try_value_ref_as_type!(value; VMInt, VMString, VMFloat, VMBoolean, VMNull, VMKeyVal, VMTuple, VMNamed, VMLambda, VMInstructions, VMVariableWrapper, VMNativeFunction, VMWrapper, VMRange);
+    try_value_ref_as_type!(value; VMInt, VMString, VMFloat, VMBoolean, VMNull, VMKeyVal, VMTuple, VMNamed, VMLambda, VMInstructions, VMVariableWrapper, VMNativeFunction, VMWrapper, VMRange, VMBytes);
     Err(VMVariableError::ReferenceError(
         value.clone(),
         "Cannot get reference of a non-referenceable type".to_string(),
@@ -678,7 +696,7 @@ macro_rules! try_alias_as_type {
 }
 
 pub fn try_alias_as_vmobject<'t>(value: &'t GCRef) -> Result<&'t mut Vec<String>, VMVariableError> {
-    try_alias_as_type!(value; VMInt, VMString, VMFloat, VMBoolean, VMNull, VMKeyVal, VMTuple, VMNamed, VMLambda, VMInstructions, VMVariableWrapper, VMNativeFunction, VMWrapper, VMRange);
+    try_alias_as_type!(value; VMInt, VMString, VMFloat, VMBoolean, VMNull, VMKeyVal, VMTuple, VMNamed, VMLambda, VMInstructions, VMVariableWrapper, VMNativeFunction, VMWrapper, VMRange, VMBytes);
     Err(VMVariableError::ReferenceError(
         value.clone(),
         "Cannot get reference of a non-referenceable type".to_string(),
@@ -697,7 +715,7 @@ macro_rules! try_binary_op_as_type {
 }
 
 pub fn try_eq_as_vmobject(value: GCRef, other: GCRef) -> bool {
-    try_binary_op_as_type!(value, eq, other; VMInt, VMString, VMFloat, VMBoolean, VMNull, VMKeyVal, VMTuple, VMNamed);
+    try_binary_op_as_type!(value, eq, other; VMInt, VMString, VMFloat, VMBoolean, VMNull, VMKeyVal, VMTuple, VMNamed, VMRange, VMBytes);
     false
 }
 
@@ -2133,7 +2151,8 @@ impl VMTuple {
                     let kv_named = kv.as_type::<VMNamed>();
 
                     // 检查键是否匹配
-                    if try_eq_as_vmobject(self_named.get_key().clone(), kv_named.get_key().clone()) {
+                    if try_eq_as_vmobject(self_named.get_key().clone(), kv_named.get_key().clone())
+                    {
                         // 找到匹配的键，进行赋值
                         let value_ref = &mut self.values[i];
                         try_assign_as_vmobject(value_ref, kv_named.get_value())?;
@@ -2456,7 +2475,7 @@ impl VMLambda {
         let mut cloned_default_args_tuple = default_args_tuple.clone();
         let mut cloned_lambda_instructions = lambda_instructions.clone();
         let mut cloned_result = result.clone();
-    
+
         // 创建引用向量
         let mut refs_vec = vec![
             &mut cloned_default_args_tuple,
@@ -2505,7 +2524,7 @@ impl VMLambda {
         let mut cloned_default_args_tuple = default_args_tuple.clone();
         let mut cloned_lambda_instructions = lambda_instructions.clone();
         let mut cloned_result = result.clone();
-    
+
         // 创建引用向量
         let mut refs_vec = vec![
             &mut cloned_default_args_tuple,
@@ -2565,8 +2584,10 @@ impl VMLambda {
 
 impl GCObject for VMLambda {
     fn free(&mut self) {
-        self.traceable.remove_reference(&mut self.default_args_tuple);
-        self.traceable.remove_reference(&mut self.lambda_instructions);
+        self.traceable
+            .remove_reference(&mut self.default_args_tuple);
+        self.traceable
+            .remove_reference(&mut self.lambda_instructions);
         self.traceable.remove_reference(&mut self.result);
         if !self.self_object.is_none() {
             self.traceable
@@ -2837,6 +2858,15 @@ impl VMRange {
             "Cannot check containment with a non-integer type".to_string(),
         ))
     }
+
+    pub fn eq(&self, other: GCRef) -> bool {
+        if other.isinstance::<VMRange>() {
+            let other_range = other.as_const_type::<VMRange>();
+            return self.start == other_range.start && self.end == other_range.end;
+        } else {
+            false
+        }
+    }
 }
 impl GCObject for VMRange {
     fn free(&mut self) {
@@ -2867,6 +2897,339 @@ impl VMObject for VMRange {
             value.clone(),
             "Cannot assign a value to VMRange".to_string(),
         ))
+    }
+
+    fn value_ref(&self) -> Result<GCRef, VMVariableError> {
+        Ok(GCRef::wrap(self))
+    }
+
+    fn alias(&mut self) -> &mut Vec<String> {
+        return &mut self.alias;
+    }
+}
+
+#[derive(Debug)]
+pub struct VMBytes {
+    pub value: Vec<u8>,
+    traceable: GCTraceable,
+    alias: Vec<String>,
+}
+
+impl VMBytes {
+    pub fn new(value: Vec<u8>) -> Self {
+        VMBytes {
+            value,
+            traceable: GCTraceable::new(None),
+            alias: Vec::new(),
+        }
+    }
+
+    pub fn new_with_alias(value: Vec<u8>, alias: &Vec<String>) -> Self {
+        VMBytes {
+            value,
+            traceable: GCTraceable::new(None),
+            alias: alias.clone(),
+        }
+    }
+
+    pub fn eq(&self, other: GCRef) -> bool {
+        if other.isinstance::<VMBytes>() {
+            return self.value == other.as_const_type::<VMBytes>().value;
+        } else {
+            false
+        }
+    }
+
+    pub fn to_string(&self) -> Result<String, VMVariableError> {
+        // 尝试将字节转换为UTF-8字符串
+        match String::from_utf8(self.value.clone()) {
+            Ok(s) => Ok(s),
+            Err(_) => Err(VMVariableError::ValueError(
+                GCRef::wrap(self),
+                "Cannot convert bytes to string: invalid UTF-8".to_string(),
+            )),
+        }
+    }
+
+    pub fn to_bool(&self) -> Result<bool, VMVariableError> {
+        Ok(!self.value.is_empty())
+    }
+
+    pub fn len(&self) -> usize {
+        self.value.len()
+    }
+
+    pub fn add(&self, other: GCRef, gc_system: &mut GCSystem) -> Result<GCRef, VMVariableError> {
+        if other.isinstance::<VMBytes>() {
+            let other_bytes = other.as_const_type::<VMBytes>();
+            let mut new_value = self.value.clone();
+            new_value.extend_from_slice(&other_bytes.value);
+            return Ok(gc_system.new_object(VMBytes::new(new_value)));
+        }
+        Err(VMVariableError::ValueError2Param(
+            GCRef::wrap(self),
+            other.clone(),
+            "Cannot add a value of non-bytes type".to_string(),
+        ))
+    }
+
+    pub fn index_of(
+        &self,
+        index: GCRef,
+        gc_system: &mut GCSystem,
+    ) -> Result<GCRef, VMVariableError> {
+        if index.isinstance::<VMInt>() {
+            let index_int = index.as_const_type::<VMInt>();
+            if index_int.value < 0 || index_int.value >= self.value.len() as i64 {
+                return Err(VMVariableError::IndexNotFound(
+                    index.clone(),
+                    GCRef::wrap(self),
+                ));
+            }
+            let byte = self.value[index_int.value as usize];
+            return Ok(gc_system.new_object(VMInt::new(byte as i64)));
+        } else if index.isinstance::<VMRange>() {
+            let range = index.as_const_type::<VMRange>();
+            let start = range.start;
+            let end = range.end;
+            if start < 0 || end > self.value.len() as i64 {
+                return Err(VMVariableError::IndexNotFound(
+                    index.clone(),
+                    GCRef::wrap(self),
+                ));
+            }
+            let slice = &self.value[start as usize..end as usize];
+            return Ok(gc_system.new_object(VMBytes::new(slice.to_vec())));
+        }
+
+        Err(VMVariableError::ValueError2Param(
+            GCRef::wrap(self),
+            index.clone(),
+            "Cannot index bytes with a non-integer type".to_string(),
+        ))
+    }
+
+    pub fn contains(&self, other: GCRef) -> Result<bool, VMVariableError> {
+        if other.isinstance::<VMBytes>() {
+            let other_bytes = other.as_const_type::<VMBytes>();
+            // 检查是否包含子序列
+            return Ok(self
+                .value
+                .windows(other_bytes.value.len())
+                .any(|window| window == other_bytes.value));
+        } else if other.isinstance::<VMInt>() {
+            let byte = other.as_const_type::<VMInt>().value;
+            if byte < 0 || byte > 255 {
+                return Err(VMVariableError::ValueError(
+                    other.clone(),
+                    "Byte value must be between 0 and 255".to_string(),
+                ));
+            }
+            return Ok(self.value.contains(&(byte as u8)));
+        }
+        Err(VMVariableError::ValueError2Param(
+            GCRef::wrap(self),
+            other.clone(),
+            "Cannot check if bytes contain a non-bytes or non-integer type".to_string(),
+        ))
+    }
+}
+
+impl GCObject for VMBytes {
+    fn free(&mut self) {
+        // 字节不需要额外的释放操作
+    }
+
+    fn get_traceable(&mut self) -> &mut GCTraceable {
+        return &mut self.traceable;
+    }
+
+    fn get_const_traceable(&self) -> &GCTraceable {
+        return &self.traceable;
+    }
+}
+
+impl VMObject for VMBytes {
+    fn deepcopy(&mut self, gc_system: &mut GCSystem) -> Result<GCRef, VMVariableError> {
+        Ok(gc_system.new_object(VMBytes::new_with_alias(self.value.clone(), &self.alias)))
+    }
+
+    fn copy(&mut self, gc_system: &mut GCSystem) -> Result<GCRef, VMVariableError> {
+        Ok(gc_system.new_object(VMBytes::new_with_alias(self.value.clone(), &self.alias)))
+    }
+
+    fn assign<'t>(&mut self, value: &'t mut GCRef) -> Result<&'t mut GCRef, VMVariableError> {
+        if value.isinstance::<VMBytes>() {
+            self.value = value.as_const_type::<VMBytes>().value.clone();
+            Ok(value)
+        } else if value.isinstance::<VMString>() {
+            // 允许从字符串转换为字节序列
+            self.value = value.as_const_type::<VMString>().value.as_bytes().to_vec();
+            Ok(value)
+        } else if value.isinstance::<VMKeyVal>() {
+            // 允许从键值对转换为字节序列
+            let kv = value.as_const_type::<VMKeyVal>();
+            let index = kv.key.clone();
+            let val = kv.value.clone();
+
+            if index.isinstance::<VMInt>() {
+                // 单字节修改
+                let idx = index.as_const_type::<VMInt>().value;
+                if idx < 0 || idx >= self.value.len() as i64 {
+                    return Err(VMVariableError::IndexNotFound(
+                        index.clone(),
+                        GCRef::wrap(self),
+                    ));
+                }
+
+                // 获取要设置的字节值
+                let byte_val: u8;
+                if val.isinstance::<VMInt>() {
+                    let int_val = val.as_const_type::<VMInt>().value;
+                    if int_val < 0 || int_val > 255 {
+                        return Err(VMVariableError::ValueError(
+                            val.clone(),
+                            "Byte value must be between 0 and 255".to_string(),
+                        ));
+                    }
+                    byte_val = int_val as u8;
+                } else if val.isinstance::<VMString>() {
+                    // 处理单个索引位置写入字符串所有字节
+                    let str_value = val.as_const_type::<VMString>().value.clone();
+                    if str_value.is_empty() {
+                        return Err(VMVariableError::ValueError(
+                            val.clone(),
+                            "Cannot use empty string as byte value".to_string(),
+                        ));
+                    }
+
+                    // 获取字符串的字节表示
+                    let str_bytes = str_value.as_bytes();
+
+                    // 检查是否有足够空间
+                    if (idx as usize) + str_bytes.len() > self.value.len() {
+                        return Err(VMVariableError::ValueError(
+                            val.clone(),
+                            format!(
+                                "Not enough space to write {} bytes at index {}",
+                                str_bytes.len(),
+                                idx
+                            ),
+                        ));
+                    }
+
+                    // 从指定索引位置开始写入所有字节
+                    for (i, &byte) in str_bytes.iter().enumerate() {
+                        self.value[(idx as usize) + i] = byte;
+                    }
+
+                    return Ok(value);
+                } else if val.isinstance::<VMBytes>() {
+                    // 处理单个索引位置写入字节序列所有字节
+                    let bytes_value = val.as_const_type::<VMBytes>().value.clone();
+                    if bytes_value.is_empty() {
+                        return Err(VMVariableError::ValueError(
+                            val.clone(),
+                            "Cannot use empty bytes as byte value".to_string(),
+                        ));
+                    }
+
+                    // 检查是否有足够空间
+                    if (idx as usize) + bytes_value.len() > self.value.len() {
+                        return Err(VMVariableError::ValueError(
+                            val.clone(),
+                            format!(
+                                "Not enough space to write {} bytes at index {}",
+                                bytes_value.len(),
+                                idx
+                            ),
+                        ));
+                    }
+
+                    // 从指定索引位置开始写入所有字节
+                    for (i, &byte) in bytes_value.iter().enumerate() {
+                        self.value[(idx as usize) + i] = byte;
+                    }
+
+                    return Ok(value);
+                } else {
+                    return Err(VMVariableError::ValueError(
+                        val.clone(),
+                        "Cannot convert non-integer value to byte".to_string(),
+                    ));
+                }
+
+                // 设置字节
+                self.value[idx as usize] = byte_val;
+                return Ok(value);
+            } else if index.isinstance::<VMRange>() {
+                // 范围修改
+                let range = index.as_const_type::<VMRange>();
+                let start = range.start;
+                let end = range.end;
+
+                if start < 0 || end > self.value.len() as i64 || start > end {
+                    return Err(VMVariableError::IndexNotFound(
+                        index.clone(),
+                        GCRef::wrap(self),
+                    ));
+                }
+
+                // 获取要设置的字节序列
+                let new_bytes: Vec<u8>;
+                if val.isinstance::<VMBytes>() {
+                    new_bytes = val.as_const_type::<VMBytes>().value.clone();
+                } else if val.isinstance::<VMString>() {
+                    new_bytes = val.as_const_type::<VMString>().value.as_bytes().to_vec();
+                } else if val.isinstance::<VMInt>() {
+                    // 如果是整数，将所有字节设为相同值
+                    let int_val = val.as_const_type::<VMInt>().value;
+                    if int_val < 0 || int_val > 255 {
+                        return Err(VMVariableError::ValueError(
+                            val.clone(),
+                            "Byte value must be between 0 and 255".to_string(),
+                        ));
+                    }
+                    new_bytes = vec![int_val as u8; (end - start) as usize];
+                } else {
+                    return Err(VMVariableError::ValueError(
+                        val.clone(),
+                        "Cannot convert value to bytes".to_string(),
+                    ));
+                }
+
+                // 检查长度是否匹配
+                if new_bytes.len() != (end - start) as usize {
+                    return Err(VMVariableError::ValueError2Param(
+                        index.clone(),
+                        val.clone(),
+                        format!(
+                            "Slice length {} does not match range length {}",
+                            new_bytes.len(),
+                            (end - start)
+                        ),
+                    ));
+                }
+
+                // 替换范围内的字节
+                for i in 0..(end - start) as usize {
+                    self.value[(start as usize) + i] = new_bytes[i];
+                }
+
+                return Ok(value);
+            } else {
+                return Err(VMVariableError::ValueError(
+                    index.clone(),
+                    "Index must be an integer or range".to_string(),
+                ));
+            }
+        } else {
+            Err(VMVariableError::ValueError2Param(
+                GCRef::wrap(self),
+                value.clone(),
+                "Cannot assign a value of non-bytes type".to_string(),
+            ))
+        }
     }
 
     fn value_ref(&self) -> Result<GCRef, VMVariableError> {

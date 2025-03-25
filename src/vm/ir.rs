@@ -37,6 +37,7 @@ pub enum IR{
     LoadInt(i64), // load integer to stack
     LoadFloat(f64), // load float to stack
     LoadString(String), // load string to stack
+    LoadBytes(Vec<u8>), // load bytes to stack
     LoadBool(bool), // load bool to stack
     LoadLambda(String, usize), // signature, code position
     BuildTuple(usize), // number of elements

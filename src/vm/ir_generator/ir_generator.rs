@@ -1,4 +1,5 @@
 use super::super::ir::{Functions, IROperation};
+use base64::{self, Engine};
 use crate::{
     parser::ast::{ASTNode, ASTNodeModifier, ASTNodeOperation, ASTNodeType},
     vm::ir::{DebugInfo, IR},
@@ -615,6 +616,18 @@ impl<'t> IRGenerator<'t> {
                 instructions.push(debug_info);
                 instructions.extend(self.generate_without_redirect(&ast_node.children[0])?);
                 instructions.push(IR::Alias(alias.clone()));
+                Ok(instructions)
+            }
+            ASTNodeType::Base64(base64_str) => {
+                let mut instructions = Vec::new();
+                instructions.push(debug_info);
+                // decode base64 string to bytes using the recommended Engine approach
+                let decoded_bytes = base64::engine::general_purpose::STANDARD
+                    .decode(base64_str)
+                    .map_err(|_| {
+                        IRGeneratorError::InvalidASTNodeType(ast_node.node_type.clone())
+                    })?;
+                instructions.push(IR::LoadBytes(decoded_bytes));
                 Ok(instructions)
             }
         }

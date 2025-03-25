@@ -383,6 +383,7 @@ pub enum ASTNodeType {
     String(String),              // String
     Boolean(String),             // Boolean
     Number(String),              // Number (Integer, Float)
+    Base64(String),            // Base64
     Variable(String),            // Variable
     Let(String),                 // x := expression
     Body,                        // {...}
@@ -2556,6 +2557,18 @@ fn match_variable<'t>(
         return Ok((
             Some(ASTNode::new(
                 ASTNodeType::Number(tokens[current][0].token.to_string()),
+                Some(&tokens[current][0]),
+                None,
+            )),
+            1,
+        ));
+    }
+
+    // 匹配b64
+    if tokens[current].len() == 1 && tokens[current][0].token_type == TokenType::BASE64 {
+        return Ok((
+            Some(ASTNode::new(
+                ASTNodeType::Base64(tokens[current][0].token.to_string()),
                 Some(&tokens[current][0]),
                 None,
             )),
