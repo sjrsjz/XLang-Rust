@@ -6,6 +6,7 @@ use std::hash::{Hash, Hasher};
 pub trait GCObject {
     fn free(&mut self); // free the object
     fn get_traceable(&mut self) -> &mut GCTraceable; // get the traceable object
+    fn get_const_traceable(&self) -> &GCTraceable; // get the traceable object
 }
 
 #[derive(Debug, Clone)]
@@ -39,17 +40,17 @@ impl GCRef {
         if reference.is_null() {
             panic!("Null pointer exception!");
         }
-
-        // unsafe {
-        //     let obj = reference as *mut dyn GCObject;
-        //     (*obj).get_traceable().native_gcref_object_count += 1; // 增加原生引用计数
-        // }
         GCRef { reference, type_id }
     }
 
     pub fn get_reference(&self) -> *mut dyn GCObject {
         self.reference
     }
+
+    pub fn get_const_reference(&self) -> *const dyn GCObject {
+        self.reference
+    }
+
     pub fn get_traceable(&mut self) -> &mut GCTraceable {
         unsafe {
             let obj = self.reference;
@@ -60,7 +61,7 @@ impl GCRef {
     pub fn get_const_traceable(&self) -> &GCTraceable {
         unsafe {
             let obj = self.reference;
-            (*obj).get_traceable()
+            (*obj).get_const_traceable()
         }
     }
 
@@ -81,8 +82,8 @@ impl GCRef {
 
     pub fn is_online(&self) -> bool {
         unsafe {
-            let obj = self.reference as *mut dyn GCObject;
-            (*obj).get_traceable().online
+            let obj = self.reference as *const dyn GCObject;
+            (*obj).get_const_traceable().online
         }
     }
 
@@ -148,12 +149,12 @@ impl GCRef {
 
     pub fn is_locked(&self) -> bool {
         unsafe {
-            let obj = self.reference as *mut dyn GCObject;
-            (*obj).get_traceable().lock
+            let obj = self.reference as *const dyn GCObject;
+            (*obj).get_const_traceable().lock
         }
     }
 
-    pub fn clone_ref(&self) -> Self {
+    pub fn clone_ref(&mut self) -> Self {
         if !self.is_online() {
             panic!("Cannot clone an offline object!");
         }
@@ -164,11 +165,11 @@ impl GCRef {
         GCRef::new(self.reference, self.type_id)
     }
 
-    pub fn drop_ref(&self) {
+    pub fn drop_ref(&mut self) {
         unsafe {
             let obj = self.reference as *mut dyn GCObject;
             if (*obj).get_traceable().native_gcref_object_count == 0 {
-                return; //panic!("Reference count is already zero!");
+                panic!("Reference count is already zero!");
             }
             (*obj).get_traceable().native_gcref_object_count -= 1;
             if (*obj).get_traceable().native_gcref_object_count == 0 {
@@ -189,12 +190,12 @@ pub struct GCTraceable {
 }
 
 impl GCTraceable {
-    pub fn new(references: Option<Vec<&mut GCRef>>) -> GCTraceable {
+    pub fn new(references: Option<&Vec<&mut GCRef>>) -> GCTraceable {
         let mut refs_map = HashMap::new();
 
         if let Some(refs) = references {
             for ref_obj in refs {
-                *refs_map.entry(ref_obj.clone()).or_insert(0) += 1;
+                *refs_map.entry((*ref_obj).clone()).or_insert(0) += 1;
             }
         }
 
@@ -258,7 +259,7 @@ impl GCTraceable {
 
         unsafe {
             if (*obj.reference).get_traceable().ref_count == 0 {
-                return; //panic!("Reference count is already zero!");
+                panic!("Reference count is already zero!");
             }
             (*obj.reference).get_traceable().ref_count -= 1; // 减少被引用对象的引用计数
         }
@@ -330,11 +331,10 @@ impl GCSystem {
         if obj_ref.is_null() {
             panic!("Failed to allocate memory for object!");
         }
-        let gc_ref = GCRef::new(obj_ref, TypeId::of::<T>());
-
+        let mut gc_ref = GCRef::new(obj_ref, TypeId::of::<T>());
+        gc_ref.clone_ref();
         self.objects.push(gc_ref.clone()); // add the object to the list of objects
-
-        gc_ref.clone_ref()
+        gc_ref
     }
 
     fn mark(&mut self) {
