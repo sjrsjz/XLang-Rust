@@ -155,7 +155,7 @@ impl GCRef {
     }
 
     pub fn clone_ref(&mut self) -> Self {
-        if !self.is_online() {
+        if !self.is_online() && self.get_const_traceable().ref_count == 0 {
             panic!("Cannot clone an offline object!");
         }
         unsafe {

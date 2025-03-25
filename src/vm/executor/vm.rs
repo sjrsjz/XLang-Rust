@@ -1715,6 +1715,9 @@ impl IRExecutor {
                     tuple.push(gc_system.new_object(VMString::new(alias.clone())));
                 }
                 let result = gc_system.new_object(VMTuple::new(tuple.iter_mut().collect()));
+                for alias in tuple.iter_mut() {
+                    alias.drop_ref();
+                }
                 self.push_vmobject(result)?;
                 obj.drop_ref();
             }

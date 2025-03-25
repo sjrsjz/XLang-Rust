@@ -138,10 +138,7 @@ fn execute_ir(package: IRPackage, source_code: Option<String>) -> Result<(), VME
         }
     }
     gc_system.collect();
-    for i in 1..2000{
-        gc_system.collect();
-    }
-    gc_system.print_reference_graph();
+
     Ok(())
 }
 
@@ -179,6 +176,8 @@ fn execute_ir_repl(
     named.drop_ref();
 
     let mut wrapped = gc_system.new_object(VMVariableWrapper::new(&mut main_lambda));
+
+    wrapped.clone_ref();
 
     main_lambda.drop_ref();
     let _coro_id =
@@ -632,7 +631,7 @@ fn run_repl() -> Result<(), String> {
                     },
                     Err(e) => println!("{}", format!("Compilation error: {}", e).red().bold()),
                 }
-
+                gc_system.collect();
                 line_count = input_arguments.as_type::<VMTuple>().values.len();
             }
             Err(ReadlineError::Interrupted) => {
