@@ -138,7 +138,10 @@ fn execute_ir(package: IRPackage, source_code: Option<String>) -> Result<(), VME
         }
     }
     gc_system.collect();
-    wrapped.drop_ref();
+    for i in 1..2000{
+        gc_system.collect();
+    }
+    gc_system.print_reference_graph();
     Ok(())
 }
 

@@ -116,7 +116,7 @@ impl VMCoroutinePool {
             ));
         }
         let mut executor = IRExecutor::new(original_code);
-        executor.entry_lambda_wrapper = Some(lambda_object.clone_ref());
+        executor.entry_lambda_wrapper = Some(lambda_object.clone());
 
         // 检查该 lambda 是否已启动
         let lambda_ref = &mut lambda_object.as_type::<VMVariableWrapper>().value_ref;
@@ -1486,9 +1486,10 @@ impl IRExecutor {
                     lambda_ref: gc_system.new_object(VMVariableWrapper::new(lambda_ref)),
                     source_code: self.original_code.clone(),
                 }];
-                self.push_vmobject(lambda.clone())?;
+                self.push_vmobject(lambda_ref.clone_ref())?;
 
                 arg_tuple.drop_ref();
+                lambda.drop_ref();
 
                 return Ok(Some(spawned_coroutines));
             }
