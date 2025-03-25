@@ -5,7 +5,7 @@ use rustyline::highlight::CmdKind;
 use vm::executor::variable::VMInstructions;
 use vm::executor::variable::VMLambda;
 use vm::executor::variable::VMTuple;
-use vm::gc;
+
 use vm::gc::gc::GCRef;
 use vm::ir::IRPackage;
 use vm::ir::IR;
@@ -110,11 +110,11 @@ fn execute_ir(package: IRPackage, source_code: Option<String>) -> Result<(), VME
     lambda_instructions.drop_ref();
     lambda_result.drop_ref();
 
-    let wrapped = gc_system.new_object(VMVariableWrapper::new(&mut main_lambda));
+    let mut wrapped = gc_system.new_object(VMVariableWrapper::new(&mut main_lambda));
     main_lambda.drop_ref();
 
     let _coro_id =
-        coroutine_pool.new_coroutine(wrapped.clone(), source_code, &mut gc_system)?;
+        coroutine_pool.new_coroutine(&mut wrapped, source_code, &mut gc_system)?;
 
     let result = coroutine_pool.run_until_finished(&mut gc_system);
     if let Err(e) = result {
@@ -175,11 +175,11 @@ fn execute_ir_repl(
     key.drop_ref();
     named.drop_ref();
 
-    let wrapped = gc_system.new_object(VMVariableWrapper::new(&mut main_lambda));
+    let mut wrapped = gc_system.new_object(VMVariableWrapper::new(&mut main_lambda));
 
     main_lambda.drop_ref();
     let _coro_id =
-        coroutine_pool.new_coroutine(wrapped.clone(), source_code, gc_system)?;
+        coroutine_pool.new_coroutine(&mut wrapped, source_code, gc_system)?;
 
     coroutine_pool.run_until_finished(gc_system)?;
     gc_system.collect();
@@ -468,14 +468,14 @@ fn run_repl() -> Result<(), String> {
     impl Validator for XLangHelper {
         fn validate(
             &self,
-            ctx: &mut validate::ValidationContext,
+            _ctx: &mut validate::ValidationContext,
         ) -> rustyline::Result<validate::ValidationResult> {
             Ok(validate::ValidationResult::Valid(None))
         }
     }
 
     // 设置Rustyline配置
-    let config = Config::builder()
+    let _config = Config::builder()
         .history_ignore_space(true)
         .completion_type(CompletionType::List)
         .edit_mode(EditMode::Emacs)
@@ -588,7 +588,7 @@ fn run_repl() -> Result<(), String> {
                         &mut gc_system,
                         &mut input_arguments,
                     ) {
-                        Ok(lambda_ref) => {
+                        Ok(mut lambda_ref) => {
                             let executed = lambda_ref.as_const_type::<VMVariableWrapper>().value_ref.as_const_type::<VMLambda>();
                             let result_ref = executed.result.clone();
                             let idx = input_arguments.as_type::<VMTuple>().values.len();
@@ -601,10 +601,10 @@ fn run_repl() -> Result<(), String> {
                                             value.bright_white().bold()
                                         );
                                     }
-                                    let result_ref = result_ref.clone();
+                                    let mut result_ref = result_ref.clone();
                                     let result = input_arguments
                                         .as_type::<VMTuple>()
-                                        .append(result_ref.clone());
+                                        .append(&mut result_ref);
                                     if result.is_err() {
                                         println!(
                                             "{}",
@@ -643,7 +643,6 @@ fn run_repl() -> Result<(), String> {
             }
             Err(err) => {
                 println!("{}", format!("Input error: {}", err).red());
-                line_count = input_arguments.as_type::<VMTuple>().values.len();
                 break;
             }
         }

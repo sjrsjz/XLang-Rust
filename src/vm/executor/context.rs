@@ -80,7 +80,7 @@ pub fn pop_frame(
     if exit_function {
         while self.frames.len() > 0 && !self.frames[self.frames.len() - 1].1 {
             // 1. 先复制要离线的变量
-            let variables_to_offline: Vec<GCRef> = if !self.frames.is_empty() {
+            let mut variables_to_offline: Vec<GCRef> = if !self.frames.is_empty() {
                 self.frames.last().unwrap().0.values().cloned().collect()
             } else {
                 Vec::new()
@@ -97,7 +97,7 @@ pub fn pop_frame(
             self.stack_pointers.pop();
             
             // 4. 离线变量（在数据结构已更新后）
-            for variable in variables_to_offline {
+            for variable in variables_to_offline.iter_mut() {
                 variable.drop_ref();
             }
             
@@ -119,7 +119,7 @@ pub fn pop_frame(
     }
     
     // 1. 收集当前帧的变量
-    let variables_to_offline: Vec<GCRef> = self.frames.last().unwrap().0.values().cloned().collect();
+    let mut variables_to_offline: Vec<GCRef> = self.frames.last().unwrap().0.values().cloned().collect();
     
     // 2. 保存栈指针
     let stack_pointer = self.stack_pointers.last().cloned().unwrap_or(0);
@@ -129,7 +129,7 @@ pub fn pop_frame(
     self.stack_pointers.pop();
     
     // 4. 离线变量（在数据结构已更新后）
-    for variable in variables_to_offline {
+    for variable in variables_to_offline.iter_mut() {
         variable.drop_ref();
     }
     
@@ -154,7 +154,7 @@ pub fn pop_frame(
     ) -> Result<(), ContextError> {
         if let Some((vars, _, _, _)) = self.frames.last_mut() {
             if vars.contains_key(&name) {
-                let var = vars.get(&name).unwrap().clone();
+                let mut var = vars.get(&name).unwrap().clone();
                 vars.insert(name.clone(), gc_system.new_object(VMVariableWrapper::new(value)));
                 var.drop_ref(); // 扔掉旧的引用，因为已经被覆盖了
                 return Ok(());
@@ -167,19 +167,19 @@ pub fn pop_frame(
         }
     }
 
-    pub fn get_var(&self, name: &str) -> Result<GCRef, ContextError> {
-        for (vars, _, _, _) in self.frames.iter().rev() {
-            if let Some(value) = vars.get(name) {
+    pub fn get_var(&mut self, name: &str) -> Result<GCRef, ContextError> {
+        for (vars, _, _, _) in self.frames.iter_mut().rev() {
+            if let Some(value) = vars.get_mut(name) {
                 return Ok(value.clone_ref()); // 这里需要clone_ref，因为我们要返回一个新的引用
             }
         }
         Err(ContextError::NoVariable(name.to_string()))
     }
 
-    pub fn set_var(&mut self, name: &str, value: GCRef) -> Result<(), ContextError> {
+    pub fn set_var(&mut self, name: &str, value: &mut GCRef) -> Result<(), ContextError> {
         for (vars, _, _, _) in self.frames.iter_mut().rev() {
             if let Some(var) = vars.get_mut(name) {
-                try_assign_as_vmobject(var.clone(), value.clone())
+                try_assign_as_vmobject(var, value)
                     .map_err(|e| ContextError::VMVariableError(e))?;
             }
         }
