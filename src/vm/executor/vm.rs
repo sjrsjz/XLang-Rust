@@ -79,7 +79,7 @@ impl VMError {
                 "{}: {} {}",
                 "InvalidArgument".bright_red().bold(),
                 try_repr_vmobject(obj.clone(), None).unwrap_or(format!("{:?}", obj)),
-                format!("because {}", msg).yellow()
+                format!("because {}", msg).bright_red()
             ),
             VMError::FileError(msg) => format!("{}: {}", "FileError".bright_red().bold(), msg),
             VMError::DetailedError(msg) => format!("{}", msg),
