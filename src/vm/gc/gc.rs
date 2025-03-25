@@ -236,7 +236,7 @@ impl GCTraceable {
         }
     }
 
-    pub fn remove_reference(&mut self, obj: &GCRef) {
+    pub fn remove_reference(&mut self, obj: &mut GCRef) {
         if obj.reference.is_null() {
             panic!("Reference is null! {}", obj);
         }

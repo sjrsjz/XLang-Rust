@@ -736,7 +736,7 @@ impl VMVariableWrapper {
 
 impl GCObject for VMVariableWrapper {
     fn free(&mut self) {
-        self.traceable.remove_reference(&self.value_ref);
+        self.traceable.remove_reference(&mut self.value_ref);
         self.value_ref.drop_ref();
     }
 
@@ -798,7 +798,7 @@ impl VMWrapper {
 
 impl GCObject for VMWrapper {
     fn free(&mut self) {
-        self.traceable.remove_reference(&self.value_ref);
+        self.traceable.remove_reference(&mut self.value_ref);
         self.value_ref.drop_ref();
     }
 
@@ -820,7 +820,7 @@ impl VMObject for VMWrapper {
     }
     fn assign<'t>(&mut self, value: &'t mut GCRef) -> Result<&'t mut GCRef, VMVariableError> {
         let new_value = value.clone_ref();
-        self.traceable.remove_reference(&self.value_ref);
+        self.traceable.remove_reference(&mut self.value_ref);
         self.value_ref.drop_ref();
         self.value_ref = new_value;
         self.traceable.add_reference(&mut self.value_ref);
@@ -1794,9 +1794,9 @@ impl VMKeyVal {
 
 impl GCObject for VMKeyVal {
     fn free(&mut self) {
-        self.traceable.remove_reference(&self.key);
+        self.traceable.remove_reference(&mut self.key);
         self.key.drop_ref();
-        self.traceable.remove_reference(&self.value);
+        self.traceable.remove_reference(&mut self.value);
         self.value.drop_ref();
     }
 
@@ -1830,7 +1830,7 @@ impl VMObject for VMKeyVal {
 
     fn assign<'t>(&mut self, value: &'t mut GCRef) -> Result<&'t mut GCRef, VMVariableError> {
         let new_value = value.clone_ref();
-        self.traceable.remove_reference(&self.value);
+        self.traceable.remove_reference(&mut self.value);
         self.value.drop_ref();
         self.value = new_value;
         self.traceable.add_reference(&mut self.value);
@@ -1903,9 +1903,9 @@ impl VMNamed {
 
 impl GCObject for VMNamed {
     fn free(&mut self) {
-        self.traceable.remove_reference(&self.key);
+        self.traceable.remove_reference(&mut self.key);
         self.key.drop_ref();
-        self.traceable.remove_reference(&self.value);
+        self.traceable.remove_reference(&mut self.value);
         self.value.drop_ref();
     }
 
@@ -1939,7 +1939,7 @@ impl VMObject for VMNamed {
 
     fn assign<'t>(&mut self, value: &'t mut GCRef) -> Result<&'t mut GCRef, VMVariableError> {
         let new_value = value.clone_ref();
-        self.traceable.remove_reference(&self.value);
+        self.traceable.remove_reference(&mut self.value);
         self.value.drop_ref();
         self.value = new_value;
         self.traceable.add_reference(&mut self.value);
@@ -2559,19 +2559,19 @@ impl VMLambda {
         let mut new_result = result_object.clone();
         self.traceable.add_reference(&mut new_result);
         self.result = result_object.clone_ref();
-        self.traceable.remove_reference(&result);
+        self.traceable.remove_reference(&mut result);
         result.drop_ref();
     }
 
     pub fn set_self_object(&mut self, self_object: &mut GCRef) {
         if !self.self_object.is_none() {
             self.traceable
-                .remove_reference(&self.self_object.clone().unwrap());
+                .remove_reference(self.self_object.as_mut().unwrap());
             self.self_object.as_mut().unwrap().drop_ref();
         }
         self.self_object = Some(self_object.clone());
         self.traceable
-            .add_reference(&mut self.self_object.clone().unwrap());
+            .add_reference(self.self_object.as_mut().unwrap());
         self.self_object.as_mut().unwrap().clone_ref();
     }
 
@@ -2586,15 +2586,15 @@ impl VMLambda {
 
 impl GCObject for VMLambda {
     fn free(&mut self) {
-        self.traceable.remove_reference(&self.default_args_tuple);
+        self.traceable.remove_reference(&mut self.default_args_tuple);
         self.default_args_tuple.drop_ref();
-        self.traceable.remove_reference(&self.lambda_instructions);
+        self.traceable.remove_reference(&mut self.lambda_instructions);
         self.lambda_instructions.drop_ref();
-        self.traceable.remove_reference(&self.result);
+        self.traceable.remove_reference(&mut self.result);
         self.result.drop_ref();
         if !self.self_object.is_none() {
             self.traceable
-                .remove_reference(&self.self_object.as_ref().unwrap());
+                .remove_reference(self.self_object.as_mut().unwrap());
             self.self_object.as_mut().unwrap().drop_ref();
         }
     }
@@ -2671,14 +2671,14 @@ impl VMObject for VMLambda {
 
         // 移除旧引用
         self.get_traceable()
-            .remove_reference(&old_default_args_tuple);
+            .remove_reference(&mut old_default_args_tuple);
         old_default_args_tuple.drop_ref();
 
         self.get_traceable()
-            .remove_reference(&old_lambda_instructions);
+            .remove_reference(&mut old_lambda_instructions);
         old_lambda_instructions.drop_ref();
 
-        self.get_traceable().remove_reference(&old_result);
+        self.get_traceable().remove_reference(&mut old_result);
         old_result.drop_ref();
 
         // 设置新引用
