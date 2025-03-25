@@ -1,7 +1,7 @@
 foo := (n=>0)->{a:=n;if(n<100){foo(a+1)}};foo();
 
 create_async_func := () -> (n=>0) -> {
-    while (n = n + 1; n < 10000) {
+    while (n = n + 1; n < 1000) {
         yield n / 2;
     };
     return "success";

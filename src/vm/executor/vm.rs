@@ -784,7 +784,7 @@ impl IRExecutor {
         self.context
             .new_frame(&self.stack, true, code_position, false);
 
-        let default_args = lambda.default_args_tuple.clone();
+        let default_args = &lambda.default_args_tuple;
 
         for v in default_args.as_type::<VMTuple>().values.iter() {
             let v_ref = try_value_ref_as_vmobject(v.clone())
@@ -1439,7 +1439,7 @@ impl IRExecutor {
                 let result = lambda_obj
                     .default_args_tuple
                     .as_type::<VMTuple>()
-                    .assign_members(arg_tuple_ref.clone());
+                    .assign_members(arg_tuple_ref);
                 if result.is_err() {
                     return Err(VMError::VMVariableError(result.unwrap_err()));
                 }
