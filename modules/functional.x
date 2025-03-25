@@ -3,8 +3,8 @@
 // 创建函数式编程库作为可绑定对象
 fp := bind {
     // 高阶函数
-    map => (arr => (,), fn => (x => null) -> null) -> {
-        result := (,);
+    map => (arr => (), fn => (x?) -> null) -> {
+        result := ();
         i := 0;
         while (i < len(arr)) {
             result = result + (fn(arr[i]),);
@@ -13,8 +13,8 @@ fp := bind {
         return result;
     },
     
-    filter => (arr => (,), predicate => (x => null) -> false) -> {
-        result := (,);
+    filter => (arr => (), predicate => (x?) -> false) -> {
+        result := ();
         i := 0;
         while (i < len(arr)) {
             if (predicate(arr[i])) {
@@ -25,7 +25,7 @@ fp := bind {
         return result;
     },
     
-    reduce => (arr => (,), fn => (acc => null, x => null) -> null, initial => null) -> {
+    reduce => (arr => (), fn => (acc?, x?) -> null, initial?) -> {
         if (len(arr) == 0) { return initial; };
         
         acc := copy initial;
@@ -38,13 +38,13 @@ fp := bind {
     },
     
     // 函数组合
-    compose => (f => (x => null) -> null, g => (x => null) -> null) -> {
-        return (x => null) -> {
+    compose => (f => (x?) -> null, g => (x?) -> null) -> {
+        return (x?) -> {
             return f(g(x));
         };
     },
     
-    pipe => (x => null, fns => (,)) -> {
+    pipe => (x?, fns => ()) -> {
         result := copy x;
         i := 0;
         while (i < len(fns)) {
@@ -55,26 +55,26 @@ fp := bind {
     },
     
     // 柯里化和部分应用
-    curry2 => (fn => (a => null, b => null) -> null) -> {
-        return (a => null) -> {
-            return (b => null) -> {
+    curry2 => (fn => (a?, b?) -> null) -> {
+        return (a?) -> {
+            return (b?) -> {
                 return fn(a, b);
             };
         };
     },
     
-    curry3 => (fn => (a => null, b => null, c => null) -> null) -> {
-        return (a => null) -> {
-            return (b => null) -> {
-                return (c => null) -> {
+    curry3 => (fn => (a?, b?, c?) -> null) -> {
+        return (a?) -> {
+            return (b?) -> {
+                return (c?) -> {
                     return fn(a, b, c);
                 };
             };
         };
     },
     
-    partial => (fn => (x => null) -> null, args => (,)) -> {
-        return (x => null) -> {
+    partial => (fn => (x?) -> null, args => ()) -> {
+        return (x?) -> {
             all_args := copy args + (x,);
             return fn(all_args);
         };
@@ -82,47 +82,48 @@ fp := bind {
     
     // Option 类型模拟
     Option => bind {
-        Some => (value => null) -> {
-            return bind {
-                "type": "Some",
+        Some => (value?) -> {
+            return Option::Some::bind {
                 "value": value,
+                "Some": self.Some,
                 is_some => () -> { return true; },
                 is_none => () -> { return false; },
-                unwrap => () -> { return value; },
-                map => (fn => (x => null) -> null) -> {
-                    return self.Some(fn(value));
+                unwrap => () -> { return self.value; },
+                map => (fn => (x?) -> null) -> {
+                    return self.Some(fn(self.value));
                 },
-                and_then => (fn => (x => null) -> null) -> {
-                    return fn(value);
+                and_then => (fn => (x?) -> null) -> {
+                    return fn(self.value);
                 },
                 or_else => (fn => () -> null) -> {
-                    return self.Some(value);
+                    return self.Some(self.value);
                 },
-                unwrap_or => (default => null) -> {
-                    return value;
+                unwrap_or => (default?) -> {
+                    return self.value;
                 },
                 unwrap_or_else => (fn => () -> null) -> {
-                    return value;
+                    return self.value;
                 }
             };
         },
         
         None => () -> {
-            return bind {
+            return Option::None::bind {
                 "type": "None",
+                "None": self.None,
                 is_some => () -> { return false; },
                 is_none => () -> { return true; },
                 unwrap => () -> { return null; },
-                map => (fn => (x => null) -> null) -> {
+                map => (fn => (x?) -> null) -> {
                     return self.None();
                 },
-                and_then => (fn => (x => null) -> null) -> {
+                and_then => (fn => (x?) -> null) -> {
                     return self.None();
                 },
                 or_else => (fn => () -> null) -> {
                     return fn();
                 },
-                unwrap_or => (default => null) -> {
+                unwrap_or => (default?) -> {
                     return default;
                 },
                 unwrap_or_else => (fn => () -> null) -> {
@@ -134,80 +135,82 @@ fp := bind {
     
     // Result 类型模拟
     Result => bind {
-        Ok => (value => null) -> {
-            return bind {
+        Ok => (value?) -> {
+            return Result::Ok::bind {
                 "type": "Ok",
                 "value": value,
+                "Ok": self.Ok,
                 is_ok => () -> { return true; },
                 is_err => () -> { return false; },
-                unwrap => () -> { return value; },
+                unwrap => () -> { return self.value; },
                 unwrap_err => () -> { return null; }, // 错误情况
-                map => (fn => (x => null) -> null) -> {
-                    return self.Ok(fn(value));
+                map => (fn => (x?) -> null) -> {
+                    return self.Ok(fn(self.value));
                 },
-                map_err => (fn => (x => null) -> null) -> {
-                    return self.Ok(value);
+                map_err => (fn => (x?) -> null) -> {
+                    return self.Ok(self.value);
                 },
-                and_then => (fn => (x => null) -> null) -> {
-                    return fn(value);
+                and_then => (fn => (x?) -> null) -> {
+                    return fn(self.value);
                 },
-                or_else => (fn => (x => null) -> null) -> {
-                    return self.Ok(value);
+                or_else => (fn => (x?) -> null) -> {
+                    return self.Ok(self.value);
                 }
             };
         },
         
-        Err => (error => null) -> {
-            return bind {
+        Err => (error?) -> {
+            return Result::Err::bind {
                 "type": "Err",
                 "error": error,
+                "Err": self.Err,
                 is_ok => () -> { return false; },
                 is_err => () -> { return true; },
                 unwrap => () -> { return null; }, // 错误情况
-                unwrap_err => () -> { return error; },
-                map => (fn => (x => null) -> null) -> {
-                    return self.Err(error);
+                unwrap_err => () -> { return self.error; },
+                map => (fn => (x?) -> null) -> {
+                    return self.Err(self.error);
                 },
-                map_err => (fn => (x => null) -> null) -> {
-                    return self.Err(fn(error));
+                map_err => (fn => (x?) -> null) -> {
+                    return self.Err(fn(self.error));
                 },
-                and_then => (fn => (x => null) -> null) -> {
-                    return self.Err(error);
+                and_then => (fn => (x?) -> null) -> {
+                    return self.Err(self.error);
                 },
-                or_else => (fn => (x => null) -> null) -> {
-                    return fn(error);
+                or_else => (fn => (x?) -> null) -> {
+                    return fn(self.error);
                 }
             };
         }
     },
     
     // 通用工具函数
-    identity => (x => null) -> {
+    identity => (x?) -> {
         return x;
     },
     
-    constant => (x => null) -> {
+    constant => (x?) -> {
         return () -> {
             return x;
         };
     },
     
     // 不可变数据操作
-    array => bind {
-        append => (arr => (,), value?) -> {
+    array => {
+        append => (arr => (), value?) -> {
             return arr + (value,);
         },
         
-        prepend => (arr => (,), value?) -> {
+        prepend => (arr => (), value?) -> {
             return (value,) + arr;
         },
         
-        concat => (arr1 => (,), arr2 => (,)) -> {
+        concat => (arr1 => (), arr2 => ()) -> {
             return arr1 + arr2;
         },
         
-        take => (arr => (,), n => 0) -> {
-            result := (,);
+        take => (arr => (), n => 0) -> {
+            result := ();
             i := 0;
             count := if (n > len(arr)) (len(arr)) else n;
             
@@ -219,8 +222,8 @@ fp := bind {
             return result;
         },
         
-        drop => (arr => (,), n => 0) -> {
-            result := (,);
+        drop => (arr => (), n => 0) -> {
+            result := ();
             i := n;
             
             while (i < len(arr)) {
@@ -231,18 +234,18 @@ fp := bind {
             return result;
         },
         
-        find => (arr => (,), predicate => (x?) -> false) -> {
+        find => (arr => (), predicate => (x?) -> false) -> {
             i := 0;
             while (i < len(arr)) {
                 if (predicate(arr[i])) {
-                    return fp.Option.Some(arr[i]);
+                    return self.Option.Some(arr[i]);
                 };
                 i = i + 1;
             };
-            return fp.Option.None();
+            return self.Option.None();
         },
         
-        all => (arr => (,), predicate => (x?) -> false) -> {
+        all => (arr => (), predicate => (x?) -> false) -> {
             i := 0;
             while (i < len(arr)) {
                 if (not predicate(arr[i])) {
@@ -253,7 +256,7 @@ fp := bind {
             return true;
         },
         
-        any => (arr => (,), predicate => (x?) -> false) -> {
+        any => (arr => (), predicate => (x?) -> false) -> {
             i := 0;
             while (i < len(arr)) {
                 if (predicate(arr[i])) {
@@ -264,8 +267,8 @@ fp := bind {
             return false;
         },
         
-        zip => (arr1 => (,), arr2 => (,)) -> {
-            result := (,);
+        zip => (arr1 => (), arr2 => ()) -> {
+            result := ();
             i := 0;
             len := if (len(arr1) < len(arr2)) (len(arr1)) else len(arr2);
             
@@ -277,9 +280,9 @@ fp := bind {
             return result;
         },
         
-        unzip => (pairs => (,)) -> {
-            fst := (,);
-            snd := (,);
+        unzip => (pairs => ()) -> {
+            fst := ();
+            snd := ();
             i := 0;
             
             while (i < len(pairs)) {
@@ -295,17 +298,17 @@ fp := bind {
     },
     
     // 函数复合工具
-    flip => (fn => (a => null, b => null) -> null) -> {
-        return (b => null, a => null) -> {
+    flip => (fn => (a?, b?) -> null) -> {
+        return (b?, a?) -> {
             return fn(a, b);
         };
     },
     
     // 记忆化（memoization）
-    memoize => (fn => (x => null) -> null) -> {
+    memoize => (fn => (x?) -> null) -> {
         cache := {};
         
-        return (x => null) -> {
+        return (x?) -> {
             key := str(x);
             if (key in cache) {
                 return cache[key];
@@ -329,8 +332,38 @@ fp := bind {
                 return true;
             };
         },
-    extend => (obj?, methods => (,)) -> {
-        new_obj := (,);
+    Iterator => (container?) -> {
+        return Iterator::bind {
+            "container": container,
+            "index": 0,
+            next => () -> {
+                if (self.index >= len(self.container)) {
+                    return null;
+                };
+                value := self.container[self.index];
+                self.index = self.index + 1;
+                return value;
+            },
+            has_next => () -> {
+                return self.index < len(self.container);
+            },
+            reset => () -> {
+                self.index = 0;
+            },
+            step => (step => 1) -> {
+                self.index = self.index + step;
+                return self.index < len(self.container);
+            },
+            get => () -> {
+                if (self.index >= len(self.container)) {
+                    return null;
+                };
+                return self.container[self.index];
+            },
+        };
+    },
+    extend => (obj?, methods => ()) -> {
+        new_obj := ();
         n := 0; while(n < len(obj)) {
             i := 0;
             found := while(i < len(methods)) {
