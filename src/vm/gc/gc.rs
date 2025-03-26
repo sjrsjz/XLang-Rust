@@ -87,7 +87,7 @@ impl GCRef {
         }
     }
 
-    pub fn as_type<T>(&self) -> &mut T
+    pub fn as_type<T>(&mut self) -> &mut T
     where
         T: GCObject + 'static,
     {
