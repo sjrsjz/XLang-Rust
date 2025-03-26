@@ -1,6 +1,7 @@
 use std::collections::HashMap;
 use std::fs::File;
 use std::io::Read;
+use std::result;
 
 
 use crate::vm::ir::DebugInfo;
@@ -1002,13 +1003,10 @@ impl IRExecutor {
             //gc_system.print_reference_graph(); // debug
             self.ip += 1;
         } else if *coroutine_status != VMCoroutineStatus::Finished {
-            let (result, result_ref) = &mut self.pop_and_ref()?;
-
+            let mut result = self.pop_object_and_check()?;
             let lambda_obj = self.entry_lambda.as_type::<VMLambda>();
-
             lambda_obj.coroutine_status = VMCoroutineStatus::Finished;
-
-            lambda_obj.set_result(result_ref);
+            lambda_obj.set_result(&mut result);
             result.drop_ref();
         }
 
