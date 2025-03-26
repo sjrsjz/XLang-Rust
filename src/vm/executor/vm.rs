@@ -977,7 +977,7 @@ impl IRExecutor {
                 .instructions[self.ip as usize]
                 .clone();
 
-            //gc_system.collect(); // debug
+            gc_system.collect(); // debug
             // if let IR::DebugInfo(_) = instruction {} else{
             // }
             //self.context.debug_print_all_vars();

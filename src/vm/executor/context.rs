@@ -161,12 +161,12 @@ pub fn pop_frame(
         if let Some((vars, _, _, _)) = self.frames.last_mut() {
             if vars.contains_key(&name) {
                 let mut var = vars.get(&name).unwrap().clone();
-                vars.insert(name.clone(), gc_system.new_object(VMVariableWrapper::new(value)));
+                vars.insert(name.clone(), value.clone_ref());
                 var.drop_ref(); // 扔掉旧的引用，因为已经被覆盖了
                 return Ok(());
             }
 
-            vars.insert(name, gc_system.new_object(VMVariableWrapper::new(value)));
+            vars.insert(name, value.clone_ref());
             Ok(())
         } else {
             Err(ContextError::NoFrame)
