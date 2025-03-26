@@ -3,7 +3,6 @@ use std::collections::HashMap;
 use std::any::TypeId;
 use std::hash::{Hash, Hasher};
 
-use colored::Colorize;
 
 pub trait GCObject {
     fn free(&mut self); // free the object
@@ -361,7 +360,7 @@ impl GCSystem {
                         let mut error_msg = String::new();
 
                         error_msg.push_str(
-                            &"\n===== FATAL ERROR: INVALID REFERENCE DETECTED =====\n".to_string(),
+                            "\n===== FATAL ERROR: INVALID REFERENCE DETECTED =====\n",
                         );
                         error_msg.push_str(&format!(
                             "Object #{} (Type: {:?}) references an object not managed by the GC\n",
@@ -369,7 +368,7 @@ impl GCSystem {
                         ));
                         error_msg.push_str(&format!("Reference target: {:?}\n", ref_obj));
                         error_msg.push_str(&format!("Reference address: 0x{:x}\n\n", ref_usize));
-                        error_msg.push_str(&"All References:\n".to_string());
+                        error_msg.push_str("All References:\n");
                         for (ref_obj, count) in &gc_ref.get_traceable().references {
                             error_msg.push_str(&format!(
                                 "  - Object {:?} (Type: {:?}): {} references\n",
@@ -378,13 +377,13 @@ impl GCSystem {
                         }
 
                         // Include index mapping for diagnostics
-                        error_msg.push_str(&"Current GC object map:\n".to_string());
+                        error_msg.push_str("Current GC object map:\n");
                         for (&addr, &idx) in &idx_map {
                             error_msg.push_str(&format!("  0x{:x} -> Object #{}\n", addr, idx));
                         }
 
                         // Include partial reference graph for context
-                        error_msg.push_str(&"\nCurrent reference graph (partial):\n".to_string());
+                        error_msg.push_str("\nCurrent reference graph (partial):\n");
                         for (idx, refs) in ref_graph.iter().enumerate().take(i) {
                             if !refs.is_empty() {
                                 error_msg.push_str(&format!(
@@ -394,7 +393,7 @@ impl GCSystem {
                             }
                         }
 
-                        error_msg.push_str(&"\n======= PROGRAM TERMINATING =======\n".to_string());
+                        error_msg.push_str("\n======= PROGRAM TERMINATING =======\n");
 
                         // Panic with the complete error message
                         panic!("{}", error_msg);

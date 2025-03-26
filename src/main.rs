@@ -6,7 +6,6 @@ use vm::executor::variable::VMInstructions;
 use vm::executor::variable::VMLambda;
 use vm::executor::variable::VMTuple;
 
-use vm::gc;
 use vm::gc::gc::GCRef;
 use vm::ir::IRPackage;
 use vm::ir::IR;
