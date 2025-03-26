@@ -10,7 +10,7 @@
                     "build",
                     "--bin=XLang-Rust",
                     "--package=XLang-Rust",
-                    "--release"
+                    //"--release"
                 ],
                 "filter": {
                     "name": "XLang-Rust",

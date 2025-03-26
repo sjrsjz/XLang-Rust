@@ -776,7 +776,7 @@ impl VMVariableWrapper {
 
         VMVariableWrapper {
             value_ref: value.clone(),
-            traceable: GCTraceable::new(Some(&vec![value])),
+            traceable: GCTraceable::new::<VMVariableWrapper>(Some(&vec![value])),
             alias: Vec::new(),
         }
     }
@@ -841,7 +841,7 @@ impl VMWrapper {
     pub fn new(value: &mut GCRef) -> Self {
         VMWrapper {
             value_ref: value.clone(),
-            traceable: GCTraceable::new(Some(&vec![value])),
+            traceable: GCTraceable::new::<VMWrapper>(Some(&vec![value])),
             alias: Vec::new(),
         }
     }
@@ -909,7 +909,7 @@ impl VMInt {
     pub fn new(value: i64) -> Self {
         VMInt {
             value,
-            traceable: GCTraceable::new(None),
+            traceable: GCTraceable::new::<VMInt>(None),
             alias: Vec::new(),
         }
     }
@@ -917,7 +917,7 @@ impl VMInt {
     pub fn new_with_alias(value: i64, alias: &Vec<String>) -> Self {
         VMInt {
             value,
-            traceable: GCTraceable::new(None),
+            traceable: GCTraceable::new::<VMInt>(None),
             alias: alias.clone(),
         }
     }
@@ -1231,7 +1231,7 @@ impl VMString {
     pub fn new(value: String) -> Self {
         VMString {
             value,
-            traceable: GCTraceable::new(None),
+            traceable: GCTraceable::new::<VMString>(None),
             alias: Vec::new(),
         }
     }
@@ -1239,7 +1239,7 @@ impl VMString {
     pub fn new_with_alias(value: String, alias: &Vec<String>) -> Self {
         VMString {
             value,
-            traceable: GCTraceable::new(None),
+            traceable: GCTraceable::new::<VMString>(None),
             alias: alias.clone(),
         }
     }
@@ -1410,7 +1410,7 @@ impl VMFloat {
     pub fn new(value: f64) -> Self {
         VMFloat {
             value,
-            traceable: GCTraceable::new(None),
+            traceable: GCTraceable::new::<VMFloat>(None),
             alias: Vec::new(),
         }
     }
@@ -1418,7 +1418,7 @@ impl VMFloat {
     pub fn new_with_alias(value: f64, alias: &Vec<String>) -> Self {
         VMFloat {
             value,
-            traceable: GCTraceable::new(None),
+            traceable: GCTraceable::new::<VMFloat>(None),
             alias: alias.clone(),
         }
     }
@@ -1637,7 +1637,7 @@ impl VMBoolean {
     pub fn new(value: bool) -> Self {
         VMBoolean {
             value,
-            traceable: GCTraceable::new(None),
+            traceable: GCTraceable::new::<VMBoolean>(None),
             alias: Vec::new(),
         }
     }
@@ -1645,7 +1645,7 @@ impl VMBoolean {
     pub fn new_with_alias(value: bool, alias: &Vec<String>) -> Self {
         VMBoolean {
             value,
-            traceable: GCTraceable::new(None),
+            traceable: GCTraceable::new::<VMBoolean>(None),
             alias: alias.clone(),
         }
     }
@@ -1774,14 +1774,14 @@ impl Default for VMNull {
 impl VMNull {
     pub fn new() -> Self {
         VMNull {
-            traceable: GCTraceable::new(None),
+            traceable: GCTraceable::new::<VMNull>(None),
             alias: Vec::new(),
         }
     }
 
     pub fn new_with_alias(alias: &Vec<String>) -> Self {
         VMNull {
-            traceable: GCTraceable::new(None),
+            traceable: GCTraceable::new::<VMNull>(None),
             alias: alias.clone(),
         }
     }
@@ -1860,7 +1860,7 @@ impl VMKeyVal {
         VMKeyVal {
             key: key.clone(),
             value: value.clone(),
-            traceable: GCTraceable::new(Some(&vec![key, value])),
+            traceable: GCTraceable::new::<VMKeyVal>(Some(&vec![key, value])),
             alias: Vec::new(),
         }
     }
@@ -1869,7 +1869,7 @@ impl VMKeyVal {
         VMKeyVal {
             key: key.clone(),
             value: value.clone(),
-            traceable: GCTraceable::new(Some(&vec![key, value])),
+            traceable: GCTraceable::new::<VMKeyVal>(Some(&vec![key, value])),
             alias: alias.clone(),
         }
     }
@@ -1982,7 +1982,7 @@ impl VMNamed {
         VMNamed {
             key: key.clone(),
             value: value.clone(),
-            traceable: GCTraceable::new(Some(&vec![key, value])),
+            traceable: GCTraceable::new::<VMNamed>(Some(&vec![key, value])),
             alias: Vec::new(),
         }
     }
@@ -1991,7 +1991,7 @@ impl VMNamed {
         VMNamed {
             key: key.clone(),
             value: value.clone(),
-            traceable: GCTraceable::new(Some(&vec![key, value])),
+            traceable: GCTraceable::new::<VMNamed>(Some(&vec![key, value])),
             alias: alias.clone(),
         }
     }
@@ -2101,7 +2101,7 @@ pub struct VMTuple {
 
 impl VMTuple {
     pub fn new(values: Vec<&mut GCRef>) -> Self {
-        let gc_traceable = GCTraceable::new(Some(&values));
+        let gc_traceable = GCTraceable::new::<VMTuple>(Some(&values));
         let mut cloned_refs = Vec::new();
         for value in values {
             cloned_refs.push(value.clone());
@@ -2117,7 +2117,7 @@ impl VMTuple {
 
     pub fn new_with_alias(values: Vec<&mut GCRef>, alias: &Vec<String>) -> Self {
         // 创建对象并设置引用跟踪
-        let gc_traceable = GCTraceable::new(Some(&values));
+        let gc_traceable = GCTraceable::new::<VMTuple>(Some(&values));
         let mut cloned_refs = Vec::new();
         for value in values {
             cloned_refs.push(value.clone());
@@ -2487,7 +2487,7 @@ impl VMInstructions {
         VMInstructions {
             instructions,
             func_ips,
-            traceable: GCTraceable::new(None),
+            traceable: GCTraceable::new::<VMInstructions>(None),
             alias: Vec::new(),
         }
     }
@@ -2500,7 +2500,7 @@ impl VMInstructions {
         VMInstructions {
             instructions,
             func_ips,
-            traceable: GCTraceable::new(None),
+            traceable: GCTraceable::new::<VMInstructions>(None),
             alias: alias.clone(),
         }
     }
@@ -2639,7 +2639,7 @@ impl VMLambda {
             default_args_tuple: default_args_tuple.clone(),
             self_object: cloned,
             lambda_instructions: lambda_instructions.clone(),
-            traceable: GCTraceable::new(Some(&refs_vec)),
+            traceable: GCTraceable::new::<VMLambda>(Some(&refs_vec)),
             result: result.clone(),
             coroutine_status: VMCoroutineStatus::Running,
             alias: Vec::new(),
@@ -2688,7 +2688,7 @@ impl VMLambda {
             default_args_tuple: default_args_tuple.clone(),
             self_object: cloned,
             lambda_instructions: lambda_instructions.clone(),
-            traceable: GCTraceable::new(Some(&refs_vec)),
+            traceable: GCTraceable::new::<VMLambda>(Some(&refs_vec)),
             result: result.clone(),
             coroutine_status: VMCoroutineStatus::Running,
             alias: alias.clone(),
@@ -2869,7 +2869,7 @@ impl VMNativeFunction {
     pub fn new(function: fn(GCRef, &mut GCSystem) -> Result<GCRef, VMVariableError>) -> Self {
         VMNativeFunction {
             function,
-            traceable: GCTraceable::new(None),
+            traceable: GCTraceable::new::<VMNativeFunction>(None),
             alias: Vec::new(),
         }
     }
@@ -2880,7 +2880,7 @@ impl VMNativeFunction {
     ) -> Self {
         VMNativeFunction {
             function,
-            traceable: GCTraceable::new(None),
+            traceable: GCTraceable::new::<VMNativeFunction>(None),
             alias: alias.clone(),
         }
     }
@@ -2949,7 +2949,7 @@ impl VMRange {
         VMRange {
             start,
             end,
-            traceable: GCTraceable::new(None),
+            traceable: GCTraceable::new::<VMRange>(None),
             alias: Vec::new(),
         }
     }
@@ -2958,7 +2958,7 @@ impl VMRange {
         VMRange {
             start,
             end,
-            traceable: GCTraceable::new(None),
+            traceable: GCTraceable::new::<VMRange>(None),
             alias: alias.clone(),
         }
     }
@@ -3091,7 +3091,7 @@ impl VMBytes {
     pub fn new(value: Vec<u8>) -> Self {
         VMBytes {
             value,
-            traceable: GCTraceable::new(None),
+            traceable: GCTraceable::new::<VMBytes>(None),
             alias: Vec::new(),
         }
     }
@@ -3099,7 +3099,7 @@ impl VMBytes {
     pub fn new_with_alias(value: Vec<u8>, alias: &Vec<String>) -> Self {
         VMBytes {
             value,
-            traceable: GCTraceable::new(None),
+            traceable: GCTraceable::new::<VMBytes>(None),
             alias: alias.clone(),
         }
     }
