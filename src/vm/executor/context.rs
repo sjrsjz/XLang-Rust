@@ -47,6 +47,12 @@ impl ContextError {
     }
 }
 
+impl Default for Context {
+    fn default() -> Self {
+        Self::new()
+    }
+}
+
 impl Context {
     pub fn new() -> Self {
         Context {
@@ -78,7 +84,7 @@ pub fn pop_frame(
 ) -> Result<(), ContextError> {
     // 先处理函数调用退出的情况
     if exit_function {
-        while self.frames.len() > 0 && !self.frames[self.frames.len() - 1].1 {
+        while !self.frames.is_empty() && !self.frames[self.frames.len() - 1].1 {
             // 1. 先复制要离线的变量
             let mut variables_to_offline: Vec<GCRef> = if !self.frames.is_empty() {
                 self.frames.last().unwrap().0.values().cloned().collect()
@@ -163,7 +169,7 @@ pub fn pop_frame(
             vars.insert(name, gc_system.new_object(VMVariableWrapper::new(value)));
             Ok(())
         } else {
-            return Err(ContextError::NoFrame);
+            Err(ContextError::NoFrame)
         }
     }
 
@@ -180,7 +186,7 @@ pub fn pop_frame(
         for (vars, _, _, _) in self.frames.iter_mut().rev() {
             if let Some(var) = vars.get_mut(name) {
                 try_assign_as_vmobject(var, value)
-                    .map_err(|e| ContextError::VMVariableError(e))?;
+                    .map_err(ContextError::VMVariableError)?;
             }
         }
         Err(ContextError::NoVariable(name.to_string()))
@@ -201,7 +207,7 @@ pub fn pop_frame(
         if self.frames.is_empty() {
             output.push_str(&"No active stack frames\n\n".dimmed().to_string());
         } else {
-            output.push_str(&format!("=== Stack Frames ===\n\n").color(title_color).bold().to_string());
+            output.push_str(&"=== Stack Frames ===\n\n".to_string().color(title_color).bold().to_string());
             
             for (i, (vars, is_function_frame, function_code_position, is_hidden_frame)) in self.frames.iter().enumerate().rev() {
                 // Frame header
@@ -231,20 +237,20 @@ pub fn pop_frame(
                     
                     for (name, var) in vars.iter() {
                         let var_value = try_repr_vmobject(var.clone(), None)
-                            .unwrap_or_else(|_| format!("<cannot display>"));
+                            .unwrap_or_else(|_| "<cannot display>".to_string());
                         
                         // 统一变量名和值的颜色
                         let variable_line = format!("    - {} = {}\n", 
                             name.color(variable_color).bold(), var_value.color(value_color));
                         output.push_str(&variable_line);
                     }
-                    output.push_str("\n");
+                    output.push('\n');
                 }
             }
         }
         
         // Format stack contents
-        output.push_str(&format!("=== Stack Contents ===\n\n").color(title_color).bold().to_string());
+        output.push_str(&"=== Stack Contents ===\n\n".to_string().color(title_color).bold().to_string());
         
         if stack.is_empty() {
             output.push_str(&"Stack is empty\n\n".dimmed().to_string());
@@ -253,7 +259,7 @@ pub fn pop_frame(
                 match item {
                     VMStackObject::LastIP(self_lambda, ip, is_function_call) => {
                         let self_lambda_value = try_repr_vmobject(self_lambda.clone(), None)
-                            .unwrap_or_else(|_| format!("<cannot display>"));
+                            .unwrap_or_else(|_| "<cannot display>".to_string());
                         let call_type = if *is_function_call { "function call" } else { "normal jump" };
                         
                         // 统一函数调用和跳转的颜色
@@ -269,18 +275,18 @@ pub fn pop_frame(
                     },
                     VMStackObject::VMObject(obj_ref) => {
                         let obj_value = try_repr_vmobject(obj_ref.clone(), None)
-                            .unwrap_or_else(|_| format!("<cannot display>"));
+                            .unwrap_or_else(|_| "<cannot display>".to_string());
                         
                         let object_line = format!("+ [{}] {}\n", i, obj_value);
                         output.push_str(&object_line.color(value_color).to_string());
                     }
                 }
             }
-            output.push_str("\n");
+            output.push('\n');
         }
         
         // Add stack pointers information
-        output.push_str(&format!("=== Stack Pointers ===\n\n").color(title_color).bold().to_string());
+        output.push_str(&"=== Stack Pointers ===\n\n".to_string().color(title_color).bold().to_string());
         if self.stack_pointers.is_empty() {
             output.push_str(&"No active stack pointers\n".dimmed().to_string());
         } else {

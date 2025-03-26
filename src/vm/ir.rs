@@ -156,6 +156,12 @@ pub struct Functions{
     function_instructions: HashMap<String, Vec<IR>>, // function name and instructions
 }
 
+impl Default for Functions {
+    fn default() -> Self {
+        Self::new()
+    }
+}
+
 impl Functions {
     pub fn new() -> Functions {
         Functions {
@@ -173,6 +179,6 @@ impl Functions {
             func_ips.insert(func_name.clone(), instructions.len());
             instructions.extend(func_instructions.clone());
         }
-        return IRPackage{instructions, function_ips:func_ips};
+        IRPackage{instructions, function_ips:func_ips}
     }
 }

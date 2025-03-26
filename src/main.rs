@@ -60,10 +60,10 @@ enum Commands {
 fn build_code(code: &str) -> Result<IRPackage, String> {
     let tokens = lexer::reject_comment(lexer::tokenize(code));
     let gathered = ast_token_stream::from_stream(&tokens);
-    let ast = match build_ast(&gathered) {
+    let ast = match build_ast(gathered) {
         Ok(ast) => ast,
         Err(err_token) => {
-            return Err(format!("{}", err_token.format(&tokens, code.to_string())));
+            return Err(err_token.format(&tokens, code.to_string()).to_string());
         }
     };
 
@@ -82,7 +82,7 @@ fn build_code(code: &str) -> Result<IRPackage, String> {
     ir.push(IR::Return);
     functions.append("__main__".to_string(), ir);
 
-    return Ok(functions.build_instructions());
+    Ok(functions.build_instructions())
 }
 
 // Execute compiled code
@@ -126,7 +126,7 @@ fn execute_ir(package: IRPackage, source_code: Option<String>) -> Result<(), VME
     let result = wrapped.as_type::<VMVariableWrapper>().value_ref.as_type::<VMLambda>().get_value();
 
     let result_ref =
-        try_value_ref_as_vmobject(result).map_err(|e| VMError::VMVariableError(e))?;
+        try_value_ref_as_vmobject(result).map_err(VMError::VMVariableError)?;
 
     if !result_ref.isinstance::<VMNull>() {
         match try_repr_vmobject(result_ref, None) {
@@ -323,7 +323,8 @@ fn run_repl() -> Result<(), String> {
             }
 
             // 添加内置对象
-            for obj in ["Out"] {
+            {
+                let obj = "Out";
                 objects.insert(obj.to_string());
             }
 
@@ -344,7 +345,7 @@ fn run_repl() -> Result<(), String> {
             for line in code.lines() {
                 let line = line.trim();
                 if let Some(idx) = line.find(":=") {
-                    if let Some(var_name) = line[..idx].trim().split_whitespace().last() {
+                    if let Some(var_name) = line[..idx].split_whitespace().last() {
                         self.variables.insert(var_name.to_string());
                     }
                 }
@@ -363,11 +364,11 @@ fn run_repl() -> Result<(), String> {
         ) -> rustyline::Result<(usize, Vec<Pair>)> {
             // 获取光标前的单词用于补全
             let (start, word) = {
-                let mut cs = line[..pos].char_indices().rev();
+                let cs = line[..pos].char_indices().rev();
                 let mut word_chars = Vec::new();
                 let mut word_start = pos;
 
-                while let Some((idx, c)) = cs.next() {
+                for (idx, c) in cs {
                     if c.is_alphanumeric() || c == '_' || c == '.' {
                         word_chars.push(c);
                         word_start = idx;
