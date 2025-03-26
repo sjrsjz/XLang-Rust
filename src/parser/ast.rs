@@ -310,10 +310,10 @@ pub mod ast_token_stream {
     }
 }
 
-fn get_next_tokens<'a>(
-    tokens: GatheredTokens<'a>,
+fn get_next_tokens(
+    tokens: GatheredTokens<'_>,
     current: usize,
-) -> Result<GatheredTokens<'a>, ParserError<'a>> {
+) -> Result<GatheredTokens<'_>, ParserError<'_>> {
     let mut stack = Vec::<(&str, usize)>::new();
     let mut next_tokens_end = 0usize;
     let mut index = current;
@@ -321,15 +321,15 @@ fn get_next_tokens<'a>(
         return Ok(&[]);
     }
     loop {
-        if vec!["{", "[", "("].contains(&tokens[index].token)
+        if ["{", "[", "("].contains(&tokens[index].token)
             && tokens[index].token_type == TokenType::SYMBOL
         {
             stack.push((tokens[index].token, index));
             next_tokens_end += 1;
-        } else if vec!["}", "]", ")"].contains(&tokens[index].token)
+        } else if ["}", "]", ")"].contains(&tokens[index].token)
             && tokens[index].token_type == TokenType::SYMBOL
         {
-            if stack.len() == 0 {
+            if stack.is_empty() {
                 break;
             }
             let (last, last_position) = stack.pop().unwrap();
@@ -348,26 +348,26 @@ fn get_next_tokens<'a>(
             next_tokens_end += 1;
         }
         index += 1;
-        if index >= (tokens).len() || stack.len() == 0 {
+        if index >= (tokens).len() || stack.is_empty() {
             break;
         }
     }
-    if stack.len() > 0 {
+    if !stack.is_empty() {
         let (_, last_position) = stack.pop().unwrap();
         return Err(ParserError::UnmatchedParenthesis(
             &tokens[last_position],
             &tokens[index - 1],
         ));
     }
-    return Ok(&tokens[current..current + next_tokens_end]);
+    Ok(&tokens[current..current + next_tokens_end])
 }
 
-fn gather<'t>(tokens: GatheredTokens<'t>) -> Result<Vec<GatheredTokens<'t>>, ParserError<'t>> {
+fn gather(tokens: GatheredTokens<'_>) -> Result<Vec<GatheredTokens<'_>>, ParserError<'_>> {
     let mut current = 0;
     let mut result = Vec::<GatheredTokens>::new();
     while current < tokens.len() {
         let next_tokens = get_next_tokens(tokens, current)?;
-        if next_tokens.len() == 0 {
+        if next_tokens.is_empty() {
             return Err(ParserError::UnsupportedStructure(&tokens[current]));
         }
         current += next_tokens.len();
@@ -475,10 +475,7 @@ impl ASTNode<'_> {
                 Some(token) => Some(token),
                 None => None,
             },
-            children: match children {
-                Some(children) => children,
-                None => Vec::new(),
-            },
+            children: children.unwrap_or_default(),
         }
     }
 
@@ -491,12 +488,12 @@ impl ASTNode<'_> {
             | ASTNodeType::Boolean(v)) => {
                 format!("{}{:?}: {:?}", indent_str, node_type, v)
             }
-            node_type @ _ => format!("{}{:?}", indent_str, node_type),
+            node_type => format!("{}{:?}", indent_str, node_type),
         };
 
         println!("{}", output);
 
-        if self.children.len() > 0 {
+        if !self.children.is_empty() {
             for child in &self.children {
                 child.formatted_print(indent + 2);
             }
@@ -531,7 +528,7 @@ impl<'a> NodeMatcher<'a> {
         tokens: &'b Vec<GatheredTokens<'a>>,
         current: usize,
     ) -> Result<(Option<ASTNode<'a>>, usize), ParserError<'a>> {
-        if tokens.len() == 0 {
+        if tokens.is_empty() {
             return Ok((Some(ASTNode::new(ASTNodeType::None, None, None)), 0));
         }
         for matcher in &self.matchers {
@@ -596,41 +593,41 @@ fn unwrap_brace<'t>(token: &GatheredTokens<'t>) -> Result<GatheredTokens<'t>, Pa
     {
         return Ok(&token[1..token.len() - 1]);
     }
-    return Err(ParserError::UnexpectedToken(&token[0]));
+    Err(ParserError::UnexpectedToken(&token[0]))
 }
 
 fn is_bracket(token: &GatheredTokens) -> bool {
     if token.len() < 2 {
         return false;
     }
-    return token[0].token_type == TokenType::SYMBOL
+    token[0].token_type == TokenType::SYMBOL
         && token[0].token == "("
         && token[token.len() - 1].token_type == TokenType::SYMBOL
-        && token[token.len() - 1].token == ")";
+        && token[token.len() - 1].token == ")"
 }
 
 fn is_brace(token: &GatheredTokens) -> bool {
     if token.len() < 2 {
         return false;
     }
-    return token[0].token_type == TokenType::SYMBOL
+    token[0].token_type == TokenType::SYMBOL
         && token[0].token == "{"
         && token[token.len() - 1].token_type == TokenType::SYMBOL
-        && token[token.len() - 1].token == "}";
+        && token[token.len() - 1].token == "}"
 }
 
 fn is_square_bracket(token: &GatheredTokens) -> bool {
     if token.len() < 2 {
         return false;
     }
-    return token[0].token_type == TokenType::SYMBOL
+    token[0].token_type == TokenType::SYMBOL
         && token[0].token == "["
         && token[token.len() - 1].token_type == TokenType::SYMBOL
-        && token[token.len() - 1].token == "]";
+        && token[token.len() - 1].token == "]"
 }
 
-pub fn build_ast<'a>(tokens: GatheredTokens<'a>) -> Result<ASTNode<'a>, ParserError<'a>> {
-    let gathered = gather(&tokens)?;
+pub fn build_ast(tokens: GatheredTokens<'_>) -> Result<ASTNode<'_>, ParserError<'_>> {
+    let gathered = gather(tokens)?;
     let (matched, offset) = match_all(&gathered, 0)?;
     if matched.is_none() {
         return Err(ParserError::InvalidSyntax(&tokens[0]));
@@ -642,7 +639,7 @@ pub fn build_ast<'a>(tokens: GatheredTokens<'a>) -> Result<ASTNode<'a>, ParserEr
             gathered.last().unwrap().last().unwrap(),
         ));
     }
-    return Ok(matched);
+    Ok(matched)
 }
 
 fn match_all<'t>(
@@ -832,7 +829,7 @@ fn match_all<'t>(
         },
     ));
 
-    return node_matcher.match_node(tokens, current);
+    node_matcher.match_node(tokens, current)
 }
 
 fn match_expressions<'t>(
@@ -851,8 +848,8 @@ fn match_expressions<'t>(
             }
             if node_offset != left_tokens.len() {
                 return Err(ParserError::NotFullyMatched(
-                    &left_tokens.first().unwrap().first().unwrap(),
-                    &left_tokens.last().unwrap().last().unwrap(),
+                    left_tokens.first().unwrap().first().unwrap(),
+                    left_tokens.last().unwrap().last().unwrap(),
                 ));
             }
 
@@ -865,7 +862,7 @@ fn match_expressions<'t>(
             offset += 1;
         }
     }
-    if separated.len() == 0 {
+    if separated.is_empty() {
         return Ok((None, 0));
     }
     let (node, node_offset) = match_all(&left_tokens, 0)?;
@@ -873,14 +870,14 @@ fn match_expressions<'t>(
         return Ok((None, 0));
     }
     separated.push(node.unwrap());
-    return Ok((
+    Ok((
         Some(ASTNode::new(
             ASTNodeType::Expressions,
             Some(&tokens[current][0]),
             Some(separated),
         )),
         last_offset + node_offset,
-    ));
+    ))
 }
 
 fn match_return_and_yield<'t>(
@@ -900,8 +897,8 @@ fn match_return_and_yield<'t>(
     }
     if right_offset != right_tokens.len() {
         return Err(ParserError::NotFullyMatched(
-            &right_tokens.first().unwrap().first().unwrap(),
-            &right_tokens.last().unwrap().last().unwrap(),
+            right_tokens.first().unwrap().first().unwrap(),
+            right_tokens.last().unwrap().last().unwrap(),
         ));
     }
     let right = right.unwrap();
@@ -911,14 +908,14 @@ fn match_return_and_yield<'t>(
     } else {
         ASTNodeType::Yield
     };
-    return Ok((
+    Ok((
         Some(ASTNode::new(
             node_type,
             Some(&tokens[current][0]),
             Some(vec![right]),
         )),
         right_offset + 1,
-    ));
+    ))
 }
 
 fn match_tuple<'t>(
@@ -937,8 +934,8 @@ fn match_tuple<'t>(
             }
             if node_offset != left_tokens.len() {
                 return Err(ParserError::NotFullyMatched(
-                    &left_tokens.first().unwrap().first().unwrap(),
-                    &left_tokens.last().unwrap().last().unwrap(),
+                    left_tokens.first().unwrap().first().unwrap(),
+                    left_tokens.last().unwrap().last().unwrap(),
                 ));
             }
             separated.push(node.unwrap());
@@ -950,7 +947,7 @@ fn match_tuple<'t>(
             offset += 1;
         }
     }
-    if separated.len() == 0 {
+    if separated.is_empty() {
         return Ok((None, 0));
     }
     let (node, node_offset) = match_all(&left_tokens, 0)?;
@@ -958,14 +955,14 @@ fn match_tuple<'t>(
         return Ok((None, 0));
     }
     separated.push(node.unwrap());
-    return Ok((
+    Ok((
         Some(ASTNode::new(
             ASTNodeType::Tuple,
             Some(&tokens[current][0]),
             Some(separated),
         )),
         last_offset + node_offset,
-    ));
+    ))
 }
 
 fn match_let<'t>(
@@ -980,7 +977,7 @@ fn match_let<'t>(
         return Ok((None, 0));
     }
 
-    let left_tokens = gather(&tokens[current])?;
+    let left_tokens = gather(tokens[current])?;
 
     let (right, right_offset) = match_all(tokens, current + 2)?;
     if right.is_none() {
@@ -994,35 +991,35 @@ fn match_let<'t>(
     }
     if left_offset != left_tokens.len() {
         return Err(ParserError::NotFullyMatched(
-            &left_tokens.first().unwrap().first().unwrap(),
-            &left_tokens.last().unwrap().last().unwrap(),
+            left_tokens.first().unwrap().first().unwrap(),
+            left_tokens.last().unwrap().last().unwrap(),
         ));
     }
     let left = left.unwrap();
 
     match left.node_type {
         ASTNodeType::Variable(name) => {
-            return Ok((
+            Ok((
                 Some(ASTNode::new(
                     ASTNodeType::Let(name),
                     Some(&tokens[current][0]),
                     Some(vec![right]),
                 )),
                 right_offset + 2,
-            ));
+            ))
         },
         ASTNodeType::String(name) => {
-            return Ok((
+            Ok((
                 Some(ASTNode::new(
                     ASTNodeType::Let(name),
                     Some(&tokens[current][0]),
                     Some(vec![right]),
                 )),
                 right_offset + 2,
-            ));
+            ))
         }
         _ => {
-            return Err(ParserError::InvalidVariableName(&tokens[current][0]));
+            Err(ParserError::InvalidVariableName(&tokens[current][0]))
         }
     }
 
@@ -1066,8 +1063,8 @@ fn match_assign<'t>(
     }
     if left_offset != left_tokens.len() {
         return Err(ParserError::NotFullyMatched(
-            &left_tokens.first().unwrap().first().unwrap(),
-            &left_tokens.last().unwrap().last().unwrap(),
+            left_tokens.first().unwrap().first().unwrap(),
+            left_tokens.last().unwrap().last().unwrap(),
         ));
     }
     let left = left.unwrap();
@@ -1100,7 +1097,7 @@ fn match_named_to<'t>(
         return Ok((None, 0));
     }
 
-    let left_tokens = gather(&tokens[current])?;
+    let left_tokens = gather(tokens[current])?;
 
     let (left, left_offset) = match_all(&left_tokens, 0)?;
     if left.is_none() {
@@ -1108,8 +1105,8 @@ fn match_named_to<'t>(
     }
     if left_offset != left_tokens.len() {
         return Err(ParserError::NotFullyMatched(
-            &left_tokens.first().unwrap().first().unwrap(),
-            &left_tokens.last().unwrap().last().unwrap(),
+            left_tokens.first().unwrap().first().unwrap(),
+            left_tokens.last().unwrap().last().unwrap(),
         ));
     }
     let mut left = left.unwrap();
@@ -1124,14 +1121,14 @@ fn match_named_to<'t>(
     }
     let right = right.unwrap();
 
-    return Ok((
+    Ok((
         Some(ASTNode::new(
             ASTNodeType::NamedTo,
             Some(&tokens[current][0]),
             Some(vec![left, right]),
         )),
         right_offset + 2,
-    ));
+    ))
 }
 
 fn match_key_value<'t>(
@@ -1146,15 +1143,15 @@ fn match_key_value<'t>(
         return Ok((None, 0));
     }
 
-    let left_tokens = gather(&tokens[current])?;
+    let left_tokens = gather(tokens[current])?;
     let (left, left_offset) = match_all(&left_tokens, 0)?;
     if left.is_none() {
         return Ok((None, 0));
     }
     if left_offset != left_tokens.len() {
         return Err(ParserError::NotFullyMatched(
-            &left_tokens.first().unwrap().first().unwrap(),
-            &left_tokens.last().unwrap().last().unwrap(),
+            left_tokens.first().unwrap().first().unwrap(),
+            left_tokens.last().unwrap().last().unwrap(),
         ));
     }
     let left = left.unwrap();
@@ -1165,14 +1162,14 @@ fn match_key_value<'t>(
     }
     let right = right.unwrap();
 
-    return Ok((
+    Ok((
         Some(ASTNode::new(
             ASTNodeType::KeyValue,
             Some(&tokens[current][0]),
             Some(vec![left, right]),
         )),
         right_offset + 2,
-    ));
+    ))
 }
 
 fn match_while<'t>(
@@ -1187,7 +1184,7 @@ fn match_while<'t>(
         return Ok((None, 0));
     }
 
-    let condition_tokens = gather(&tokens[current + 1])?;
+    let condition_tokens = gather(tokens[current + 1])?;
 
     let (condition, condition_offset) = match_all(&condition_tokens, 0)?;
     if condition.is_none() {
@@ -1195,8 +1192,8 @@ fn match_while<'t>(
     }
     if condition_offset != condition_tokens.len() {
         return Err(ParserError::NotFullyMatched(
-            &condition_tokens.first().unwrap().first().unwrap(),
-            &condition_tokens.last().unwrap().last().unwrap(),
+            condition_tokens.first().unwrap().first().unwrap(),
+            condition_tokens.last().unwrap().last().unwrap(),
         ));
     }
     let condition = condition.unwrap();
@@ -1207,14 +1204,14 @@ fn match_while<'t>(
     }
     let body = body.unwrap();
 
-    return Ok((
+    Ok((
         Some(ASTNode::new(
             ASTNodeType::While,
             Some(&tokens[current][0]),
             Some(vec![condition, body]),
         )),
         body_offset + 2,
-    ));
+    ))
 }
 
 fn match_if<'t>(
@@ -1229,8 +1226,8 @@ fn match_if<'t>(
         return Ok((None, 0));
     }
 
-    let condition_tokens = gather(&tokens[current + 1])?;
-    let true_condition_tokens = gather(&tokens[current + 2])?;
+    let condition_tokens = gather(tokens[current + 1])?;
+    let true_condition_tokens = gather(tokens[current + 2])?;
 
     let (condition, condition_offset) = match_all(&condition_tokens, 0)?;
     if condition.is_none() {
@@ -1238,8 +1235,8 @@ fn match_if<'t>(
     }
     if condition_offset != condition_tokens.len() {
         return Err(ParserError::NotFullyMatched(
-            &condition_tokens.first().unwrap().first().unwrap(),
-            &condition_tokens.last().unwrap().last().unwrap(),
+            condition_tokens.first().unwrap().first().unwrap(),
+            condition_tokens.last().unwrap().last().unwrap(),
         ));
     }
     let condition = condition.unwrap();
@@ -1250,8 +1247,8 @@ fn match_if<'t>(
     }
     if true_condition_offset != true_condition_tokens.len() {
         return Err(ParserError::NotFullyMatched(
-            &true_condition_tokens.first().unwrap().first().unwrap(),
-            &true_condition_tokens.last().unwrap().last().unwrap(),
+            true_condition_tokens.first().unwrap().first().unwrap(),
+            true_condition_tokens.last().unwrap().last().unwrap(),
         ));
     }
     let true_condition = true_condition.unwrap();
@@ -1264,8 +1261,8 @@ fn match_if<'t>(
         }
         if false_condition_offset != false_condition_tokens.len() {
             return Err(ParserError::NotFullyMatched(
-                &false_condition_tokens.first().unwrap().first().unwrap(),
-                &false_condition_tokens.last().unwrap().last().unwrap(),
+                false_condition_tokens.first().unwrap().first().unwrap(),
+                false_condition_tokens.last().unwrap().last().unwrap(),
             ));
         }
         let false_condition = false_condition.unwrap();
@@ -1278,14 +1275,14 @@ fn match_if<'t>(
             false_condition_offset + 4,
         ));
     }
-    return Ok((
+    Ok((
         Some(ASTNode::new(
             ASTNodeType::If,
             Some(&tokens[current][0]),
             Some(vec![condition, true_condition]),
         )),
         true_condition_offset + 2,
-    ));
+    ))
 }
 
 fn match_control_flow<'t>(
@@ -1303,8 +1300,8 @@ fn match_control_flow<'t>(
         }
         if right_offset != right_tokens.len() {
             return Err(ParserError::NotFullyMatched(
-                &right_tokens.first().unwrap().first().unwrap(),
-                &right_tokens.last().unwrap().last().unwrap(),
+                right_tokens.first().unwrap().first().unwrap(),
+                right_tokens.last().unwrap().last().unwrap(),
             ));
         }
         let right = right.unwrap();
@@ -1324,8 +1321,8 @@ fn match_control_flow<'t>(
         }
         if right_offset != right_tokens.len() {
             return Err(ParserError::NotFullyMatched(
-                &right_tokens.first().unwrap().first().unwrap(),
-                &right_tokens.last().unwrap().last().unwrap(),
+                right_tokens.first().unwrap().first().unwrap(),
+                right_tokens.last().unwrap().last().unwrap(),
             ));
         }
         let right = right.unwrap();
@@ -1338,7 +1335,7 @@ fn match_control_flow<'t>(
             right_offset + 1,
         ));
     }
-    return Ok((None, 0));
+    Ok((None, 0))
 }
 
 fn match_or<'t>(
@@ -1371,8 +1368,8 @@ fn match_or<'t>(
     let left = left.unwrap();
     if left_offset != left_tokens.len() {
         return Err(ParserError::NotFullyMatched(
-            &left_tokens.first().unwrap().first().unwrap(),
-            &left_tokens.last().unwrap().last().unwrap(),
+            left_tokens.first().unwrap().first().unwrap(),
+            left_tokens.last().unwrap().last().unwrap(),
         ));
     }
     let (right, right_offset) = match_all(right_tokens, 0)?;
@@ -1382,8 +1379,8 @@ fn match_or<'t>(
     let right = right.unwrap();
     if right_offset != right_tokens.len() {
         return Err(ParserError::NotFullyMatched(
-            &right_tokens.first().unwrap().first().unwrap(),
-            &right_tokens.last().unwrap().last().unwrap(),
+            right_tokens.first().unwrap().first().unwrap(),
+            right_tokens.last().unwrap().last().unwrap(),
         ));
     }
     return Ok((
@@ -1426,8 +1423,8 @@ fn match_and<'t>(
     let left = left.unwrap();
     if left_offset != left_tokens.len() {
         return Err(ParserError::NotFullyMatched(
-            &left_tokens.first().unwrap().first().unwrap(),
-            &left_tokens.last().unwrap().last().unwrap(),
+            left_tokens.first().unwrap().first().unwrap(),
+            left_tokens.last().unwrap().last().unwrap(),
         ));
     }
     let (right, right_offset) = match_all(right_tokens, 0)?;
@@ -1437,8 +1434,8 @@ fn match_and<'t>(
     let right = right.unwrap();
     if right_offset != right_tokens.len() {
         return Err(ParserError::NotFullyMatched(
-            &right_tokens.first().unwrap().first().unwrap(),
-            &right_tokens.last().unwrap().last().unwrap(),
+            right_tokens.first().unwrap().first().unwrap(),
+            right_tokens.last().unwrap().last().unwrap(),
         ));
     }
     return Ok((
@@ -1473,7 +1470,7 @@ fn match_not<'t>(
             node_offset + 1,
         ));
     }
-    return Ok((None, 0));
+    Ok((None, 0))
 }
 
 // >, <, >=, <=, ==, !=
@@ -1513,8 +1510,8 @@ fn match_operation_compare<'t>(
     let left = left.unwrap();
     if left_offset != left_tokens.len() {
         return Err(ParserError::NotFullyMatched(
-            &left_tokens.first().unwrap().first().unwrap(),
-            &left_tokens.last().unwrap().last().unwrap(),
+            left_tokens.first().unwrap().first().unwrap(),
+            left_tokens.last().unwrap().last().unwrap(),
         ));
     }
     let (right, right_offset) = match_all(right_tokens, 0)?;
@@ -1524,8 +1521,8 @@ fn match_operation_compare<'t>(
     let right = right.unwrap();
     if right_offset != right_tokens.len() {
         return Err(ParserError::NotFullyMatched(
-            &right_tokens.first().unwrap().first().unwrap(),
-            &right_tokens.last().unwrap().last().unwrap(),
+            right_tokens.first().unwrap().first().unwrap(),
+            right_tokens.last().unwrap().last().unwrap(),
         ));
     }
     let operation = match operator.unwrap() {
@@ -1603,8 +1600,8 @@ fn match_operation_add_sub<'t>(
     let left = left.unwrap();
     if left_offset != left_tokens.len() {
         return Err(ParserError::NotFullyMatched(
-            &left_tokens.first().unwrap().first().unwrap(),
-            &left_tokens.last().unwrap().last().unwrap(),
+            left_tokens.first().unwrap().first().unwrap(),
+            left_tokens.last().unwrap().last().unwrap(),
         ));
     }
 
@@ -1619,8 +1616,8 @@ fn match_operation_add_sub<'t>(
     let right = right.unwrap();
     if right_offset != right_tokens.len() {
         return Err(ParserError::NotFullyMatched(
-            &right_tokens.first().unwrap().first().unwrap(),
-            &right_tokens.last().unwrap().last().unwrap(),
+            right_tokens.first().unwrap().first().unwrap(),
+            right_tokens.last().unwrap().last().unwrap(),
         ));
     }
 
@@ -1678,8 +1675,8 @@ fn match_operation_mul_div_mod<'t>(
     let left = left.unwrap();
     if left_offset != left_tokens.len() {
         return Err(ParserError::NotFullyMatched(
-            &left_tokens.first().unwrap().first().unwrap(),
-            &left_tokens.last().unwrap().last().unwrap(),
+            left_tokens.first().unwrap().first().unwrap(),
+            left_tokens.last().unwrap().last().unwrap(),
         ));
     }
 
@@ -1694,8 +1691,8 @@ fn match_operation_mul_div_mod<'t>(
     let right = right.unwrap();
     if right_offset != right_tokens.len() {
         return Err(ParserError::NotFullyMatched(
-            &right_tokens.first().unwrap().first().unwrap(),
-            &right_tokens.last().unwrap().last().unwrap(),
+            right_tokens.first().unwrap().first().unwrap(),
+            right_tokens.last().unwrap().last().unwrap(),
         ));
     }
 
@@ -1747,8 +1744,8 @@ fn match_bitwise_or<'t>(
     let left = left.unwrap();
     if left_offset != left_tokens.len() {
         return Err(ParserError::NotFullyMatched(
-            &left_tokens.first().unwrap().first().unwrap(),
-            &left_tokens.last().unwrap().last().unwrap(),
+            left_tokens.first().unwrap().first().unwrap(),
+            left_tokens.last().unwrap().last().unwrap(),
         ));
     }
     let (right, right_offset) = match_all(right_tokens, 0)?;
@@ -1758,8 +1755,8 @@ fn match_bitwise_or<'t>(
     let right = right.unwrap();
     if right_offset != right_tokens.len() {
         return Err(ParserError::NotFullyMatched(
-            &right_tokens.first().unwrap().first().unwrap(),
-            &right_tokens.last().unwrap().last().unwrap(),
+            right_tokens.first().unwrap().first().unwrap(),
+            right_tokens.last().unwrap().last().unwrap(),
         ));
     }
     return Ok((
@@ -1802,8 +1799,8 @@ fn match_bitwise_and<'t>(
     let left = left.unwrap();
     if left_offset != left_tokens.len() {
         return Err(ParserError::NotFullyMatched(
-            &left_tokens.first().unwrap().first().unwrap(),
-            &left_tokens.last().unwrap().last().unwrap(),
+            left_tokens.first().unwrap().first().unwrap(),
+            left_tokens.last().unwrap().last().unwrap(),
         ));
     }
     let (right, right_offset) = match_all(right_tokens, 0)?;
@@ -1813,8 +1810,8 @@ fn match_bitwise_and<'t>(
     let right = right.unwrap();
     if right_offset != right_tokens.len() {
         return Err(ParserError::NotFullyMatched(
-            &right_tokens.first().unwrap().first().unwrap(),
-            &right_tokens.last().unwrap().last().unwrap(),
+            right_tokens.first().unwrap().first().unwrap(),
+            right_tokens.last().unwrap().last().unwrap(),
         ));
     }
     return Ok((
@@ -1857,8 +1854,8 @@ fn match_bitwise_xor<'t>(
     let left = left.unwrap();
     if left_offset != left_tokens.len() {
         return Err(ParserError::NotFullyMatched(
-            &left_tokens.first().unwrap().first().unwrap(),
-            &left_tokens.last().unwrap().last().unwrap(),
+            left_tokens.first().unwrap().first().unwrap(),
+            left_tokens.last().unwrap().last().unwrap(),
         ));
     }
     let (right, right_offset) = match_all(right_tokens, 0)?;
@@ -1868,8 +1865,8 @@ fn match_bitwise_xor<'t>(
     let right = right.unwrap();
     if right_offset != right_tokens.len() {
         return Err(ParserError::NotFullyMatched(
-            &right_tokens.first().unwrap().first().unwrap(),
-            &right_tokens.last().unwrap().last().unwrap(),
+            right_tokens.first().unwrap().first().unwrap(),
+            right_tokens.last().unwrap().last().unwrap(),
         ));
     }
     return Ok((
@@ -1911,8 +1908,8 @@ fn match_bitwise_shift<'t>(
     let left = left.unwrap();
     if left_offset != left_tokens.len() {
         return Err(ParserError::NotFullyMatched(
-            &left_tokens.first().unwrap().first().unwrap(),
-            &left_tokens.last().unwrap().last().unwrap(),
+            left_tokens.first().unwrap().first().unwrap(),
+            left_tokens.last().unwrap().last().unwrap(),
         ));
     }
     let (right, right_offset) = match_all(right_tokens, 0)?;
@@ -1922,8 +1919,8 @@ fn match_bitwise_shift<'t>(
     let right = right.unwrap();
     if right_offset != right_tokens.len() {
         return Err(ParserError::NotFullyMatched(
-            &right_tokens.first().unwrap().first().unwrap(),
-            &right_tokens.last().unwrap().last().unwrap(),
+            right_tokens.first().unwrap().first().unwrap(),
+            right_tokens.last().unwrap().last().unwrap(),
         ));
     }
     return Ok((
@@ -1971,7 +1968,7 @@ fn match_unary<'t>(
             node_offset + 1,
         ));
     }
-    return Ok((None, 0));
+    Ok((None, 0))
 }
 
 fn match_power<'t>(
@@ -2002,8 +1999,8 @@ fn match_power<'t>(
     let left = left.unwrap();
     if left_offset != left_tokens.len() {
         return Err(ParserError::NotFullyMatched(
-            &left_tokens.first().unwrap().first().unwrap(),
-            &left_tokens.last().unwrap().last().unwrap(),
+            left_tokens.first().unwrap().first().unwrap(),
+            left_tokens.last().unwrap().last().unwrap(),
         ));
     }
     let (right, right_offset) = match_all(right_tokens, 0)?;
@@ -2013,8 +2010,8 @@ fn match_power<'t>(
     let right = right.unwrap();
     if right_offset != right_tokens.len() {
         return Err(ParserError::NotFullyMatched(
-            &right_tokens.first().unwrap().first().unwrap(),
-            &right_tokens.last().unwrap().last().unwrap(),
+            right_tokens.first().unwrap().first().unwrap(),
+            right_tokens.last().unwrap().last().unwrap(),
         ));
     }
     return Ok((
@@ -2038,7 +2035,7 @@ fn match_lambda_def<'t>(
         // (x, y) -> expression
         return Ok((None, 0));
     }
-    let left_tokens = gather(&tokens[current])?;
+    let left_tokens = gather(tokens[current])?;
     let (left, left_offset) = match_all(&left_tokens, 0)?;
     if left.is_none() {
         return Ok((None, 0));
@@ -2046,8 +2043,8 @@ fn match_lambda_def<'t>(
     let left = left.unwrap();
     if left_offset != left_tokens.len() {
         return Err(ParserError::NotFullyMatched(
-            &left_tokens.first().unwrap().first().unwrap(),
-            &left_tokens.last().unwrap().last().unwrap(),
+            left_tokens.first().unwrap().first().unwrap(),
+            left_tokens.last().unwrap().last().unwrap(),
         ));
     }
     let (right, right_offset) = match_all(tokens, current + 2)?;
@@ -2056,14 +2053,14 @@ fn match_lambda_def<'t>(
     }
     let right = right.unwrap();
 
-    return Ok((
+    Ok((
         Some(ASTNode::new(
             ASTNodeType::LambdaDef,
             Some(&tokens[current][0]),
             Some(vec![left, right]),
         )),
         right_offset + 2,
-    ));
+    ))
 }
 
 fn match_modifier<'t>(
@@ -2113,7 +2110,7 @@ fn match_modifier<'t>(
             node_offset + 1,
         ));
     }
-    return Ok((None, 0));
+    Ok((None, 0))
 }
 
 fn match_named_to_null<'t>(
@@ -2132,8 +2129,8 @@ fn match_named_to_null<'t>(
         }
         if node_offset != left_tokens.len() {
             return Err(ParserError::NotFullyMatched(
-                &left_tokens.first().unwrap().first().unwrap(),
-                &left_tokens.last().unwrap().last().unwrap(),
+                left_tokens.first().unwrap().first().unwrap(),
+                left_tokens.last().unwrap().last().unwrap(),
             ));
         }
         let mut node = node.unwrap();
@@ -2149,7 +2146,7 @@ fn match_named_to_null<'t>(
             node_offset + 1,
         ));
     }
-    return Ok((None, 0));
+    Ok((None, 0))
 }
 
 fn match_alias<'t>(
@@ -2164,7 +2161,7 @@ fn match_alias<'t>(
         return Ok((None, 0));
     }
 
-    let type_tokens = gather(&tokens[current])?;
+    let type_tokens = gather(tokens[current])?;
     let (type_node, type_offset) = match_all(&type_tokens, 0)?;
 
     if type_node.is_none() {
@@ -2174,8 +2171,8 @@ fn match_alias<'t>(
     let type_node = type_node.unwrap();
     if type_offset != type_tokens.len() {
         return Err(ParserError::NotFullyMatched(
-            &type_tokens.first().unwrap().first().unwrap(),
-            &type_tokens.last().unwrap().last().unwrap(),
+            type_tokens.first().unwrap().first().unwrap(),
+            type_tokens.last().unwrap().last().unwrap(),
         ));
     }
 
@@ -2194,14 +2191,14 @@ fn match_alias<'t>(
     }
     let value_node = value_node.unwrap();
 
-    return Ok((
+    Ok((
         Some(ASTNode::new(
             ASTNodeType::Alias(type_name),
             Some(&tokens[current][0]),
             Some(vec![value_node]),
         )),
         value_offset + 2,
-    ));
+    ))
 }
 
 fn match_member_access_and_call<'t>(
@@ -2247,7 +2244,7 @@ fn match_member_access_and_call<'t>(
         "[]" => {
             // 解析左侧表达式（被访问的对象或被调用的函数）
             let left_tokens = &tokens[current..access_pos].to_vec();
-            if left_tokens.len() == 0 {
+            if left_tokens.is_empty() {
                 return Ok((None, 0));
             }
 
@@ -2259,8 +2256,8 @@ fn match_member_access_and_call<'t>(
             let left = left.unwrap();
             if left_offset != left_tokens.len() {
                 return Err(ParserError::NotFullyMatched(
-                    &left_tokens.first().unwrap().first().unwrap(),
-                    &left_tokens.last().unwrap().last().unwrap(),
+                    left_tokens.first().unwrap().first().unwrap(),
+                    left_tokens.last().unwrap().last().unwrap(),
                 ));
             }
             // 解包索引括号中的内容
@@ -2274,21 +2271,21 @@ fn match_member_access_and_call<'t>(
 
             let index_node = index_node.unwrap();
 
-            return Ok((
+            Ok((
                 Some(ASTNode::new(
                     ASTNodeType::IndexOf,
                     Some(&tokens[current][0]),
                     Some(vec![left, index_node]),
                 )),
                 (access_pos - current) + 1,
-            ));
+            ))
         }
 
         // 处理属性访问 obj.prop
         "." => {
             // 解析左侧表达式（被访问的对象或被调用的函数）
             let left_tokens = &tokens[current..access_pos].to_vec();
-            if left_tokens.len() == 0 {
+            if left_tokens.is_empty() {
                 return Ok((None, 0));
             }
 
@@ -2300,8 +2297,8 @@ fn match_member_access_and_call<'t>(
             let left = left.unwrap();
             if left_offset != left_tokens.len() {
                 return Err(ParserError::NotFullyMatched(
-                    &left_tokens.first().unwrap().first().unwrap(),
-                    &left_tokens.last().unwrap().last().unwrap(),
+                    left_tokens.first().unwrap().first().unwrap(),
+                    left_tokens.last().unwrap().last().unwrap(),
                 ));
             }
             if access_pos + 1 >= tokens.len() {
@@ -2334,21 +2331,21 @@ fn match_member_access_and_call<'t>(
                 ));
             }
 
-            return Ok((
+            Ok((
                 Some(ASTNode::new(
                     ASTNodeType::GetAttr,
                     Some(&tokens[current][0]),
                     Some(vec![left, right]),
                 )),
                 (access_pos - current) + 1 + right_offset,
-            ));
+            ))
         }
 
         // 处理函数调用 func(args)
         "()" => {
             // 解析左侧表达式（被访问的对象或被调用的函数）
             let mut left_tokens = tokens[current..access_pos].to_vec();
-            if left_tokens.len() == 0 {
+            if left_tokens.is_empty() {
                 return Ok((None, 0));
             }
 
@@ -2366,8 +2363,8 @@ fn match_member_access_and_call<'t>(
             let left = left.unwrap();
             if left_offset != left_tokens.len() {
                 return Err(ParserError::NotFullyMatched(
-                    &left_tokens.first().unwrap().first().unwrap(),
-                    &left_tokens.last().unwrap().last().unwrap(),
+                    left_tokens.first().unwrap().first().unwrap(),
+                    left_tokens.last().unwrap().last().unwrap(),
                 ));
             }
 
@@ -2394,7 +2391,7 @@ fn match_member_access_and_call<'t>(
                 args_node
             };
 
-            return Ok((
+            Ok((
                 Some(ASTNode::new(
                     if is_async {
                         ASTNodeType::AsyncLambdaCall
@@ -2405,7 +2402,7 @@ fn match_member_access_and_call<'t>(
                     Some(vec![left, args]),
                 )),
                 (access_pos - current) + 1,
-            ));
+            ))
         }
 
         _ => unreachable!(),
@@ -2424,7 +2421,7 @@ fn match_range<'t>(
         return Ok((None, 0));
     }
 
-    let left_tokens = gather(&tokens[current])?;
+    let left_tokens = gather(tokens[current])?;
     let (left, left_offset) = match_all(&left_tokens, 0)?;
     if left.is_none() {
         return Ok((None, 0));
@@ -2432,8 +2429,8 @@ fn match_range<'t>(
     let left = left.unwrap();
     if left_offset != left_tokens.len() {
         return Err(ParserError::NotFullyMatched(
-            &left_tokens.first().unwrap().first().unwrap(),
-            &left_tokens.last().unwrap().last().unwrap(),
+            left_tokens.first().unwrap().first().unwrap(),
+            left_tokens.last().unwrap().last().unwrap(),
         ));
     }
     let (right, right_offset) = match_all(tokens, current + 2)?;
@@ -2442,14 +2439,14 @@ fn match_range<'t>(
     }
     let right = right.unwrap();
 
-    return Ok((
+    Ok((
         Some(ASTNode::new(
             ASTNodeType::Range,
             Some(&tokens[current][0]),
             Some(vec![left, right]),
         )),
         right_offset + 2,
-    ));
+    ))
 }
 
 fn match_in<'t>(
@@ -2463,7 +2460,7 @@ fn match_in<'t>(
         return Ok((None, 0));
     }
 
-    let left_tokens = gather(&tokens[current])?;
+    let left_tokens = gather(tokens[current])?;
     let (left, left_offset) = match_all(&left_tokens, 0)?;
     if left.is_none() {
         return Ok((None, 0));
@@ -2471,8 +2468,8 @@ fn match_in<'t>(
     let left = left.unwrap();
     if left_offset != left_tokens.len() {
         return Err(ParserError::NotFullyMatched(
-            &left_tokens.first().unwrap().first().unwrap(),
-            &left_tokens.last().unwrap().last().unwrap(),
+            left_tokens.first().unwrap().first().unwrap(),
+            left_tokens.last().unwrap().last().unwrap(),
         ));
     }
     let (right, right_offset) = match_all(tokens, current + 2)?;
@@ -2481,14 +2478,14 @@ fn match_in<'t>(
     }
     let right = right.unwrap();
 
-    return Ok((
+    Ok((
         Some(ASTNode::new(
             ASTNodeType::In,
             Some(&tokens[current][0]),
             Some(vec![left, right]),
         )),
         right_offset + 2,
-    ));
+    ))
 }
 
 fn match_variable<'t>(
@@ -2504,7 +2501,7 @@ fn match_variable<'t>(
         let inner_tokens = unwrap_brace(&tokens[current])?;
 
         // 处理空元组 ()
-        if inner_tokens.len() == 0 {
+        if inner_tokens.is_empty() {
             return Ok((
                 Some(ASTNode::new(
                     ASTNodeType::Tuple,
@@ -2623,5 +2620,5 @@ fn match_variable<'t>(
             1,
         ));
     }
-    return Ok((None, 0));
+    Ok((None, 0))
 }

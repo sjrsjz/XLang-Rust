@@ -41,7 +41,7 @@ impl LabelGenerator {
     pub fn new(namespace: Rc<NameSpace>, type_name: String) -> Self {
         LabelGenerator {
             label_counter: 0,
-            namespace: namespace,
+            namespace,
             type_name,
         }
     }
@@ -118,7 +118,7 @@ impl<'t> IRGenerator<'t> {
         &mut self,
         ast_node: &ASTNode,
     ) -> Result<Vec<IR>, IRGeneratorError> {
-        let debug_info = IRGenerator::generate_debug_info(&ast_node);
+        let debug_info = IRGenerator::generate_debug_info(ast_node);
         match &ast_node.node_type {
             ASTNodeType::Body => {
                 let mut instructions = Vec::new();
@@ -139,7 +139,7 @@ impl<'t> IRGenerator<'t> {
                 let mut instructions = Vec::new();
                 instructions.push(debug_info);
                 let args = &ast_node.children[0];
-                let args_instructions = self.generate_without_redirect(&args)?;
+                let args_instructions = self.generate_without_redirect(args)?;
                 let (full_signature, signature) = self.new_function_signature();
 
                 let mut generator = IRGenerator::new(
@@ -407,9 +407,9 @@ impl<'t> IRGenerator<'t> {
             }
             ASTNodeType::If => match ast_node.children.len() {
                 0..=1 => {
-                    return Err(IRGeneratorError::InvalidASTNodeType(
+                    Err(IRGeneratorError::InvalidASTNodeType(
                         ast_node.node_type.clone(),
-                    ));
+                    ))
                 }
                 2 => {
                     let mut instructions = Vec::new();
@@ -446,9 +446,9 @@ impl<'t> IRGenerator<'t> {
                     Ok(instructions)
                 }
                 _ => {
-                    return Err(IRGeneratorError::InvalidASTNodeType(
+                    Err(IRGeneratorError::InvalidASTNodeType(
                         ast_node.node_type.clone(),
-                    ));
+                    ))
                 }
             },
             ASTNodeType::Break => {
@@ -646,7 +646,7 @@ impl<'t> IRGenerator<'t> {
         let mut label_map = std::collections::HashMap::new();
 
         // 首先收集所有标签的位置
-        for (_, ir) in irs.iter().enumerate() {
+        for ir in irs.iter() {
             if let IR::RedirectLabel(label) = ir {
                 label_map.insert(label.clone(), reduced_irs.len());
             } else {

@@ -309,7 +309,7 @@ impl GCSystem {
             objects: Vec::new(),
             new_objects_count: 0,
             new_objects_sum_size: 0,
-            maximum_allocation_size: maximum_allocation_size,
+            maximum_allocation_size,
             _maximum_new_objects_count: maximum_new_objects_count,
         }
     }
@@ -367,7 +367,7 @@ impl GCSystem {
         for i in 0..self.objects.len() {
             let gc_ref = &mut self.objects[i];
             let type_id = gc_ref.type_id;
-            for (ref_obj, _) in &gc_ref.get_traceable().references {
+            for ref_obj in gc_ref.get_traceable().references.keys() {
                 let ref_usize = ref_obj.reference as *const () as usize;
                 match idx_map.get(&ref_usize) {
                     Some(ref_idx) => ref_graph[i].push(*ref_idx),
@@ -375,16 +375,14 @@ impl GCSystem {
                         // Build comprehensive diagnostics message
                         let mut error_msg = String::new();
 
-                        error_msg.push_str(&format!(
-                            "\n===== FATAL ERROR: INVALID REFERENCE DETECTED =====\n"
-                        ));
+                        error_msg.push_str(&"\n===== FATAL ERROR: INVALID REFERENCE DETECTED =====\n".to_string());
                         error_msg.push_str(&format!(
                             "Object #{} (Type: {:?}) references an object not managed by the GC\n",
                             i, type_id
                         ));
                         error_msg.push_str(&format!("Reference target: {:?}\n", ref_obj));
                         error_msg.push_str(&format!("Reference address: 0x{:x}\n\n", ref_usize));
-                        error_msg.push_str(&format!("All References:\n"));
+                        error_msg.push_str(&"All References:\n".to_string());
                         for (ref_obj, count) in &gc_ref.get_traceable().references {
                             error_msg.push_str(&format!(
                                 "  - Object {:?} (Type: {:?}): {} references\n",
@@ -393,13 +391,13 @@ impl GCSystem {
                         }
 
                         // Include index mapping for diagnostics
-                        error_msg.push_str(&format!("Current GC object map:\n"));
+                        error_msg.push_str(&"Current GC object map:\n".to_string());
                         for (&addr, &idx) in &idx_map {
                             error_msg.push_str(&format!("  0x{:x} -> Object #{}\n", addr, idx));
                         }
 
                         // Include partial reference graph for context
-                        error_msg.push_str(&format!("\nCurrent reference graph (partial):\n"));
+                        error_msg.push_str(&"\nCurrent reference graph (partial):\n".to_string());
                         for (idx, refs) in ref_graph.iter().enumerate().take(i) {
                             if !refs.is_empty() {
                                 error_msg.push_str(&format!(
@@ -409,7 +407,7 @@ impl GCSystem {
                             }
                         }
 
-                        error_msg.push_str(&format!("\n======= PROGRAM TERMINATING =======\n"));
+                        error_msg.push_str(&"\n======= PROGRAM TERMINATING =======\n".to_string());
 
                         // Panic with the complete error message
                         panic!("{}", error_msg);
@@ -616,7 +614,7 @@ impl Drop for GCSystem {
             gc_ref.offline();
         }
         self.collect();
-        if self.objects.len() > 0 {
+        if !self.objects.is_empty() {
             panic!(
                 "Memory leak detected! {} objects are not freed!",
                 self.objects.len()

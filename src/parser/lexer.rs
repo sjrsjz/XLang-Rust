@@ -161,7 +161,7 @@ pub mod lexer {
             }
             let token: String = chars[*pos..*pos + len].iter().collect();
             *pos += len;
-            return Some((token.clone(), token)); // token, original token
+            Some((token.clone(), token))// token, original token
         };
 
         let read_base64 = || -> Option<(String, String)> {
@@ -215,7 +215,7 @@ pub mod lexer {
                     }
                 }
             }
-            return None;
+            None
         };
 
         let read_string = || -> Option<(String, String)> {
@@ -389,7 +389,7 @@ pub mod lexer {
             if test_string("//", *curr_pos) {
                 *curr_pos += 2;
                 let mut current_token = String::new();
-                while *curr_pos < chars.len() && !vec!['\n', '\r'].contains(&chars[*curr_pos]) {
+                while *curr_pos < chars.len() && !['\n', '\r'].contains(&chars[*curr_pos]) {
                     current_token.push(chars[*curr_pos]);
                     *curr_pos += 1;
                 }
@@ -407,7 +407,7 @@ pub mod lexer {
                     return Some((current_token.clone(), format!("/*{}*/", current_token)));
                 }
             }
-            return None;
+            None
         };
 
         let read_operator = || -> Option<(String, String)> {
@@ -433,7 +433,7 @@ pub mod lexer {
                     return Some((one_char.clone(), one_char));
                 }
             }
-            return None;
+            None
         };
 
         let read_token = || -> Option<(String, String)> {
@@ -549,7 +549,7 @@ pub mod lexer {
             }
         }
 
-        return tokens.into_inner();
+        tokens.into_inner()
     }
 
     // Reject comments from the token list
@@ -560,6 +560,6 @@ pub mod lexer {
                 result.push(token);
             }
         }
-        return result;
+        result
     }
 }
