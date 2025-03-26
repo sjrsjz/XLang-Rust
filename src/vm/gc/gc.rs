@@ -3,6 +3,8 @@ use std::collections::HashMap;
 use std::any::TypeId;
 use std::hash::{Hash, Hasher};
 
+use colored::Colorize;
+
 pub trait GCObject {
     fn free(&mut self); // free the object
     fn get_traceable(&mut self) -> &mut GCTraceable; // get the traceable object
@@ -71,18 +73,9 @@ impl GCRef {
         }
     }
 
-    pub fn offline(&self) {
-        unsafe {
-            let obj = self.reference as *mut dyn GCObject;
-            (*obj).get_traceable().offline();
-        }
-    }
 
     pub fn is_online(&self) -> bool {
-        unsafe {
-            let obj = self.reference as *const dyn GCObject;
-            (*obj).get_const_traceable().online
-        }
+        self.get_const_traceable().native_gcref_object_count > 0
     }
 
     pub fn as_type<T>(&mut self) -> &mut T
@@ -171,14 +164,14 @@ impl GCRef {
     }
 
     pub fn drop_ref(&mut self) {
+        // println!("{}",
+        //     format!("[GC] Dropping reference: {:?}", self).to_string().red().to_string()
+        // );
         let traceable = self.get_traceable();
         if traceable.native_gcref_object_count == 0 {
             panic!("Reference count is already zero!");
         }
         traceable.native_gcref_object_count -= 1;
-        if traceable.native_gcref_object_count == 0 {
-            traceable.offline();
-        }
     }
 }
 
@@ -187,47 +180,30 @@ pub struct GCTraceable {
     pub native_gcref_object_count: usize, // 原生对象数量, 当GCRef被创建时增加
     pub ref_count: usize,
     pub should_free: bool,
-    pub online: bool,
     pub lock: bool, // 是否锁定对象禁止回收
     pub references: HashMap<GCRef, usize>,
     pub type_id: TypeId,              // type id of the object
 }
 
 impl GCTraceable {
-    pub fn new<T:GCObject + 'static>(references: Option<&Vec<&mut GCRef>>) -> GCTraceable {
+    pub fn new<T:GCObject + 'static>(references: Option<&mut Vec<&mut GCRef>>) -> GCTraceable {
         let mut refs_map = HashMap::new();
 
         if let Some(refs) = references {
-            for ref_obj in refs {
-                *refs_map.entry((*ref_obj).clone()).or_insert(0) += 1;
+            for i in 0..refs.len() {
+                *refs_map.entry((*refs[i]).clone()).or_insert(0) += 1;
+                (*refs[i]).get_traceable().ref_count += 1; // 增加对象的引用计数
             }
         }
 
-        let obj = GCTraceable {
+        GCTraceable {
             native_gcref_object_count: 0,
             ref_count: 0,
             should_free: false,
-            online: true,
             lock: false,
             references: refs_map,
             type_id: TypeId::of::<T>(),
-        };
-
-        // 更新每个引用对象的引用计数
-        for (ref_obj, count) in &obj.references {
-            if ref_obj.reference.is_null() {
-                panic!("Reference is null! {}", ref_obj);
-            }
-            unsafe {
-                (*ref_obj.reference).get_traceable().ref_count += count; // 增加对象的引用计数
-            }
         }
-        obj
-    }
-
-    pub fn offline(&mut self) {
-        // 设置对象离线，以便它可以被回收
-        self.online = false;
     }
 
     pub fn add_reference(&mut self, obj: &GCRef) {
@@ -341,7 +317,7 @@ impl GCSystem {
             panic!("Failed to allocate memory for object!");
         }
         let mut gc_ref = GCRef { reference: obj_ref };
-        gc_ref.clone_ref();
+        gc_ref.get_traceable().native_gcref_object_count = 1; // 设置原生引用计数为1
         self.objects.push(gc_ref.clone()); // add the object to the list of objects
         gc_ref
     }
@@ -463,7 +439,7 @@ impl GCSystem {
         // 标记存活对象
         for i in 0..self.objects.len() {
             let gc_ref = &mut self.objects[i];
-            if gc_ref.get_traceable().online || !gc_ref.get_traceable().should_free {
+            if gc_ref.get_traceable().native_gcref_object_count > 0 || !gc_ref.get_traceable().should_free {
                 alive[i] = true;
             }
         }
@@ -491,6 +467,7 @@ impl GCSystem {
 
         // 现在安全地释放对象，因为它们已经从列表中移除
         for obj in dead_objects {
+            // println!("{}", format!("[GC] Freeing object: {:?}", obj).to_string().red().to_string());
             obj.free();
         }
     }
@@ -529,6 +506,7 @@ impl GCSystem {
 
         // 最后释放死亡对象
         for obj in dead_objects {
+            // println!("{}", format!("[GC] Freeing object: {:?}", obj).to_string().red().to_string());
             obj.free();
         }
     }
@@ -560,12 +538,11 @@ impl GCSystem {
 
             // 打印对象基本信息
             println!(
-                "Object #{}: {:?} (RefCount: {}, NativeCount: {}, Online: {}, ShouldFree: {})",
+                "Object #{}: {:?} (RefCount: {}, NativeCount: {}, ShouldFree: {})",
                 i,
                 obj.get_const_traceable().type_id,
                 traceable.ref_count,
                 traceable.native_gcref_object_count,
-                traceable.online,
                 traceable.should_free
             );
 
@@ -595,8 +572,8 @@ impl GCSystem {
     }
 
     pub fn drop_all(&mut self) {
-        for gc_ref in &self.objects {
-            gc_ref.offline();
+        for gc_ref in &mut self.objects {
+            gc_ref.get_traceable().native_gcref_object_count = 0; // 清除原生引用计数
         }
         self.collect();
     }
@@ -621,9 +598,7 @@ impl GCSystem {
 
 impl Drop for GCSystem {
     fn drop(&mut self) {
-        for gc_ref in &self.objects {
-            gc_ref.offline();
-        }
+        self.drop_all();
         self.collect();
         if !self.objects.is_empty() {
             panic!(
