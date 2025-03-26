@@ -736,16 +736,16 @@ impl IRExecutor {
     }
 
     pub fn pop_object(&mut self) -> Result<VMStackObject, VMError> {
-        if self.stack.is_empty() {
-            return Err(VMError::EmptyStack);
+        match self.stack.pop() {
+            Some(obj) => Ok(obj),
+            None => Err(VMError::EmptyStack),
         }
-        Ok(self.stack.pop().unwrap())
     }
 
     pub fn pop_object_and_check(&mut self) -> Result<GCRef, VMError> {
         let obj = self.pop_object()?;
-        if let VMStackObject::VMObject(obj) = &obj {
-            return Ok(obj.clone());
+        if let VMStackObject::VMObject(obj) = obj {
+            return Ok(obj);
         }
         Err(VMError::NotVMObject(obj))
     }
@@ -821,11 +821,7 @@ impl IRExecutor {
     }
 
     pub fn pop_and_const_ref(&mut self) -> Result<(GCRef, GCRef), VMError> {
-        let obj = self.pop_object()?;
-        let obj = match obj {
-            VMStackObject::VMObject(obj) => obj,
-            _ => return Err(VMError::NotVMObject(obj)),
-        };
+        let obj = self.pop_object_and_check()?;
         let obj_ref =
             try_value_const_ref_as_vmobject(&obj).map_err(VMError::VMVariableError)?;
         Ok((obj, obj_ref))
