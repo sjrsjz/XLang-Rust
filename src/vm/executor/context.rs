@@ -6,8 +6,6 @@ use super::variable::try_assign_as_vmobject;
 use super::variable::try_repr_vmobject;
 use super::variable::VMStackObject;
 use super::variable::VMVariableError;
-use super::variable::VMVariableWrapper;
-
 #[derive(Debug)]
 pub struct Context {
     pub(crate) frames: Vec<(HashMap<String, GCRef>, bool, usize, bool)>, // vars, is_function_frame, function_code_position, is_hidden_frame
@@ -301,8 +299,9 @@ pub fn pop_frame(
     }
     pub fn debug_print_all_vars(&self) {
         for (vars, _, _, _) in self.frames.iter().rev() {
+            println!("=== Frame Variables === {}", vars.len());
             for (name, var) in vars.iter() {
-                println!("{}: {:?}, refs: {:?}", name, try_repr_vmobject(var.clone(), None), var.get_const_traceable().references);
+                println!("{}({}): {:?}, refs: {:?} <- {}", name, var.clone(), try_repr_vmobject(var.clone(), None), var.get_const_traceable().references, var.get_const_traceable().native_gcref_object_count);
             }
         }
     }

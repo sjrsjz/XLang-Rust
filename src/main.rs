@@ -6,6 +6,7 @@ use vm::executor::variable::VMInstructions;
 use vm::executor::variable::VMLambda;
 use vm::executor::variable::VMTuple;
 
+use vm::gc;
 use vm::gc::gc::GCRef;
 use vm::ir::IRPackage;
 use vm::ir::IR;
@@ -95,7 +96,7 @@ fn execute_ir(package: IRPackage, source_code: Option<String>) -> Result<(), VME
     let mut coroutine_pool = VMCoroutinePool::new(true);
     let mut gc_system = GCSystem::new(None);
 
-    let mut default_args_tuple = gc_system.new_object(VMTuple::new(vec![]));
+    let mut default_args_tuple = gc_system.new_object(VMTuple::new(&mut vec![]));
     let mut lambda_instructions = gc_system.new_object(VMInstructions::new(instructions, function_ips));
     let mut lambda_result = gc_system.new_object(VMNull::new());
     let mut main_lambda = gc_system.new_object(VMLambda::new(
@@ -110,12 +111,9 @@ fn execute_ir(package: IRPackage, source_code: Option<String>) -> Result<(), VME
     lambda_instructions.drop_ref();
     lambda_result.drop_ref();
 
-    let mut wrapped = gc_system.new_object(VMVariableWrapper::new(&mut main_lambda));
-    wrapped.clone_ref();
-    main_lambda.drop_ref();
-
+    main_lambda.clone_ref();
     let _coro_id =
-        coroutine_pool.new_coroutine(&mut wrapped, source_code, &mut gc_system)?;
+        coroutine_pool.new_coroutine(&mut main_lambda, source_code, &mut gc_system)?;
 
     let result = coroutine_pool.run_until_finished(&mut gc_system);
     if let Err(e) = result {
@@ -123,7 +121,7 @@ fn execute_ir(package: IRPackage, source_code: Option<String>) -> Result<(), VME
         return Err(VMError::AssertFailed);
     }
 
-    let result = wrapped.as_type::<VMVariableWrapper>().value_ref.as_type::<VMLambda>().get_value();
+    let result = main_lambda.as_type::<VMLambda>().get_value();
 
     let result_ref =
         try_value_ref_as_vmobject(result).map_err(VMError::VMVariableError)?;
@@ -138,8 +136,8 @@ fn execute_ir(package: IRPackage, source_code: Option<String>) -> Result<(), VME
             }
         }
     }
+    main_lambda.drop_ref();
     gc_system.collect();
-
     Ok(())
 }
 
@@ -158,7 +156,7 @@ fn execute_ir_repl(
 
     let mut key = gc_system.new_object(VMString::new("Out".to_string()));
     let mut named: GCRef = gc_system.new_object(VMNamed::new(&mut key, input_arguments));
-    let mut default_args_tuple = gc_system.new_object(VMTuple::new(vec![&mut named]));
+    let mut default_args_tuple = gc_system.new_object(VMTuple::new(&mut vec![&mut named]));
     let mut lambda_instructions = gc_system.new_object(VMInstructions::new(instructions, function_ips));
     let mut lambda_result: GCRef = gc_system.new_object(VMNull::new());
     let mut main_lambda = gc_system.new_object(VMLambda::new(
@@ -176,7 +174,7 @@ fn execute_ir_repl(
     key.drop_ref();
     named.drop_ref();
 
-    let mut wrapped = gc_system.new_object(VMVariableWrapper::new(&mut main_lambda));
+    let mut wrapped = main_lambda.clone_ref();
 
     wrapped.clone_ref();
 
@@ -505,9 +503,7 @@ fn run_repl() -> Result<(), String> {
     }
 
     let mut gc_system = GCSystem::new(None);
-    let mut input_arguments = gc_system.new_object(VMTuple::new(vec![]));
-    //let _wrapper = gc_system.new_object(VMVariableWrapper::new(input_arguments.clone()));
-    //input_arguments.offline();
+    let mut input_arguments = gc_system.new_object(VMTuple::new(&mut vec![]));
 
     let mut line_count = 0;
 
@@ -593,7 +589,7 @@ fn run_repl() -> Result<(), String> {
                         &mut input_arguments,
                     ) {
                         Ok(mut lambda_ref) => {
-                            let executed = lambda_ref.as_const_type::<VMVariableWrapper>().value_ref.as_const_type::<VMLambda>();
+                            let executed = lambda_ref.as_const_type::<VMLambda>();
                             let result_ref = executed.result.clone();
                             let idx = input_arguments.as_type::<VMTuple>().values.len();
                             match try_repr_vmobject(result_ref.clone(), None) {
