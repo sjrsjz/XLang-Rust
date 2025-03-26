@@ -1269,9 +1269,8 @@ impl IRExecutor {
             }
 
             IR::Return => {
-                if self.stack.len() < *self.context.stack_pointers.last().unwrap() {
-                    return Err(VMError::EmptyStack);
-                }
+                self.context.pop_frame_until_function(&mut self.stack)
+                    .map_err(VMError::ContextError)?;
                 let (obj, obj_ref) = &mut self.pop_and_ref()?;
                 let ip_info = self.stack.pop().unwrap();
                 let VMStackObject::LastIP(mut self_lambda, ip, use_new_instructions) = ip_info
@@ -1279,10 +1278,6 @@ impl IRExecutor {
                     return Err(VMError::EmptyStack);
                 };
                 self.ip = ip as isize;
-                let result = self.context.pop_frame(&mut self.stack, true);
-                if result.is_err() {
-                    return Err(VMError::ContextError(result.unwrap_err()));
-                }
                 let lambda_obj: &mut VMLambda = self_lambda.as_type::<VMLambda>();
                 lambda_obj.set_result(obj_ref);
 
@@ -1327,17 +1322,7 @@ impl IRExecutor {
                 self.context.new_frame(&mut self.stack, false, 0, false);
             }
             IR::PopFrame => {
-                let obj = self.pop_object()?;
-                let obj = match obj {
-                    VMStackObject::VMObject(obj) => obj,
-                    _ => return Err(VMError::NotVMObject(obj)),
-                };
-
-                let result = self.context.pop_frame(&mut self.stack, false);
-                if result.is_err() {
-                    return Err(VMError::ContextError(result.unwrap_err()));
-                }
-                self.push_vmobject(obj.clone())?;
+                self.context.pop_frame_except_top(&mut self.stack).map_err(VMError::ContextError)?;
             }
 
             IR::Pop => {

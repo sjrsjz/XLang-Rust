@@ -75,47 +75,25 @@ impl Context {
         self.stack_pointers.push(stack.len());
     }
 
-    pub fn pop_frame(
+    pub fn pop_frame_until_function(
         &mut self,
         stack: &mut Vec<VMStackObject>,
-        exit_function: bool,
     ) -> Result<(), ContextError> {
-        // 先处理函数调用退出的情况
-        if exit_function {
-            while !self.frames.is_empty() && !self.frames[self.frames.len() - 1].1 {
-                // 1. 先复制要离线的变量
-                let mut variables_to_offline: Vec<GCRef> = if !self.frames.is_empty() {
-                    self.frames.last().unwrap().0.values().cloned().collect()
-                } else {
-                    Vec::new()
-                };
-
-                // 2. 保存需要处理的栈范围
-                let stack_range_start = self.stack_pointers.last().cloned().unwrap_or(0);
-                let stack_range_end = stack.len();
-
-                // 3. 安全地更新帧和栈指针
-                if !self.frames.is_empty() {
-                    self.frames.pop();
-                }
-                self.stack_pointers.pop();
-
-                // 4. 离线变量（在数据结构已更新后）
-                for variable in variables_to_offline.iter_mut() {
-                    variable.drop_ref();
-                }
-
-                // 5. 处理栈上的对象
-                for i in stack_range_start..stack_range_end {
-                    if let VMStackObject::VMObject(obj_ref) = &mut stack[i] {
-                        obj_ref.drop_ref();
-                    }
-                }
-
-                // 6. 截断栈
-                stack.truncate(stack_range_start);
-            }
+        while !self.frames.is_empty() && !self.frames.last().unwrap().1 {
+            self.pop_frame_except_top(stack)?;            
         }
+        if self.frames.is_empty() {
+            return Err(ContextError::NoFrame);
+        }
+        // 处理函数帧的情况
+        self.pop_frame_except_top(stack)?;
+        Ok(())
+    }
+
+    pub fn pop_frame_except_top(
+        &mut self,
+        stack: &mut Vec<VMStackObject>,
+    ) -> Result<(), ContextError> {
 
         // 处理单个帧弹出的情况
         if self.frames.is_empty() {
@@ -139,14 +117,16 @@ impl Context {
         }
 
         // 5. 处理栈上的对象
-        for i in stack_pointer..stack.len() {
+        for i in stack_pointer..stack.len() - 1 {
             if let VMStackObject::VMObject(obj_ref) = &mut stack[i] {
                 obj_ref.drop_ref();
             }
         }
 
-        // 6. 截断栈
+        // 6. 截断栈（但不删除最后一个元素）
+        let last_element = stack.pop().unwrap();
         stack.truncate(stack_pointer);
+        stack.push(last_element);        
 
         Ok(())
     }
