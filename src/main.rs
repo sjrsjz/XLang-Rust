@@ -123,13 +123,13 @@ fn execute_ir(package: IRPackage, source_code: Option<String>) -> Result<(), VME
         return Err(VMError::AssertFailed);
     }
 
-    let result = wrapped.as_const_type::<VMVariableWrapper>().value_ref.as_const_type::<VMLambda>().result.clone();
+    let result = wrapped.as_type::<VMVariableWrapper>().value_ref.as_type::<VMLambda>().get_value();
 
     let result_ref =
-        try_value_ref_as_vmobject(result.clone()).map_err(|e| VMError::VMVariableError(e))?;
+        try_value_ref_as_vmobject(result).map_err(|e| VMError::VMVariableError(e))?;
 
     if !result_ref.isinstance::<VMNull>() {
-        match try_repr_vmobject(result_ref.clone(), None) {
+        match try_repr_vmobject(result_ref, None) {
             Ok(value) => {
                 println!("{}", value);
             }
