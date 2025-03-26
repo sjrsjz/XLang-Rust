@@ -251,4 +251,7 @@ fib := (n => 0) -> {
     };
 };
 
-print(fib(23));
+print(fib(3));
+
+add := (a => 0, b => 0) -> {a + b};
+print(add(1, 2));
