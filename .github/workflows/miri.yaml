@@ -1,0 +1,29 @@
+name: Test with Miri
+
+on:
+  push:
+    branches: ["master"]
+
+jobs:
+  miri:
+    name: Test with Miri
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - name: Install Rust toolchain
+        uses: dtolnay/rust-toolchain@master
+        with:
+          toolchain: nightly
+          components: miri
+
+      - name: Setup Miri
+        run: cargo miri setup
+
+      - name: Generate the test file
+        run: echo "a := 1;" > ./test.x
+
+      - name: Test with Miri
+        run: MIRIFLAGS="-Zmiri-disable-isolation -Zmiri-backtrace=full" cargo miri run -- run ./test.x
