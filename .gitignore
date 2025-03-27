@@ -2,3 +2,4 @@
 /.VSCodeCounter
 /test
 /perf*
+/flamegraph*
