@@ -40,6 +40,7 @@ pub enum IR{
     LoadBytes(Vec<u8>), // load bytes to stack
     LoadBool(bool), // load bool to stack
     LoadLambda(String, usize), // signature, code position
+    ForkInstruction, // "fork" instruction and push the forked instruction gcref to stack
     BuildTuple(usize), // number of elements
     BuildKeyValue, // pop key and value from stack and build key value pair
     BuildNamed, // pop key and value from stack and build named argument
@@ -71,7 +72,7 @@ pub enum IR{
     DerefValue, // get dereference value
     Assert, // assert value
     DebugInfo(DebugInfo), // debug info
-    Import(usize), // import module from file
+    Import, // import module from file
     RedirectJump(String), // redirect ir, not for vm just for ir generation
     RedirectJumpIfFalse(String), 
     RedirectLabel(String),

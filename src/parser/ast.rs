@@ -388,7 +388,7 @@ pub enum ASTNodeType {
     Let(String),                 // x := expression
     Body,                        // {...}
     Assign,                      // x = expression
-    LambdaDef,                   // tuple -> body
+    LambdaDef(bool),                   // tuple -> body or tuple -> dyn expression
     Expressions,                 // expression1; expression2; ...
     LambdaCall,                  // x (tuple)
     Operation(ASTNodeOperation), // x + y, x - y, x * y, x / y ...
@@ -681,6 +681,12 @@ fn match_all<'t>(
 
     node_matcher.add_matcher(Box::new(
         |tokens, current| -> Result<(Option<ASTNode<'t>>, usize), ParserError<'t>> {
+            match_lambda_def(tokens, current)
+        },
+    ));
+
+    node_matcher.add_matcher(Box::new(
+        |tokens, current| -> Result<(Option<ASTNode<'t>>, usize), ParserError<'t>> {
             match_named_to(tokens, current)
         },
     ));
@@ -778,12 +784,6 @@ fn match_all<'t>(
     node_matcher.add_matcher(Box::new(
         |tokens, current| -> Result<(Option<ASTNode<'t>>, usize), ParserError<'t>> {
             match_power(tokens, current)
-        },
-    ));
-
-    node_matcher.add_matcher(Box::new(
-        |tokens, current| -> Result<(Option<ASTNode<'t>>, usize), ParserError<'t>> {
-            match_lambda_def(tokens, current)
         },
     ));
 
@@ -2047,7 +2047,13 @@ fn match_lambda_def<'t>(
             left_tokens.last().unwrap().last().unwrap(),
         ));
     }
-    let (right, right_offset) = match_all(tokens, current + 2)?;
+    let is_dyn = current + 2 < tokens.len() && is_identifier(&tokens[current + 2], "dyn");
+    let offset = if is_dyn {
+        3
+    } else {
+        2
+    };
+    let (right, right_offset) = match_all(tokens, current + offset)?;
     if right.is_none() {
         return Ok((None, 0));
     }
@@ -2055,11 +2061,11 @@ fn match_lambda_def<'t>(
 
     Ok((
         Some(ASTNode::new(
-            ASTNodeType::LambdaDef,
+            ASTNodeType::LambdaDef(is_dyn),
             Some(&tokens[current][0]),
             Some(vec![left, right]),
         )),
-        right_offset + 2,
+        right_offset + offset,
     ))
 }
 

@@ -177,6 +177,9 @@ impl VMCoroutinePool {
                 spawned_coroutines.extend(new_coroutines);
             }
         }
+
+        gc_system.check_and_collect();
+
         Ok(Some(spawned_coroutines))
     }
 
@@ -1030,6 +1033,7 @@ impl IRExecutor {
                 self.push_vmobject(obj)?;
             }
             IR::LoadLambda(signature, code_position) => {
+                let instruction = &mut self.pop_object_and_check()?;
                 let default_args_tuple = &mut self.pop_object_and_check()?;
                 if !default_args_tuple.isinstance::<VMTuple>() {
                     return Err(VMError::ArgumentIsNotTuple(default_args_tuple.clone()));
@@ -1042,12 +1046,17 @@ impl IRExecutor {
                     signature.clone(),
                     default_args_tuple,
                     None,
-                    self.lambda_instructions.last_mut().unwrap(),
+                    instruction,
                     &mut lambda_result,
                 ));
                 self.push_vmobject(obj)?;
                 default_args_tuple.drop_ref();
                 lambda_result.drop_ref();
+                instruction.drop_ref();
+            }
+            IR::ForkInstruction => {
+                let forked = self.lambda_instructions.last_mut().unwrap().clone_ref();
+                self.push_vmobject(forked)?;
             }
             IR::BuildTuple(size) => {
                 let mut tuple = Vec::new();
@@ -1073,7 +1082,7 @@ impl IRExecutor {
                 }
                 let mut copied =
                     try_copy_as_vmobject(obj, gc_system).map_err(VMError::VMVariableError)?;
-                copied.as_type::<VMTuple>().set_lambda_self();
+                VMTuple::set_lambda_self(&mut copied);
                 self.push_vmobject(copied)?;
                 obj.drop_ref();
             }
@@ -1128,7 +1137,7 @@ impl IRExecutor {
                         gc_system.new_object(VMBoolean::new(!result))
                     }
 
-                    IROperation::Add => try_add_as_vmobject(&left, &right, gc_system)
+                    IROperation::Add => try_add_as_vmobject(&mut left, &mut right, gc_system)
                         .map_err(VMError::VMVariableError)?,
 
                     IROperation::Subtract => try_sub_as_vmobject(&left, &right, gc_system)
@@ -1606,33 +1615,20 @@ impl IRExecutor {
                 ref_obj.drop_ref();
             }
 
-            IR::Import(code_position) => {
-                let mut path_arg_named = self.pop_object_and_check()?;
+            IR::Import => {
+                let mut path_arg = self.pop_object_and_check()?;
 
-                if !path_arg_named.isinstance::<VMNamed>() {
+                if !path_arg.isinstance::<VMString>() {
                     return Err(VMError::InvalidArgument(
-                        path_arg_named.clone(),
+                        path_arg.clone(),
                         format!(
-                            "Import requires VMNamed but got {:?}",
-                            try_repr_vmobject(path_arg_named.clone(), None)
+                            "Import requires VMString but got {}",
+                            try_repr_vmobject(path_arg.clone(), None).unwrap_or(format!("{:?}", path_arg))
                         ),
                     ));
                 }
 
-                let path_arg_named_ref = path_arg_named.as_type::<VMNamed>();
-                let path = &mut path_arg_named_ref.key;
-                if !path.isinstance::<VMString>() {
-                    return Err(VMError::InvalidArgument(
-                        path.clone(),
-                        format!(
-                            "Import requires VMString but got {:?}",
-                            try_repr_vmobject(path.clone(), None)
-                        ),
-                    ));
-                }
-                let path_ref = path.as_const_type::<VMString>();
-
-                let arg_tuple = &mut path_arg_named_ref.value;
+                let path_ref = path_arg.as_const_type::<VMString>();
 
                 let path = path_ref.value.clone();
                 let path = path.as_str();
@@ -1667,25 +1663,13 @@ impl IRExecutor {
                     function_ips,
                 } = ir_package.unwrap();
 
-                let mut vm_instructions = gc_system.new_object(VMInstructions::new(
+                let vm_instructions = gc_system.new_object(VMInstructions::new(
                     instructions.clone(),
                     function_ips.clone(),
                 ));
 
-                let mut lambda_result = gc_system.new_object(VMNull::new());
-
-                let lambda = VMLambda::new(
-                    *code_position,
-                    "__main__".to_string(),
-                    arg_tuple, // !!!
-                    None,
-                    &mut vm_instructions,
-                    &mut lambda_result,
-                );
-
-                let lambda = gc_system.new_object(lambda);
-                self.push_vmobject(lambda)?;
-                path_arg_named.drop_ref();
+                self.push_vmobject(vm_instructions)?;
+                path_arg.drop_ref();
             }
 
             IR::Alias(alias) => {

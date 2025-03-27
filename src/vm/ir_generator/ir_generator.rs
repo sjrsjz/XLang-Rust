@@ -1,9 +1,9 @@
 use super::super::ir::{Functions, IROperation};
-use base64::{self, Engine};
 use crate::{
     parser::ast::{ASTNode, ASTNodeModifier, ASTNodeOperation, ASTNodeType},
     vm::ir::{DebugInfo, IR},
 };
+use base64::{self, Engine};
 #[derive(Debug)]
 enum Scope {
     Frame,
@@ -135,32 +135,50 @@ impl<'t> IRGenerator<'t> {
                 instructions.push(IR::PopFrame);
                 Ok(instructions)
             }
-            ASTNodeType::LambdaDef => {
+            ASTNodeType::LambdaDef(is_dyn) => {
                 let mut instructions = Vec::new();
                 instructions.push(debug_info);
                 let args = &ast_node.children[0];
                 let args_instructions = self.generate_without_redirect(args)?;
-                let (full_signature, signature) = self.new_function_signature();
 
-                let mut generator = IRGenerator::new(
-                    self.functions,
-                    NameSpace::new(signature.clone(), Some(&self.namespace)),
-                );
+                if *is_dyn {
+                    let expr_instructions =
+                        self.generate_without_redirect(&ast_node.children[1])?;
+                    instructions.extend(args_instructions);
+                    if args.node_type != ASTNodeType::Tuple {
+                        instructions.push(IR::BuildTuple(1));
+                    }
 
-                let mut body_instructions = generator.generate(&ast_node.children[1])?; // body, compute redirect jump directly
-                body_instructions.push(IR::Return);
+                    instructions.extend(expr_instructions);
 
-                self.functions
-                    .append(full_signature.clone(), body_instructions);
+                    instructions.push(IR::LoadLambda(
+                        "__main__".to_string(),
+                        ast_node.token.unwrap().position,
+                    ));
+                } else {
+                    let (full_signature, signature) = self.new_function_signature();
 
-                instructions.extend(args_instructions);
-                if args.node_type != ASTNodeType::Tuple {
-                    instructions.push(IR::BuildTuple(1));
+                    let mut generator = IRGenerator::new(
+                        self.functions,
+                        NameSpace::new(signature.clone(), Some(&self.namespace)),
+                    );
+
+                    let mut body_instructions = generator.generate(&ast_node.children[1])?; // body, compute redirect jump directly
+                    body_instructions.push(IR::Return);
+
+                    self.functions
+                        .append(full_signature.clone(), body_instructions);
+
+                    instructions.extend(args_instructions);
+                    if args.node_type != ASTNodeType::Tuple {
+                        instructions.push(IR::BuildTuple(1));
+                    }
+                    instructions.push(IR::ForkInstruction);
+                    instructions.push(IR::LoadLambda(
+                        full_signature,
+                        ast_node.token.unwrap().position,
+                    ));
                 }
-                instructions.push(IR::LoadLambda(
-                    full_signature,
-                    ast_node.token.unwrap().position,
-                ));
                 Ok(instructions)
             }
             ASTNodeType::Assign => {
@@ -406,11 +424,9 @@ impl<'t> IRGenerator<'t> {
                 Ok(instructions)
             }
             ASTNodeType::If => match ast_node.children.len() {
-                0..=1 => {
-                    Err(IRGeneratorError::InvalidASTNodeType(
-                        ast_node.node_type.clone(),
-                    ))
-                }
+                0..=1 => Err(IRGeneratorError::InvalidASTNodeType(
+                    ast_node.node_type.clone(),
+                )),
                 2 => {
                     let mut instructions = Vec::new();
                     instructions.push(debug_info);
@@ -445,11 +461,9 @@ impl<'t> IRGenerator<'t> {
                     instructions.push(IR::RedirectLabel(else_label.clone()));
                     Ok(instructions)
                 }
-                _ => {
-                    Err(IRGeneratorError::InvalidASTNodeType(
-                        ast_node.node_type.clone(),
-                    ))
-                }
+                _ => Err(IRGeneratorError::InvalidASTNodeType(
+                    ast_node.node_type.clone(),
+                )),
             },
             ASTNodeType::Break => {
                 let mut instructions = Vec::new();
@@ -562,7 +576,7 @@ impl<'t> IRGenerator<'t> {
                     }
                     ASTNodeModifier::Import => {
                         instructions.extend(self.generate_without_redirect(&ast_node.children[0])?);
-                        instructions.push(IR::Import(ast_node.children[0].token.unwrap().position));
+                        instructions.push(IR::Import);
                     }
                     ASTNodeModifier::TypeOf => {
                         instructions.extend(self.generate_without_redirect(&ast_node.children[0])?);

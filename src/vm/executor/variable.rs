@@ -233,27 +233,27 @@ pub fn debug_print_repr(value: GCRef) {
 }
 
 pub fn try_add_as_vmobject(
-    value: &GCRef,
-    other: &GCRef,
+    value: &mut GCRef,
+    other: &mut GCRef,
     gc_system: &mut GCSystem,
 ) -> Result<GCRef, VMVariableError> {
     if value.isinstance::<VMInt>() {
-        let int = value.as_const_type::<VMInt>();
+        let int = value.as_type::<VMInt>();
         return int.add(other, gc_system);
     } else if value.isinstance::<VMString>() {
-        let string = value.as_const_type::<VMString>();
+        let string = value.as_type::<VMString>();
         return string.add(other, gc_system);
     } else if value.isinstance::<VMFloat>() {
-        let float = value.as_const_type::<VMFloat>();
+        let float = value.as_type::<VMFloat>();
         return float.add(other, gc_system);
     } else if value.isinstance::<VMTuple>() {
-        let tuple = value.as_const_type::<VMTuple>();
+        let tuple = value.as_type::<VMTuple>();
         return tuple.add(other, gc_system);
     } else if value.isinstance::<VMRange>() {
-        let named = value.as_const_type::<VMRange>();
+        let named = value.as_type::<VMRange>();
         return named.add(other, gc_system);
     } else if value.isinstance::<VMBytes>() {
-        let bytes = value.as_const_type::<VMBytes>();
+        let bytes = value.as_type::<VMBytes>();
         return bytes.add(other, gc_system);
     }
     Err(VMVariableError::ValueError2Param(
@@ -813,13 +813,18 @@ impl VMInt {
         }
     }
 
-    pub fn add(&self, other: &GCRef, gc_system: &mut GCSystem) -> Result<GCRef, VMVariableError> {
+    pub fn add(&mut self, other: &mut GCRef, gc_system: &mut GCSystem) -> Result<GCRef, VMVariableError> {
         if other.isinstance::<VMInt>() {
             let other_int = other.as_const_type::<VMInt>();
-            return Ok(gc_system.new_object(VMInt::new(self.value + other_int.value)));
+            // 先计算结果值，避免在gc_system.new_object()中引用self
+            let result_value = self.value + other_int.value;
+            // 然后用计算好的值创建新对象
+            return Ok(gc_system.new_object(VMInt::new(result_value)));
         } else if other.isinstance::<VMFloat>() {
             let other_float = other.as_const_type::<VMFloat>();
-            return Ok(gc_system.new_object(VMFloat::new(self.value as f64 + other_float.value)));
+            // 同样先计算结果值
+            let result_value = self.value as f64 + other_float.value;
+            return Ok(gc_system.new_object(VMFloat::new(result_value)));
         }
         Err(VMVariableError::ValueError2Param(
             GCRef::wrap(self),
@@ -1151,7 +1156,7 @@ impl VMString {
         })
     }
 
-    pub fn add(&self, other: &GCRef, gc_system: &mut GCSystem) -> Result<GCRef, VMVariableError> {
+    pub fn add(&mut self, other: &mut GCRef, gc_system: &mut GCSystem) -> Result<GCRef, VMVariableError> {
         if other.isinstance::<VMString>() {
             let other_string = other.as_const_type::<VMString>();
             return Ok(gc_system.new_object(VMString::new(format!(
@@ -1298,7 +1303,7 @@ impl VMFloat {
         }
     }
 
-    pub fn add(&self, other: &GCRef, gc_system: &mut GCSystem) -> Result<GCRef, VMVariableError> {
+    pub fn add(&mut self, other: &mut GCRef, gc_system: &mut GCSystem) -> Result<GCRef, VMVariableError> {
         if other.isinstance::<VMFloat>() {
             let other_float = other.as_const_type::<VMFloat>();
             return Ok(gc_system.new_object(VMFloat::new(self.value + other_float.value)));
@@ -2145,16 +2150,13 @@ impl VMTuple {
 
     }
 
-    pub fn add(&self, other: &GCRef, gc_system: &mut GCSystem) -> Result<GCRef, VMVariableError> {
+    pub fn add(&mut self, other: &mut GCRef, gc_system: &mut GCSystem) -> Result<GCRef, VMVariableError> {
         if other.isinstance::<VMTuple>() {
-            let other_tuple = other.as_const_type::<VMTuple>();
-            let mut new_values = self.values.clone();
-            new_values.extend(other_tuple.values.clone());
+            let other_tuple = other.as_type::<VMTuple>();
 
-            // Convert Vec<GCRef> to Vec<&mut GCRef>
-            let mut refs_as_mut: Vec<&mut GCRef> = new_values.iter_mut().collect();
-
-            let new_tuple = gc_system.new_object(VMTuple::new(&mut refs_as_mut));
+            let new_tuple = gc_system.new_object(VMTuple::new(
+                &mut self.values.iter_mut().chain(other_tuple.values.iter_mut()).collect(),
+            ));
 
             return Ok(new_tuple);
         }
@@ -2174,19 +2176,24 @@ impl VMTuple {
         Ok(false)
     }
 
-    pub fn set_lambda_self(&mut self) {
-        self.auto_bind = true;
-        let mut wrapped = GCRef::wrap(self);
-        for val in &mut self.values {
-            if val.isinstance::<VMNamed>()
-                && val
+    pub fn set_lambda_self(self_object: &mut GCRef) {
+        let self_tuple = self_object.as_type::<VMTuple>();
+        self_tuple.auto_bind = true;
+        let mut collected_lambda = Vec::new();
+        for i in 0..self_tuple.values.len() {
+            if self_tuple.values[i].isinstance::<VMNamed>()
+                && self_tuple.values[i]
                     .as_const_type::<VMNamed>()
                     .value
                     .isinstance::<VMLambda>()
             {
-                let lambda = val.as_type::<VMNamed>().value.as_type::<VMLambda>();
-                lambda.set_self_object(&mut wrapped);
+                let lambda = self_tuple.values[i].as_type::<VMNamed>().value.clone();
+                collected_lambda.push(lambda);
             }
+        }
+        for collected in &mut collected_lambda {
+            let lambda = collected.as_type::<VMLambda>();
+            lambda.set_self_object(self_object);
         }
     }
 
@@ -2230,7 +2237,7 @@ impl VMObject for VMTuple {
         let mut new_tuple = gc_system.new_object(VMTuple::new_with_alias(&mut refs_as_mut, &self.alias));
 
         if self.auto_bind {
-            new_tuple.as_type::<VMTuple>().set_lambda_self();
+            Self::set_lambda_self(&mut new_tuple);
         }
         Ok(new_tuple)
     }
@@ -2240,7 +2247,7 @@ impl VMObject for VMTuple {
         let mut mut_refs = self.values.iter_mut().collect();
         let mut new_tuple = gc_system.new_object(VMTuple::new_with_alias(&mut mut_refs, &self.alias));
         if self.auto_bind {
-            new_tuple.as_type::<VMTuple>().set_lambda_self();
+            Self::set_lambda_self(&mut new_tuple);
         }
         Ok(new_tuple)
     }
@@ -2760,7 +2767,7 @@ impl VMRange {
         self.end - self.start
     }
 
-    pub fn add(&self, other: &GCRef, gc_system: &mut GCSystem) -> Result<GCRef, VMVariableError> {
+    pub fn add(&mut self, other: &mut GCRef, gc_system: &mut GCSystem) -> Result<GCRef, VMVariableError> {
         if other.isinstance::<VMInt>() {
             let other_int = other.as_const_type::<VMInt>();
             return Ok(gc_system.new_object(VMRange::new(
@@ -2916,7 +2923,7 @@ impl VMBytes {
         self.value.len()
     }
 
-    pub fn add(&self, other: &GCRef, gc_system: &mut GCSystem) -> Result<GCRef, VMVariableError> {
+    pub fn add(&mut self, other: &mut GCRef, gc_system: &mut GCSystem) -> Result<GCRef, VMVariableError> {
         if other.isinstance::<VMBytes>() {
             let other_bytes = other.as_const_type::<VMBytes>();
             let mut new_value = self.value.clone();

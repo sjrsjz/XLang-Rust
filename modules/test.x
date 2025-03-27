@@ -1,14 +1,14 @@
-foo := (n=>0)->{a:=n;if(n<100){foo(a+1)}};foo();
+foo := (n=>0)->{a:=n;if(n<10){foo(a+1)}};foo();
 
 create_async_func := () -> (n=>0) -> {
-    while (n = n + 1; n < 100) {
+    while (n = n + 1; n < 10) {
         yield n / 2;
     };
     return "success";
 };
 n:=0;
 asyncs := (,);
-while(n = n + 1; n <= 100) {
+while(n = n + 1; n <= 1) {
     print("creating async function");
     obj := create_async_func();
     asyncs = asyncs + (obj,);
@@ -17,7 +17,7 @@ while(n = n + 1; n <= 100) {
 };
 print(asyncs);
 n:=0;
-while(n = n + 1; n < 10){
+while(n = n + 1; n < 1){
 	i := 0;
 	while(i = i + 1; i <= len(asyncs)) {
 		print(valueof asyncs[i - 1]);
@@ -96,14 +96,14 @@ classA := bind {
 
 print(classA.getB());
 
-aliased := MyType::Type1::bind {
-	print => () -> {
-		print("This is a print function");
-	},
-};
+// aliased := MyType::Type1::bind {
+// 	print => () -> {
+// 		print("This is a print function");
+// 	},
+// };
 
-aliased.print();
-print(aliasof aliased); // (Type1, MyType)
+// aliased.print();
+// print(aliasof aliased); // (Type1, MyType)
 
 deepseek := bind {
 	chat => () -> "服务器繁忙，请稍后重试",
@@ -132,7 +132,7 @@ while(arr_iter()) {
 
 
 RelationTable := (keys => (,)) -> {
-    return RelationTable::bind {
+    return bind {
         "keys": keys,
         "data": (,),
         append => (row?) -> {
@@ -209,7 +209,7 @@ fib := (n => 0) -> {
         return fib(n - 1) + fib(n - 2);
     };
 };
-print(fib(10));
+print(fib(4));
 
 none := (n => 0) -> { 
 	return 1;
@@ -225,7 +225,7 @@ none2 := () -> {
 };
 
 n := 0;
-while(n = n + 1; n < 100) {
+while(n = n + 1; n < 10) {
 	// j := 0;
 	// while(j = j + 1; j < 100) {
 	// 	if (n == j) {

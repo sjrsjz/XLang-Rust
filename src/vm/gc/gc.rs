@@ -243,7 +243,7 @@ impl GCTraceable {
         }
 
         unsafe {
-            if (*obj.reference).get_traceable().ref_count == 0 {
+            if (*obj.reference).get_const_traceable().ref_count == 0 {
                 return; //panic!("Reference count is already zero! {}", obj);
             }
             (*obj.reference).get_traceable().ref_count -= 1; // 减少被引用对象的引用计数
@@ -287,6 +287,7 @@ pub struct GCSystem {
     new_objects_sum_size: usize,
     _maximum_new_objects_count: usize, // GC触发对象数量限制
     maximum_allocation_size: usize,    // GC触发内存限制
+    should_collect: bool,
 }
 
 impl GCSystem {
@@ -300,6 +301,7 @@ impl GCSystem {
             new_objects_sum_size: 0,
             maximum_allocation_size,
             _maximum_new_objects_count: maximum_new_objects_count,
+            should_collect: true,
         }
     }
 
@@ -312,9 +314,9 @@ impl GCSystem {
         if self.new_objects_sum_size > self.maximum_allocation_size
             && self.new_objects_count > trigger_threshold
         {
-            self.collect();
             self.new_objects_sum_size = 0;
             self.new_objects_count = 0;
+            self.should_collect = true;
         }
         let obj_ref = Box::into_raw(Box::new(object)) as *mut dyn GCObject;
         if obj_ref.is_null() {
@@ -332,8 +334,8 @@ impl GCSystem {
         // 第一步：标记所有在线对象为活跃
         for i in 0..self.objects.len() {
             let gc_ref = &mut self.objects[i];
-            if gc_ref.get_traceable().should_free {
-                let obj = gc_ref.get_traceable();
+            if gc_ref.get_const_traceable().should_free {
+                let obj = gc_ref.get_const_traceable();
                 panic!(
                     "Never set should_free to true! Use offline() instead! Object: {:?}",
                     obj
@@ -443,7 +445,7 @@ impl GCSystem {
         // 标记存活对象
         for i in 0..self.objects.len() {
             let gc_ref = &mut self.objects[i];
-            if gc_ref.get_traceable().native_gcref_object_count > 0 || !gc_ref.get_traceable().should_free {
+            if gc_ref.get_const_traceable().native_gcref_object_count > 0 || !gc_ref.get_const_traceable().should_free {
                 alive[i] = true;
             }
         }
@@ -484,9 +486,9 @@ impl GCSystem {
         // 标记活对象
         for i in 0..self.objects.len() {
             let gc_ref = &mut self.objects[i];
-            alive[i] = !(gc_ref.get_traceable().ref_count == 0
+            alive[i] = !(gc_ref.get_const_traceable().ref_count == 0
                 && !gc_ref.is_online()
-                && gc_ref.get_traceable().references.is_empty()
+                && gc_ref.get_const_traceable().references.is_empty()
                 && !gc_ref.is_locked()); // 检查孤岛对象
         }
 
@@ -522,6 +524,13 @@ impl GCSystem {
         self.immediate_collect();
         self.mark();
         self.sweep();
+    }
+
+    pub fn check_and_collect(&mut self) {
+        if self.should_collect {
+            self.collect();
+            self.should_collect = false;
+        }
     }
 
     pub fn debug_print(&self) {
