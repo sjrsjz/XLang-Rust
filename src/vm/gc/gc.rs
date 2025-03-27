@@ -598,7 +598,6 @@ impl GCSystem {
 impl Drop for GCSystem {
     fn drop(&mut self) {
         self.drop_all();
-        self.collect();
         if !self.objects.is_empty() {
             panic!(
                 "Memory leak detected! {} objects are not freed!",

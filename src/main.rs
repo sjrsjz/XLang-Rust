@@ -122,11 +122,8 @@ fn execute_ir(package: IRPackage, source_code: Option<String>) -> Result<(), VME
 
     let result = main_lambda.as_type::<VMLambda>().get_value();
 
-    let result_ref =
-        try_value_ref_as_vmobject(result).map_err(VMError::VMVariableError)?;
-
-    if !result_ref.isinstance::<VMNull>() {
-        match try_repr_vmobject(result_ref, None) {
+    if !result.isinstance::<VMNull>() {
+        match try_repr_vmobject(result.clone(), None) {
             Ok(value) => {
                 println!("{}", value);
             }
