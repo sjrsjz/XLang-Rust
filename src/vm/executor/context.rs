@@ -1,4 +1,4 @@
-use std::collections::HashMap;
+use rustc_hash::FxHashMap as HashMap;
 
 use super::super::gc::gc::GCRef;
 use super::super::gc::gc::GCSystem;
@@ -67,7 +67,7 @@ impl Context {
         is_hidden_frame: bool,
     ) {
         self.frames.push((
-            HashMap::new(),
+            HashMap::default(),
             is_function_frame,
             function_code_position,
             is_hidden_frame,

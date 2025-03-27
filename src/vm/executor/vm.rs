@@ -1,4 +1,4 @@
-use std::collections::HashMap;
+use rustc_hash::FxHashMap as HashMap;
 use std::fs::File;
 use std::io::Read;
 
@@ -754,7 +754,7 @@ impl IRExecutor {
         context: &mut Context,
         gc_system: &mut GCSystem,
     ) -> Result<(), VMError> {
-        let mut built_in_functions: HashMap<String, GCRef> = HashMap::new();
+        let mut built_in_functions: HashMap<String, GCRef> = HashMap::default();
         built_in_functions.insert(
             "print".to_string(),
             gc_system.new_object(VMNativeFunction::new(native_functions::print)),

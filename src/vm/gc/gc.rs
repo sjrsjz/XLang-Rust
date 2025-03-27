@@ -1,4 +1,4 @@
-use std::collections::HashMap;
+use rustc_hash::FxHashMap as HashMap;
 //typeid
 use std::any::TypeId;
 use std::hash::{Hash, Hasher};
@@ -186,7 +186,7 @@ pub struct GCTraceable {
 
 impl GCTraceable {
     pub fn new<T:GCObject + 'static>(references: Option<&mut Vec<&mut GCRef>>) -> GCTraceable {
-        let mut refs_map = HashMap::new();
+        let mut refs_map = HashMap::default();
 
         if let Some(refs) = references {
             for i in 0..refs.len() {
@@ -526,7 +526,7 @@ impl GCSystem {
         println!("\n=== GC Reference Graph ===");
 
         // 创建对象索引映射，方便查找
-        let mut obj_index_map = HashMap::new();
+        let mut obj_index_map = HashMap::default();
         for (i, obj) in self.objects.iter().enumerate() {
             obj_index_map.insert(obj.reference, i);
         }
