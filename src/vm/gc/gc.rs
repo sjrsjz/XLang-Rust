@@ -1,7 +1,8 @@
-use std::collections::HashMap;
+use rustc_hash::FxHashMap as HashMap;
 //typeid
 use std::any::TypeId;
 use std::hash::{Hash, Hasher};
+
 
 pub trait GCObject {
     fn free(&mut self); // free the object
@@ -12,7 +13,6 @@ pub trait GCObject {
 #[derive(Debug, Clone)]
 pub struct GCRef {
     pub(self) reference: *mut dyn GCObject, // reference to the object
-    pub(self) type_id: TypeId,              // type id of the object
 }
 impl PartialEq for GCRef {
     fn eq(&self, other: &Self) -> bool {
@@ -25,22 +25,21 @@ impl Eq for GCRef {}
 impl Hash for GCRef {
     fn hash<H: Hasher>(&self, state: &mut H) {
         (self.reference as *const () as usize).hash(state);
-        //self.type_id.hash(state);
     }
 }
 
 impl std::fmt::Display for GCRef {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-        write!(f, "GCRef({:?}, {:?})", self.reference, self.type_id)
+        write!(f, "GCRef({:?})", self.reference)
     }
 }
 
 impl GCRef {
-    pub fn new(reference: *mut dyn GCObject, type_id: TypeId) -> Self {
+    pub fn new(reference: *mut dyn GCObject) -> Self {
         if reference.is_null() {
             panic!("Null pointer exception!");
         }
-        GCRef { reference, type_id }
+        GCRef { reference }
     }
 
     pub fn get_reference(&self) -> *mut dyn GCObject {
@@ -69,25 +68,21 @@ impl GCRef {
         unsafe {
             let obj = self.reference as *mut dyn GCObject;
             (*obj).free();
+        }
+    }
+
+    pub(self) fn delete(&self) {
+        unsafe {
             let _ = Box::from_raw(self.reference);
         }
     }
 
-    pub fn offline(&self) {
-        unsafe {
-            let obj = self.reference as *mut dyn GCObject;
-            (*obj).get_traceable().offline();
-        }
-    }
 
     pub fn is_online(&self) -> bool {
-        unsafe {
-            let obj = self.reference as *const dyn GCObject;
-            (*obj).get_const_traceable().online
-        }
+        self.get_const_traceable().native_gcref_object_count > 0
     }
 
-    pub fn as_type<T>(&self) -> &mut T
+    pub fn as_type<T>(&mut self) -> &mut T
     where
         T: GCObject + 'static,
     {
@@ -114,7 +109,7 @@ impl GCRef {
     }
 
     pub fn isinstance<T: GCObject + 'static>(&self) -> bool {
-        self.type_id == TypeId::of::<T>()
+        self.get_const_traceable().isinstance::<T>()
     }
 
     pub fn wrap<T: GCObject + 'static>(obj: &T) -> GCRef {
@@ -122,7 +117,10 @@ impl GCRef {
         if obj.is_null() {
             panic!("Failed to wrap object!");
         }
-        GCRef::new(obj, TypeId::of::<T>())
+
+        GCRef {
+            reference: obj,
+        }
     }
 
     pub fn wrap_mut<T: GCObject + 'static>(obj: &mut T) -> GCRef {
@@ -130,7 +128,9 @@ impl GCRef {
         if obj.is_null() {
             panic!("Failed to wrap object!");
         }
-        GCRef::new(obj, TypeId::of::<T>())
+        GCRef {
+            reference: obj,
+        }
     }
 
     pub fn lock(&self) {
@@ -162,20 +162,20 @@ impl GCRef {
             let obj = self.reference as *mut dyn GCObject;
             (*obj).get_traceable().native_gcref_object_count += 1; // 增加原生引用计数
         }
-        GCRef::new(self.reference, self.type_id)
+        GCRef {
+            reference: self.reference,
+        }
     }
 
     pub fn drop_ref(&mut self) {
-        unsafe {
-            let obj = self.reference as *mut dyn GCObject;
-            if (*obj).get_traceable().native_gcref_object_count == 0 {
-                panic!("Reference count is already zero!");
-            }
-            (*obj).get_traceable().native_gcref_object_count -= 1;
-            if (*obj).get_traceable().native_gcref_object_count == 0 {
-                (*obj).get_traceable().offline();
-            }
+        // println!("{}",
+        //     format!("[GC] Dropping reference: {:?}", self).to_string().red().to_string()
+        // );
+        let traceable = self.get_traceable();
+        if traceable.native_gcref_object_count == 0 {
+            panic!("Reference count is already zero!");
         }
+        traceable.native_gcref_object_count -= 1;
     }
 }
 
@@ -184,45 +184,30 @@ pub struct GCTraceable {
     pub native_gcref_object_count: usize, // 原生对象数量, 当GCRef被创建时增加
     pub ref_count: usize,
     pub should_free: bool,
-    pub online: bool,
     pub lock: bool, // 是否锁定对象禁止回收
     pub references: HashMap<GCRef, usize>,
+    pub type_id: TypeId,              // type id of the object
 }
 
 impl GCTraceable {
-    pub fn new(references: Option<&Vec<&mut GCRef>>) -> GCTraceable {
-        let mut refs_map = HashMap::new();
+    pub fn new<T:GCObject + 'static>(references: Option<&mut Vec<&mut GCRef>>) -> GCTraceable {
+        let mut refs_map = HashMap::default();
 
         if let Some(refs) = references {
-            for ref_obj in refs {
-                *refs_map.entry((*ref_obj).clone()).or_insert(0) += 1;
+            for i in 0..refs.len() {
+                *refs_map.entry((*refs[i]).clone()).or_insert(0) += 1;
+                (*refs[i]).get_traceable().ref_count += 1; // 增加对象的引用计数
             }
         }
 
-        let obj = GCTraceable {
+        GCTraceable {
             native_gcref_object_count: 0,
             ref_count: 0,
             should_free: false,
-            online: true,
             lock: false,
             references: refs_map,
-        };
-
-        // 更新每个引用对象的引用计数
-        for (ref_obj, count) in &obj.references {
-            if ref_obj.reference.is_null() {
-                panic!("Reference is null! {}", ref_obj);
-            }
-            unsafe {
-                (*ref_obj.reference).get_traceable().ref_count += count; // 增加对象的引用计数
-            }
+            type_id: TypeId::of::<T>(),
         }
-        obj
-    }
-
-    pub fn offline(&mut self) {
-        // 设置对象离线，以便它可以被回收
-        self.online = false;
     }
 
     pub fn add_reference(&mut self, obj: &GCRef) {
@@ -264,6 +249,10 @@ impl GCTraceable {
             (*obj.reference).get_traceable().ref_count -= 1; // 减少被引用对象的引用计数
         }
     }
+
+    pub fn isinstance<T: GCObject + 'static>(&self) -> bool {
+        self.type_id == TypeId::of::<T>()
+    }
 }
 
 impl Drop for GCTraceable {
@@ -302,14 +291,14 @@ pub struct GCSystem {
 
 impl GCSystem {
     pub fn new(trigger: Option<(usize, usize)>) -> GCSystem {
-        let trigger = trigger.unwrap_or((100, 1024 * 1024));
+        let trigger = trigger.unwrap_or((100, 4096 * 1024));
         let maximum_new_objects_count = trigger.0;
         let maximum_allocation_size = trigger.1;
         GCSystem {
             objects: Vec::new(),
             new_objects_count: 0,
             new_objects_sum_size: 0,
-            maximum_allocation_size: maximum_allocation_size,
+            maximum_allocation_size,
             _maximum_new_objects_count: maximum_new_objects_count,
         }
     }
@@ -318,7 +307,7 @@ impl GCSystem {
         self.new_objects_sum_size += std::mem::size_of::<T>();
         self.new_objects_count += 1;
 
-        let trigger_threshold = self.objects.len() / 5; // 20%的增长率触发GC
+        let trigger_threshold = self.objects.len() / 2; // 20%的增长率触发GC
 
         if self.new_objects_sum_size > self.maximum_allocation_size
             && self.new_objects_count > trigger_threshold
@@ -331,8 +320,8 @@ impl GCSystem {
         if obj_ref.is_null() {
             panic!("Failed to allocate memory for object!");
         }
-        let mut gc_ref = GCRef::new(obj_ref, TypeId::of::<T>());
-        gc_ref.clone_ref();
+        let mut gc_ref = GCRef { reference: obj_ref };
+        gc_ref.get_traceable().native_gcref_object_count = 1; // 设置原生引用计数为1
         self.objects.push(gc_ref.clone()); // add the object to the list of objects
         gc_ref
     }
@@ -366,8 +355,8 @@ impl GCSystem {
         let mut ref_graph: Vec<Vec<usize>> = vec![Vec::new(); self.objects.len()];
         for i in 0..self.objects.len() {
             let gc_ref = &mut self.objects[i];
-            let type_id = gc_ref.type_id;
-            for (ref_obj, _) in &gc_ref.get_traceable().references {
+            let type_id = gc_ref.get_const_traceable().type_id;
+            for ref_obj in gc_ref.get_traceable().references.keys() {
                 let ref_usize = ref_obj.reference as *const () as usize;
                 match idx_map.get(&ref_usize) {
                     Some(ref_idx) => ref_graph[i].push(*ref_idx),
@@ -375,31 +364,31 @@ impl GCSystem {
                         // Build comprehensive diagnostics message
                         let mut error_msg = String::new();
 
-                        error_msg.push_str(&format!(
-                            "\n===== FATAL ERROR: INVALID REFERENCE DETECTED =====\n"
-                        ));
+                        error_msg.push_str(
+                            "\n===== FATAL ERROR: INVALID REFERENCE DETECTED =====\n",
+                        );
                         error_msg.push_str(&format!(
                             "Object #{} (Type: {:?}) references an object not managed by the GC\n",
                             i, type_id
                         ));
                         error_msg.push_str(&format!("Reference target: {:?}\n", ref_obj));
                         error_msg.push_str(&format!("Reference address: 0x{:x}\n\n", ref_usize));
-                        error_msg.push_str(&format!("All References:\n"));
+                        error_msg.push_str("All References:\n");
                         for (ref_obj, count) in &gc_ref.get_traceable().references {
                             error_msg.push_str(&format!(
                                 "  - Object {:?} (Type: {:?}): {} references\n",
-                                ref_obj.reference, ref_obj.type_id, count
+                                ref_obj.reference, ref_obj.get_const_traceable().type_id, count
                             ));
                         }
 
                         // Include index mapping for diagnostics
-                        error_msg.push_str(&format!("Current GC object map:\n"));
+                        error_msg.push_str("Current GC object map:\n");
                         for (&addr, &idx) in &idx_map {
                             error_msg.push_str(&format!("  0x{:x} -> Object #{}\n", addr, idx));
                         }
 
                         // Include partial reference graph for context
-                        error_msg.push_str(&format!("\nCurrent reference graph (partial):\n"));
+                        error_msg.push_str("\nCurrent reference graph (partial):\n");
                         for (idx, refs) in ref_graph.iter().enumerate().take(i) {
                             if !refs.is_empty() {
                                 error_msg.push_str(&format!(
@@ -409,7 +398,7 @@ impl GCSystem {
                             }
                         }
 
-                        error_msg.push_str(&format!("\n======= PROGRAM TERMINATING =======\n"));
+                        error_msg.push_str("\n======= PROGRAM TERMINATING =======\n");
 
                         // Panic with the complete error message
                         panic!("{}", error_msg);
@@ -454,7 +443,7 @@ impl GCSystem {
         // 标记存活对象
         for i in 0..self.objects.len() {
             let gc_ref = &mut self.objects[i];
-            if gc_ref.get_traceable().online || !gc_ref.get_traceable().should_free {
+            if gc_ref.get_traceable().native_gcref_object_count > 0 || !gc_ref.get_traceable().should_free {
                 alive[i] = true;
             }
         }
@@ -481,8 +470,11 @@ impl GCSystem {
         self.objects = new_objects;
 
         // 现在安全地释放对象，因为它们已经从列表中移除
-        for obj in dead_objects {
+        for obj in &dead_objects {
             obj.free();
+        }
+        for obj in dead_objects {
+            obj.delete();
         }
     }
 
@@ -519,8 +511,11 @@ impl GCSystem {
         self.objects = new_objects;
 
         // 最后释放死亡对象
-        for obj in dead_objects {
+        for obj in &dead_objects {
             obj.free();
+        }
+        for obj in dead_objects {
+            obj.delete();
         }
     }
     pub fn collect(&mut self) {
@@ -540,7 +535,7 @@ impl GCSystem {
         println!("\n=== GC Reference Graph ===");
 
         // 创建对象索引映射，方便查找
-        let mut obj_index_map = HashMap::new();
+        let mut obj_index_map = HashMap::default();
         for (i, obj) in self.objects.iter().enumerate() {
             obj_index_map.insert(obj.reference, i);
         }
@@ -551,12 +546,11 @@ impl GCSystem {
 
             // 打印对象基本信息
             println!(
-                "Object #{}: {:?} (RefCount: {}, NativeCount: {}, Online: {}, ShouldFree: {})",
+                "Object #{}: {:?} (RefCount: {}, NativeCount: {}, ShouldFree: {})",
                 i,
-                obj.type_id, // 或者使用自定义的类型名称映射
+                obj.get_const_traceable().type_id,
                 traceable.ref_count,
                 traceable.native_gcref_object_count,
-                traceable.online,
                 traceable.should_free
             );
 
@@ -568,7 +562,7 @@ impl GCSystem {
                     if let Some(&ref_idx) = obj_index_map.get(&(ref_obj.reference)) {
                         println!(
                             "    -> Object #{} (type: {:?}): {} references",
-                            ref_idx, ref_obj.type_id, count
+                            ref_idx, ref_obj.get_const_traceable().type_id, count
                         );
                     } else {
                         println!(
@@ -586,8 +580,8 @@ impl GCSystem {
     }
 
     pub fn drop_all(&mut self) {
-        for gc_ref in &self.objects {
-            gc_ref.offline();
+        for gc_ref in &mut self.objects {
+            gc_ref.get_traceable().native_gcref_object_count = 0; // 清除原生引用计数
         }
         self.collect();
     }
@@ -612,11 +606,8 @@ impl GCSystem {
 
 impl Drop for GCSystem {
     fn drop(&mut self) {
-        for gc_ref in &self.objects {
-            gc_ref.offline();
-        }
-        self.collect();
-        if self.objects.len() > 0 {
+        self.drop_all();
+        if !self.objects.is_empty() {
             panic!(
                 "Memory leak detected! {} objects are not freed!",
                 self.objects.len()

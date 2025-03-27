@@ -1,4 +1,4 @@
-use std::collections::HashMap;
+use rustc_hash::FxHashMap as HashMap;
 use std::fs::File;
 use std::io::Read;
 
@@ -82,7 +82,7 @@ impl VMError {
                 format!("because {}", msg).bright_red()
             ),
             VMError::FileError(msg) => format!("{}: {}", "FileError".bright_red().bold(), msg),
-            VMError::DetailedError(msg) => format!("{}", msg),
+            VMError::DetailedError(msg) => msg.to_string(),
         }
     }
 }
@@ -100,50 +100,55 @@ impl VMCoroutinePool {
         VMCoroutinePool {
             executors: Vec::new(),
             gen_id: 0,
-            enable_dump: enable_dump,
+            enable_dump,
         }
     }
 
+    /**
+     * 创建一个新的协程
+     * lambda_object: 协程对象
+     * original_code: 原始代码
+     * gc_system: 垃圾回收系统
+     * 返回协程的 ID
+     *
+     * 注意：
+     * + 如果协程对象已经在执行器中，则会返回错误
+     * + lambda_object 必须是 VMLambda 类型
+     * + original_code 是可选的，如果提供，则会在调试信息中使用
+     * + 启动协程会消耗一个native_gcref_object_count(通过 drop_ref())
+     */
     pub fn new_coroutine(
         &mut self,
         lambda_object: &mut GCRef,
         original_code: Option<String>,
         gc_system: &mut GCSystem,
     ) -> Result<isize, VMError> {
-        if !lambda_object.isinstance::<VMVariableWrapper>() {
+        if !lambda_object.isinstance::<VMLambda>() {
             return Err(VMError::DetailedError(
-                "lambda_object must be a VMVariableWrapper".to_string(),
+                "lambda_object must be a VMLambda".to_string(),
             ));
         }
-        let mut executor = IRExecutor::new(original_code);
-        executor.entry_lambda_wrapper = Some(lambda_object.clone());
-
-        // 检查该 lambda 是否已启动
-        let lambda_ref = &mut lambda_object.as_type::<VMVariableWrapper>().value_ref;
+        let mut executor = IRExecutor::new(&lambda_object.clone_ref(), original_code);
 
         // 检查是否已有执行器使用该 lambda
         for (executor, _) in &self.executors {
-            if let Some(existing_wrapper) = &executor.entry_lambda_wrapper {
-                let existing_lambda = &existing_wrapper
-                    .as_const_type::<VMVariableWrapper>()
-                    .value_ref;
-
-                // 比较两个 lambda 是否是同一个对象
-                if std::ptr::eq(
-                    existing_lambda.get_const_reference() as *const _,
-                    lambda_ref.get_const_reference() as *const _,
-                ) {
-                    return Err(VMError::DetailedError(
-                        "Attempted to start the same lambda coroutine multiple times".to_string(),
-                    ));
-                }
+            // 比较两个 lambda 是否是同一个对象
+            if std::ptr::eq(
+                executor.entry_lambda.get_const_reference() as *const _,
+                lambda_object.get_const_reference() as *const _,
+            ) {
+                return Err(VMError::DetailedError(
+                    "Attempted to start the same lambda coroutine multiple times".to_string(),
+                ));
             }
         }
 
-        executor.init(lambda_ref, gc_system)?;
+        executor.init(lambda_object, gc_system)?;
         self.executors.push((executor, self.gen_id));
         let id = self.gen_id;
         self.gen_id += 1;
+
+        lambda_object.drop_ref();
         Ok(id)
     }
 
@@ -164,13 +169,7 @@ impl VMCoroutinePool {
         for (e, id) in &mut self.executors {
             let new_coroutines = e.step(gc_system);
             if new_coroutines.is_err() {
-                e.entry_lambda_wrapper
-                    .as_ref()
-                    .unwrap()
-                    .as_type::<VMVariableWrapper>()
-                    .value_ref
-                    .as_type::<VMLambda>()
-                    .coroutine_status = VMCoroutineStatus::Crashed;
+                e.entry_lambda.as_type::<VMLambda>().coroutine_status = VMCoroutineStatus::Crashed;
                 return Err((*id, new_coroutines.err().unwrap()));
             }
             let new_coroutines = new_coroutines.unwrap();
@@ -185,16 +184,13 @@ impl VMCoroutinePool {
         // 第一阶段：收集已完成的协程索引
         let mut finished_indices = Vec::new();
         for (i, (executor, _id)) in self.executors.iter().enumerate() {
-            if let Some(wrapper) = &executor.entry_lambda_wrapper {
-                if wrapper
-                    .as_const_type::<VMVariableWrapper>()
-                    .value_ref
-                    .as_const_type::<VMLambda>()
-                    .coroutine_status
-                    == VMCoroutineStatus::Finished
-                {
-                    finished_indices.push(i);
-                }
+            if executor
+                .entry_lambda
+                .as_const_type::<VMLambda>()
+                .coroutine_status
+                == VMCoroutineStatus::Finished
+            {
+                finished_indices.push(i);
             }
         }
 
@@ -203,9 +199,7 @@ impl VMCoroutinePool {
             if idx < self.executors.len() {
                 // 安全地移除和释放资源
                 let (mut executor, _) = self.executors.remove(idx);
-                if let Some(wrapper) = executor.entry_lambda_wrapper.as_mut() {
-                    wrapper.drop_ref();
-                }
+                executor.entry_lambda.drop_ref();
             }
         }
     }
@@ -218,15 +212,10 @@ impl VMCoroutinePool {
                 if self.enable_dump {
                     let all_coroutines_contexts_repr = self
                         .executors
-                        .iter()
+                        .iter_mut()
                         .map(|(e, _)| {
-                            let lambda = e
-                                .entry_lambda_wrapper
-                                .as_ref()
-                                .unwrap()
-                                .as_type::<VMVariableWrapper>()
-                                .value_ref
-                                .as_const_type::<VMLambda>();
+                            let lambda =
+                                e.entry_lambda.as_const_type::<VMLambda>();
                             format!(
                                 "{}\n{}\n\n{}\n\n{}",
                                 format!(
@@ -266,7 +255,7 @@ impl VMCoroutinePool {
                 }
             }
 
-            if self.executors.len() == 0 {
+            if self.executors.is_empty() {
                 break;
             }
         }
@@ -288,7 +277,7 @@ pub struct IRExecutor {
     lambda_instructions: Vec<GCRef>,
     original_code: Option<String>,
     debug_info: Option<DebugInfo>,
-    entry_lambda_wrapper: Option<GCRef>,
+    entry_lambda: GCRef,
 }
 
 mod native_functions {
@@ -296,7 +285,7 @@ mod native_functions {
 
     use crate::vm::{
         executor::variable::{
-            try_repr_vmobject, try_value_ref_as_vmobject, VMBoolean, VMBytes, VMFloat, VMInt,
+            try_repr_vmobject, VMBoolean, VMBytes, VMFloat, VMInt,
             VMNull, VMString, VMTuple, VMVariableError,
         },
         gc::gc::{GCRef, GCSystem},
@@ -314,22 +303,21 @@ mod native_functions {
 
     pub fn print(tuple: GCRef, gc_system: &mut GCSystem) -> Result<GCRef, VMVariableError> {
         check_if_tuple(tuple.clone())?;
-        let tuple = tuple.as_type::<VMTuple>();
+        let tuple = tuple.as_const_type::<VMTuple>();
         let mut result = String::new();
-        for obj in tuple.values.iter() {
-            let obj_ref = try_value_ref_as_vmobject(obj.clone())?;
-            let repr = try_repr_vmobject(obj_ref, None)?;
+        for obj in &tuple.values {
+            let repr = try_repr_vmobject(obj.clone(), None)?;
             result.push_str(&format!("{} ", repr));
         }
         result = result.trim_end_matches(" ").to_string();
         println!("{}", result);
         let obj = gc_system.new_object(VMNull::new());
-        return Ok(obj);
+        Ok(obj)
     }
 
     pub fn len(tuple: GCRef, gc_system: &mut GCSystem) -> Result<GCRef, VMVariableError> {
         check_if_tuple(tuple.clone())?;
-        let tuple_obj = tuple.as_type::<VMTuple>();
+        let tuple_obj = tuple.as_const_type::<VMTuple>();
         if tuple_obj.values.len() != 1 {
             return Err(VMVariableError::TypeError(
                 tuple.clone(),
@@ -337,15 +325,15 @@ mod native_functions {
             ));
         }
         if tuple_obj.values[0].isinstance::<VMTuple>() {
-            let inner_tuple = tuple_obj.values[0].as_type::<VMTuple>();
+            let inner_tuple = tuple_obj.values[0].as_const_type::<VMTuple>();
             let obj = gc_system.new_object(VMInt::new(inner_tuple.values.len() as i64));
-            return Ok(obj);
+            Ok(obj)
         } else if tuple_obj.values[0].isinstance::<VMString>() {
-            let inner_string = tuple_obj.values[0].as_type::<VMString>();
+            let inner_string = tuple_obj.values[0].as_const_type::<VMString>();
             let obj = gc_system.new_object(VMInt::new(inner_string.value.len() as i64));
             return Ok(obj);
         } else if tuple_obj.values[0].isinstance::<VMBytes>() {
-            let inner_bytes = tuple_obj.values[0].as_type::<VMBytes>();
+            let inner_bytes = tuple_obj.values[0].as_const_type::<VMBytes>();
             let obj = gc_system.new_object(VMInt::new(inner_bytes.value.len() as i64));
             return Ok(obj);
         } else {
@@ -358,7 +346,7 @@ mod native_functions {
 
     pub fn to_int(tuple: GCRef, gc_system: &mut GCSystem) -> Result<GCRef, VMVariableError> {
         check_if_tuple(tuple.clone())?;
-        let tuple_obj = tuple.as_type::<VMTuple>();
+        let tuple_obj = tuple.as_const_type::<VMTuple>();
         if tuple_obj.values.len() != 1 {
             return Err(VMVariableError::TypeError(
                 tuple.clone(),
@@ -366,22 +354,22 @@ mod native_functions {
             ));
         }
         if tuple_obj.values[0].isinstance::<VMInt>() {
-            let data = tuple_obj.values[0].as_type::<VMInt>().to_int()?;
+            let data = tuple_obj.values[0].as_const_type::<VMInt>().to_int()?;
             return Ok(gc_system.new_object(VMInt::new(data)));
         }
         if tuple_obj.values[0].isinstance::<VMFloat>() {
-            let data = tuple_obj.values[0].as_type::<VMFloat>().to_int()?;
+            let data = tuple_obj.values[0].as_const_type::<VMFloat>().to_int()?;
             return Ok(gc_system.new_object(VMInt::new(data)));
         }
         if tuple_obj.values[0].isinstance::<VMString>() {
-            let data = tuple_obj.values[0].as_type::<VMString>().to_int()?;
+            let data = tuple_obj.values[0].as_const_type::<VMString>().to_int()?;
             return Ok(gc_system.new_object(VMInt::new(data)));
         }
         if tuple_obj.values[0].isinstance::<VMNull>() {
             return Ok(gc_system.new_object(VMInt::new(0)));
         }
         if tuple_obj.values[0].isinstance::<VMBoolean>() {
-            let data = tuple_obj.values[0].as_type::<VMBoolean>().to_int()?;
+            let data = tuple_obj.values[0].as_const_type::<VMBoolean>().to_int()?;
             return Ok(gc_system.new_object(VMInt::new(data)));
         }
         Err(VMVariableError::TypeError(
@@ -392,7 +380,7 @@ mod native_functions {
 
     pub fn to_float(tuple: GCRef, gc_system: &mut GCSystem) -> Result<GCRef, VMVariableError> {
         check_if_tuple(tuple.clone())?;
-        let tuple_obj = tuple.as_type::<VMTuple>();
+        let tuple_obj = tuple.as_const_type::<VMTuple>();
         if tuple_obj.values.len() != 1 {
             return Err(VMVariableError::TypeError(
                 tuple.clone(),
@@ -400,22 +388,24 @@ mod native_functions {
             ));
         }
         if tuple_obj.values[0].isinstance::<VMInt>() {
-            let data = tuple_obj.values[0].as_type::<VMInt>().to_float()?;
+            let data = tuple_obj.values[0].as_const_type::<VMInt>().to_float()?;
             return Ok(gc_system.new_object(VMFloat::new(data)));
         }
         if tuple_obj.values[0].isinstance::<VMFloat>() {
-            let data = tuple_obj.values[0].as_type::<VMFloat>().to_float()?;
+            let data = tuple_obj.values[0].as_const_type::<VMFloat>().to_float()?;
             return Ok(gc_system.new_object(VMFloat::new(data)));
         }
         if tuple_obj.values[0].isinstance::<VMString>() {
-            let data = tuple_obj.values[0].as_type::<VMString>().to_float()?;
+            let data = tuple_obj.values[0].as_const_type::<VMString>().to_float()?;
             return Ok(gc_system.new_object(VMFloat::new(data)));
         }
         if tuple_obj.values[0].isinstance::<VMNull>() {
             return Ok(gc_system.new_object(VMFloat::new(0.0)));
         }
         if tuple_obj.values[0].isinstance::<VMBoolean>() {
-            let data = tuple_obj.values[0].as_type::<VMBoolean>().to_float()?;
+            let data = tuple_obj.values[0]
+                .as_const_type::<VMBoolean>()
+                .to_float()?;
             return Ok(gc_system.new_object(VMFloat::new(data)));
         }
         Err(VMVariableError::TypeError(
@@ -426,7 +416,7 @@ mod native_functions {
 
     pub fn to_string(tuple: GCRef, gc_system: &mut GCSystem) -> Result<GCRef, VMVariableError> {
         check_if_tuple(tuple.clone())?;
-        let tuple_obj = tuple.as_type::<VMTuple>();
+        let tuple_obj = tuple.as_const_type::<VMTuple>();
         if tuple_obj.values.len() != 1 {
             return Err(VMVariableError::TypeError(
                 tuple.clone(),
@@ -434,26 +424,30 @@ mod native_functions {
             ));
         }
         if tuple_obj.values[0].isinstance::<VMInt>() {
-            let data = tuple_obj.values[0].as_type::<VMInt>().to_string()?;
+            let data = tuple_obj.values[0].as_const_type::<VMInt>().to_string()?;
             return Ok(gc_system.new_object(VMString::new(data)));
         }
         if tuple_obj.values[0].isinstance::<VMFloat>() {
-            let data = tuple_obj.values[0].as_type::<VMFloat>().to_string()?;
+            let data = tuple_obj.values[0].as_const_type::<VMFloat>().to_string()?;
             return Ok(gc_system.new_object(VMString::new(data)));
         }
         if tuple_obj.values[0].isinstance::<VMString>() {
-            let data = tuple_obj.values[0].as_type::<VMString>().to_string()?;
+            let data = tuple_obj.values[0]
+                .as_const_type::<VMString>()
+                .to_string()?;
             return Ok(gc_system.new_object(VMString::new(data)));
         }
         if tuple_obj.values[0].isinstance::<VMNull>() {
             return Ok(gc_system.new_object(VMString::new("null".to_string())));
         }
         if tuple_obj.values[0].isinstance::<VMBoolean>() {
-            let data = tuple_obj.values[0].as_type::<VMBoolean>().to_string()?;
+            let data = tuple_obj.values[0]
+                .as_const_type::<VMBoolean>()
+                .to_string()?;
             return Ok(gc_system.new_object(VMString::new(data)));
         }
         if tuple_obj.values[0].isinstance::<VMBytes>() {
-            let data = tuple_obj.values[0].as_type::<VMBytes>().to_string()?;
+            let data = tuple_obj.values[0].as_const_type::<VMBytes>().to_string()?;
             return Ok(gc_system.new_object(VMString::new(data)));
         }
         Err(VMVariableError::TypeError(
@@ -464,7 +458,7 @@ mod native_functions {
 
     pub fn to_bool(tuple: GCRef, gc_system: &mut GCSystem) -> Result<GCRef, VMVariableError> {
         check_if_tuple(tuple.clone())?;
-        let tuple_obj = tuple.as_type::<VMTuple>();
+        let tuple_obj = tuple.as_const_type::<VMTuple>();
         if tuple_obj.values.len() != 1 {
             return Err(VMVariableError::TypeError(
                 tuple.clone(),
@@ -472,22 +466,22 @@ mod native_functions {
             ));
         }
         if tuple_obj.values[0].isinstance::<VMInt>() {
-            let data = tuple_obj.values[0].as_type::<VMInt>().to_bool()?;
+            let data = tuple_obj.values[0].as_const_type::<VMInt>().to_bool()?;
             return Ok(gc_system.new_object(VMBoolean::new(data)));
         }
         if tuple_obj.values[0].isinstance::<VMFloat>() {
-            let data = tuple_obj.values[0].as_type::<VMFloat>().to_bool()?;
+            let data = tuple_obj.values[0].as_const_type::<VMFloat>().to_bool()?;
             return Ok(gc_system.new_object(VMBoolean::new(data)));
         }
         if tuple_obj.values[0].isinstance::<VMString>() {
-            let data = tuple_obj.values[0].as_type::<VMString>().to_bool()?;
+            let data = tuple_obj.values[0].as_const_type::<VMString>().to_bool()?;
             return Ok(gc_system.new_object(VMBoolean::new(data)));
         }
         if tuple_obj.values[0].isinstance::<VMNull>() {
             return Ok(gc_system.new_object(VMBoolean::new(false)));
         }
         if tuple_obj.values[0].isinstance::<VMBoolean>() {
-            let data = tuple_obj.values[0].as_type::<VMBoolean>().to_bool()?;
+            let data = tuple_obj.values[0].as_const_type::<VMBoolean>().to_bool()?;
             return Ok(gc_system.new_object(VMBoolean::new(data)));
         }
         Err(VMVariableError::TypeError(
@@ -497,7 +491,7 @@ mod native_functions {
     }
     pub fn to_bytes(tuple: GCRef, gc_system: &mut GCSystem) -> Result<GCRef, VMVariableError> {
         check_if_tuple(tuple.clone())?;
-        let tuple_obj = tuple.as_type::<VMTuple>();
+        let tuple_obj = tuple.as_const_type::<VMTuple>();
         if tuple_obj.values.len() != 1 {
             return Err(VMVariableError::TypeError(
                 tuple.clone(),
@@ -506,16 +500,19 @@ mod native_functions {
         }
         if tuple_obj.values[0].isinstance::<VMBytes>() {
             return Ok(gc_system.new_object(VMBytes::new(
-                tuple_obj.values[0].as_type::<VMBytes>().value.clone(),
+                tuple_obj.values[0].as_const_type::<VMBytes>().value.clone(),
             )));
         } else if tuple_obj.values[0].isinstance::<VMString>() {
             // 将字符串转换为字节序列
-            let string_value = tuple_obj.values[0].as_type::<VMString>().value.clone();
+            let string_value = tuple_obj.values[0]
+                .as_const_type::<VMString>()
+                .value
+                .clone();
             return Ok(gc_system.new_object(VMBytes::new(string_value.as_bytes().to_vec())));
         } else if tuple_obj.values[0].isinstance::<VMInt>() {
             // 支持单字节的整数转字节
-            let int_value = tuple_obj.values[0].as_type::<VMInt>().value;
-            if int_value < 0 || int_value > 255 {
+            let int_value = tuple_obj.values[0].as_const_type::<VMInt>().value;
+            if !(0..=255).contains(&int_value) {
                 return Err(VMVariableError::ValueError(
                     tuple_obj.values[0].clone(),
                     "Integer values for bytes conversion must be between 0 and 255".to_string(),
@@ -524,7 +521,7 @@ mod native_functions {
             return Ok(gc_system.new_object(VMBytes::new(vec![int_value as u8])));
         } else if tuple_obj.values[0].isinstance::<VMTuple>() {
             // 支持整数元组转字节序列
-            let inner_tuple = tuple_obj.values[0].as_type::<VMTuple>();
+            let inner_tuple = tuple_obj.values[0].as_const_type::<VMTuple>();
             let mut byte_vec = Vec::with_capacity(inner_tuple.values.len());
 
             for value in &inner_tuple.values {
@@ -536,7 +533,7 @@ mod native_functions {
                 }
 
                 let int_value = value.as_const_type::<VMInt>().value;
-                if int_value < 0 || int_value > 255 {
+                if !(0..=255).contains(&int_value) {
                     return Err(VMVariableError::ValueError(
                         value.clone(),
                         "Integer values for bytes conversion must be between 0 and 255".to_string(),
@@ -558,7 +555,7 @@ mod native_functions {
 
     pub fn input(tuple: GCRef, gc_system: &mut GCSystem) -> Result<GCRef, VMVariableError> {
         check_if_tuple(tuple.clone())?;
-        let tuple_obj = tuple.as_type::<VMTuple>();
+        let tuple_obj = tuple.as_const_type::<VMTuple>();
         if tuple_obj.values.len() != 1 {
             return Err(VMVariableError::TypeError(
                 tuple.clone(),
@@ -566,7 +563,9 @@ mod native_functions {
             ));
         }
         if tuple_obj.values[0].isinstance::<VMString>() {
-            let data = tuple_obj.values[0].as_type::<VMString>().to_string()?;
+            let data = tuple_obj.values[0]
+                .as_const_type::<VMString>()
+                .to_string()?;
             print!("{} ", data);
             std::io::stdout().flush().unwrap_or(());
             let mut input = String::new();
@@ -584,15 +583,15 @@ mod native_functions {
 }
 
 impl IRExecutor {
-    pub fn new(original_code: Option<String>) -> Self {
+    pub fn new(entry_lambda: &GCRef, original_code: Option<String>) -> Self {
         IRExecutor {
             context: Context::new(),
             stack: Vec::new(),
             ip: 0,
             lambda_instructions: Vec::new(),
-            original_code: original_code,
+            original_code,
             debug_info: None,
-            entry_lambda_wrapper: None,
+            entry_lambda: entry_lambda.clone(),
         }
     }
     pub fn set_debug_info(&mut self, debug_info: DebugInfo) {
@@ -668,11 +667,7 @@ impl IRExecutor {
         let (line_num, col_num) = find_position(current_pos);
 
         // Calculate range of lines to display
-        let start_line = if line_num > context_lines {
-            line_num - context_lines
-        } else {
-            0
-        };
+        let start_line = line_num.saturating_sub(context_lines);
         let end_line = std::cmp::min(line_num + context_lines, lines.len() - 1);
 
         // Build result string
@@ -741,17 +736,25 @@ impl IRExecutor {
     }
 
     pub fn pop_object(&mut self) -> Result<VMStackObject, VMError> {
-        if self.stack.len() == 0 {
-            return Err(VMError::EmptyStack);
+        match self.stack.pop() {
+            Some(obj) => Ok(obj),
+            None => Err(VMError::EmptyStack),
         }
-        Ok(self.stack.pop().unwrap())
+    }
+
+    pub fn pop_object_and_check(&mut self) -> Result<GCRef, VMError> {
+        let obj = self.pop_object()?;
+        if let VMStackObject::VMObject(obj) = obj {
+            return Ok(obj);
+        }
+        Err(VMError::NotVMObject(obj))
     }
 
     pub fn inject_builtin_functions(
         context: &mut Context,
         gc_system: &mut GCSystem,
     ) -> Result<(), VMError> {
-        let mut built_in_functions: HashMap<String, GCRef> = HashMap::new();
+        let mut built_in_functions: HashMap<String, GCRef> = HashMap::default();
         built_in_functions.insert(
             "print".to_string(),
             gc_system.new_object(VMNativeFunction::new(native_functions::print)),
@@ -817,16 +820,6 @@ impl IRExecutor {
         }
     }
 
-    pub fn pop_and_ref(&mut self) -> Result<(GCRef, GCRef), VMError> {
-        let obj = self.pop_object()?;
-        let obj = match obj {
-            VMStackObject::VMObject(obj) => obj,
-            _ => return Err(VMError::NotVMObject(obj)),
-        };
-        let obj_ref =
-            try_value_ref_as_vmobject(obj.clone()).map_err(|e| VMError::VMVariableError(e))?;
-        Ok((obj, obj_ref))
-    }
 }
 impl IRExecutor {
     pub fn enter_lambda(
@@ -838,35 +831,34 @@ impl IRExecutor {
             return Err(VMError::TryEnterNotLambda(lambda_object.clone()));
         }
 
-        let lambda_wrapper = gc_system.new_object(VMVariableWrapper::new(lambda_object));
+        let use_new_instructions = self.lambda_instructions.is_empty()
+            || lambda_object
+                .as_const_type::<VMLambda>()
+                .lambda_instructions
+                != *self.lambda_instructions.last().unwrap();
+
+        self.stack.push(VMStackObject::LastIP(
+            lambda_object.clone_ref(),
+            self.ip as usize,
+            use_new_instructions,
+        ));
 
         let lambda = lambda_object.as_type::<VMLambda>();
         let code_position = lambda.code_position;
 
-        let use_new_instructions = self.lambda_instructions.len() == 0
-            || lambda.lambda_instructions != *self.lambda_instructions.last().unwrap();
         if use_new_instructions {
             self.lambda_instructions
                 .push(lambda.lambda_instructions.clone_ref());
         }
 
-        self.stack.push(VMStackObject::LastIP(
-            lambda_wrapper,
-            self.ip as usize,
-            use_new_instructions,
-        ));
         self.context
             .new_frame(&self.stack, true, code_position, false);
+        let default_args = &mut lambda.default_args_tuple;
 
-        let default_args = &lambda.default_args_tuple;
-
-        for v in default_args.as_type::<VMTuple>().values.iter() {
-            let v_ref = try_value_ref_as_vmobject(v.clone())
-                .map_err(|_| VMError::UnableToReference(v.clone()))?;
-
+        for v_ref in default_args.as_type::<VMTuple>().values.iter_mut() {
             if !v_ref.isinstance::<VMNamed>() {
                 return Err(VMError::InvalidArgument(
-                    v.clone(),
+                    v_ref.clone(),
                     format!(
                         "Not a VMNamed in Lambda arguments: {}",
                         try_repr_vmobject(default_args.clone(), None)
@@ -874,9 +866,9 @@ impl IRExecutor {
                     ),
                 ));
             }
-            let v = v_ref.as_const_type::<VMNamed>();
+            let v = v_ref.as_type::<VMNamed>();
             let name = v.key.clone();
-            let value = v.value.clone();
+            let value = &mut v.value;
 
             if !name.isinstance::<VMString>() {
                 return Err(VMError::InvalidArgument(
@@ -890,23 +882,17 @@ impl IRExecutor {
             }
             let name = name.as_const_type::<VMString>();
             let name = name.value.clone();
-            let mut value_ref = try_value_ref_as_vmobject(value.clone())
-                .map_err(|_| VMError::UnableToReference(value))?;
             let result = self
                 .context
-                .let_var(name.clone(), &mut value_ref, gc_system);
+                .let_var(name.clone(), value, gc_system);
+
             if result.is_err() {
                 return Err(VMError::ContextError(result.unwrap_err()));
             }
         }
 
         if lambda.self_object.is_some() {
-            let self_obj = lambda.self_object.clone().unwrap();
-            let mut self_obj_ref = try_value_ref_as_vmobject(self_obj.clone());
-            if self_obj_ref.is_err() {
-                return Err(VMError::UnableToReference(self_obj));
-            }
-            let self_obj_ref = self_obj_ref.as_mut().unwrap();
+            let self_obj_ref = lambda.self_object.as_mut().unwrap();
             let result = self
                 .context
                 .let_var("self".to_string(), self_obj_ref, gc_system);
@@ -915,7 +901,7 @@ impl IRExecutor {
             }
         }
 
-        return Ok(());
+        Ok(())
     }
 
     pub fn init(
@@ -925,15 +911,14 @@ impl IRExecutor {
     ) -> Result<(), VMError> {
         self.enter_lambda(lambda_object, gc_system)?;
 
-        self.ip = self
+        self.ip = *self
             .lambda_instructions
             .last()
             .unwrap()
             .as_const_type::<VMInstructions>()
             .func_ips
             .get(&lambda_object.as_const_type::<VMLambda>().signature)
-            .unwrap()
-            .clone() as isize;
+            .unwrap() as isize;
 
         //create builtin functions
         IRExecutor::inject_builtin_functions(&mut self.context, gc_system)?;
@@ -947,16 +932,12 @@ impl IRExecutor {
         // spawned new coroutine, error
 
         let coroutine_status = &self
-            .entry_lambda_wrapper
-            .as_ref()
-            .unwrap()
-            .as_type::<VMVariableWrapper>()
-            .value_ref
+            .entry_lambda
             .as_const_type::<VMLambda>()
             .coroutine_status;
 
         let mut spawned_coroutines = None;
-        if self.lambda_instructions.len() > 0
+        if !self.lambda_instructions.is_empty()
             && self.ip
                 < self
                     .lambda_instructions
@@ -975,11 +956,22 @@ impl IRExecutor {
                 .instructions[self.ip as usize]
                 .clone();
 
-            //gc_system.collect(); // debug
             // if let IR::DebugInfo(_) = instruction {} else{
+            //     println!("{}: {:?}", self.ip, instruction); // debug
             // }
-            //self.context.debug_print_all_vars();
-            //self.debug_output_stack();
+
+            // println!("");
+            // if self.debug_info.is_some() {
+            //     let debug_info = self.debug_info.as_ref().unwrap();
+            //     println!(
+            //         "{}: {}",
+            //         self.ip,
+            //         self.repr_current_code(Some(debug_info.code_position))
+            //     ); // debug
+            // }
+            // self.context.debug_print_all_vars();
+            // gc_system.collect(); // debug
+                                 // self.debug_output_stack();
             spawned_coroutines = self.execute_instruction(instruction, gc_system)?;
 
             //self.debug_output_stack(); // debug
@@ -990,19 +982,10 @@ impl IRExecutor {
             //gc_system.print_reference_graph(); // debug
             self.ip += 1;
         } else if *coroutine_status != VMCoroutineStatus::Finished {
-            let (result, result_ref) = &mut self.pop_and_ref()?;
-
-            let lambda_obj = self
-                .entry_lambda_wrapper
-                .as_ref()
-                .unwrap()
-                .as_type::<VMVariableWrapper>()
-                .value_ref
-                .as_type::<VMLambda>();
-
+            let mut result = self.pop_object_and_check()?;
+            let lambda_obj = self.entry_lambda.as_type::<VMLambda>();
             lambda_obj.coroutine_status = VMCoroutineStatus::Finished;
-
-            lambda_obj.set_result(result_ref);
+            lambda_obj.set_result(&mut result);
             result.drop_ref();
         }
 
@@ -1011,13 +994,6 @@ impl IRExecutor {
 }
 
 impl IRExecutor {
-    pub fn is_variable(&self, object: &GCRef) -> bool {
-        if object.isinstance::<VMVariableWrapper>() {
-            return true;
-        }
-        return false;
-    }
-
     fn push_vmobject(&mut self, obj: GCRef) -> Result<(), VMError> {
         self.stack.push(VMStackObject::VMObject(obj.clone()));
         Ok(())
@@ -1054,9 +1030,9 @@ impl IRExecutor {
                 self.push_vmobject(obj)?;
             }
             IR::LoadLambda(signature, code_position) => {
-                let (default_args_tuple, default_args_tuple_ref) = &mut self.pop_and_ref()?;
-                if !default_args_tuple_ref.isinstance::<VMTuple>() {
-                    return Err(VMError::ArgumentIsNotTuple(default_args_tuple_ref.clone()));
+                let default_args_tuple = &mut self.pop_object_and_check()?;
+                if !default_args_tuple.isinstance::<VMTuple>() {
+                    return Err(VMError::ArgumentIsNotTuple(default_args_tuple.clone()));
                 }
 
                 let mut lambda_result = gc_system.new_object(VMNull::new());
@@ -1064,7 +1040,7 @@ impl IRExecutor {
                 let obj = gc_system.new_object(VMLambda::new(
                     *code_position,
                     signature.clone(),
-                    default_args_tuple_ref,
+                    default_args_tuple,
                     None,
                     self.lambda_instructions.last_mut().unwrap(),
                     &mut lambda_result,
@@ -1075,13 +1051,12 @@ impl IRExecutor {
             }
             IR::BuildTuple(size) => {
                 let mut tuple = Vec::new();
-                let mut tuple_refs = Vec::new();
                 for _ in 0..*size {
-                    let (obj, obj_ref) = self.pop_and_ref()?;
+                    let obj = self.pop_object_and_check()?;
                     tuple.insert(0, obj);
-                    tuple_refs.insert(0, obj_ref);
                 }
-                let obj = gc_system.new_object(VMTuple::new(tuple_refs.iter_mut().collect()));
+                let mut new_refs = tuple.iter_mut().collect();
+                let obj = gc_system.new_object(VMTuple::new(&mut new_refs));
                 self.push_vmobject(obj)?;
                 for obj in tuple.iter_mut() {
                     obj.drop_ref();
@@ -1089,125 +1064,125 @@ impl IRExecutor {
             }
 
             IR::BindSelf => {
-                let (obj, obj_ref) = &mut self.pop_and_ref()?;
-                if !obj_ref.isinstance::<VMTuple>() {
+                let obj = &mut self.pop_object_and_check()?;
+                if !obj.isinstance::<VMTuple>() {
                     return Err(VMError::VMVariableError(VMVariableError::TypeError(
-                        obj_ref.clone(),
+                        obj.clone(),
                         "Bind requires a tuple".to_string(),
                     )));
                 }
-                let copied = try_copy_as_vmobject(obj_ref, gc_system)
-                    .map_err(|e| VMError::VMVariableError(e))?;
+                let mut copied =
+                    try_copy_as_vmobject(obj, gc_system).map_err(VMError::VMVariableError)?;
                 copied.as_type::<VMTuple>().set_lambda_self();
                 self.push_vmobject(copied)?;
                 obj.drop_ref();
             }
 
             IR::BuildKeyValue => {
-                let (value, value_ref) = &mut self.pop_and_ref()?;
-                let (key, key_ref) = &mut self.pop_and_ref()?;
-                let obj = gc_system.new_object(VMKeyVal::new(key_ref, value_ref));
+                let value = &mut self.pop_object_and_check()?;
+                let key = &mut self.pop_object_and_check()?;
+                let obj = gc_system.new_object(VMKeyVal::new(key, value));
                 self.push_vmobject(obj)?;
                 key.drop_ref();
                 value.drop_ref();
             }
 
             IR::BuildNamed => {
-                let (value, value_ref) = &mut self.pop_and_ref()?;
-                let (key, key_ref) = &mut self.pop_and_ref()?;
-                let obj = gc_system.new_object(VMNamed::new(key_ref, value_ref));
+                let value = &mut self.pop_object_and_check()?;
+                let key = &mut self.pop_object_and_check()?;
+                let obj = gc_system.new_object(VMNamed::new(key, value));
                 self.push_vmobject(obj)?;
                 key.drop_ref();
                 value.drop_ref();
             }
 
             IR::BinaryOp(operation) => {
-                let (mut right_original, right) = self.pop_and_ref()?;
-                let (mut left_original, left) = self.pop_and_ref()?;
+                let mut right = self.pop_object_and_check()?;
+                let mut left = self.pop_object_and_check()?;
 
                 let obj = match operation {
                     IROperation::Equal => {
-                        gc_system.new_object(VMBoolean::new(try_eq_as_vmobject(left, right)))
+                        gc_system.new_object(VMBoolean::new(try_eq_as_vmobject(&left, &right)))
                     }
                     IROperation::NotEqual => {
-                        gc_system.new_object(VMBoolean::new(!try_eq_as_vmobject(left, right)))
+                        gc_system.new_object(VMBoolean::new(!try_eq_as_vmobject(&left, &right)))
                     }
                     IROperation::Greater => {
-                        let result = try_greater_than_as_vmobject(left, right)
-                            .map_err(|e| VMError::VMVariableError(e))?;
+                        let result = try_greater_than_as_vmobject(&left, &right)
+                            .map_err(VMError::VMVariableError)?;
                         gc_system.new_object(VMBoolean::new(result))
                     }
                     IROperation::Less => {
-                        let result = try_less_than_as_vmobject(left, right)
-                            .map_err(|e| VMError::VMVariableError(e))?;
+                        let result = try_less_than_as_vmobject(&left, &right)
+                            .map_err(VMError::VMVariableError)?;
                         gc_system.new_object(VMBoolean::new(result))
                     }
                     IROperation::GreaterEqual => {
-                        let result = try_less_than_as_vmobject(left, right)
-                            .map_err(|e| VMError::VMVariableError(e))?;
+                        let result = try_less_than_as_vmobject(&left, &right)
+                            .map_err(VMError::VMVariableError)?;
                         gc_system.new_object(VMBoolean::new(!result))
                     }
                     IROperation::LessEqual => {
-                        let result = try_greater_than_as_vmobject(left, right)
-                            .map_err(|e| VMError::VMVariableError(e))?;
+                        let result = try_greater_than_as_vmobject(&left, &right)
+                            .map_err(VMError::VMVariableError)?;
                         gc_system.new_object(VMBoolean::new(!result))
                     }
 
-                    IROperation::Add => try_add_as_vmobject(left, right, gc_system)
-                        .map_err(|e| VMError::VMVariableError(e))?,
+                    IROperation::Add => try_add_as_vmobject(&left, &right, gc_system)
+                        .map_err(VMError::VMVariableError)?,
 
-                    IROperation::Subtract => try_sub_as_vmobject(left, right, gc_system)
-                        .map_err(|e| VMError::VMVariableError(e))?,
+                    IROperation::Subtract => try_sub_as_vmobject(&left, &right, gc_system)
+                        .map_err(VMError::VMVariableError)?,
 
-                    IROperation::Multiply => try_mul_as_vmobject(left, right, gc_system)
-                        .map_err(|e| VMError::VMVariableError(e))?,
+                    IROperation::Multiply => try_mul_as_vmobject(&left, &right, gc_system)
+                        .map_err(VMError::VMVariableError)?,
 
-                    IROperation::Divide => try_div_as_vmobject(left, right, gc_system)
-                        .map_err(|e| VMError::VMVariableError(e))?,
+                    IROperation::Divide => try_div_as_vmobject(&left, &right, gc_system)
+                        .map_err(VMError::VMVariableError)?,
 
-                    IROperation::Modulus => try_mod_as_vmobject(left, right, gc_system)
-                        .map_err(|e| VMError::VMVariableError(e))?,
+                    IROperation::Modulus => try_mod_as_vmobject(&left, &right, gc_system)
+                        .map_err(VMError::VMVariableError)?,
 
-                    IROperation::BitwiseAnd => try_bitwise_and_as_vmobject(left, right, gc_system)
-                        .map_err(|e| VMError::VMVariableError(e))?,
+                    IROperation::BitwiseAnd => try_bitwise_and_as_vmobject(&left, &right, gc_system)
+                        .map_err(VMError::VMVariableError)?,
 
-                    IROperation::BitwiseOr => try_bitwise_or_as_vmobject(left, right, gc_system)
-                        .map_err(|e| VMError::VMVariableError(e))?,
+                    IROperation::BitwiseOr => try_bitwise_or_as_vmobject(&left, &right, gc_system)
+                        .map_err(VMError::VMVariableError)?,
 
-                    IROperation::BitwiseXor => try_bitwise_xor_as_vmobject(left, right, gc_system)
-                        .map_err(|e| VMError::VMVariableError(e))?,
+                    IROperation::BitwiseXor => try_bitwise_xor_as_vmobject(&left, &right, gc_system)
+                        .map_err(VMError::VMVariableError)?,
 
-                    IROperation::ShiftLeft => try_shift_left_as_vmobject(left, right, gc_system)
-                        .map_err(|e| VMError::VMVariableError(e))?,
+                    IROperation::ShiftLeft => try_shift_left_as_vmobject(&left, &right, gc_system)
+                        .map_err(VMError::VMVariableError)?,
 
-                    IROperation::ShiftRight => try_shift_right_as_vmobject(left, right, gc_system)
-                        .map_err(|e| VMError::VMVariableError(e))?,
+                    IROperation::ShiftRight => try_shift_right_as_vmobject(&left, &right, gc_system)
+                        .map_err(VMError::VMVariableError)?,
 
                     IROperation::And => {
-                        let result = try_and_as_vmobject(left, right)
-                            .map_err(|e| VMError::VMVariableError(e))?;
+                        let result =
+                            try_and_as_vmobject(&left, &right).map_err(VMError::VMVariableError)?;
                         gc_system.new_object(VMBoolean::new(result))
                     }
                     IROperation::Or => {
-                        let result = try_or_as_vmobject(left, right)
-                            .map_err(|e| VMError::VMVariableError(e))?;
+                        let result =
+                            try_or_as_vmobject(&left, &right).map_err(VMError::VMVariableError)?;
                         gc_system.new_object(VMBoolean::new(result))
                     }
-                    IROperation::Power => try_power_as_vmobject(left, right, gc_system)
-                        .map_err(|e| VMError::VMVariableError(e))?,
+                    IROperation::Power => try_power_as_vmobject(&left, &right, gc_system)
+                        .map_err(VMError::VMVariableError)?,
                     _ => return Err(VMError::InvalidInstruction(instruction)),
                 };
                 self.push_vmobject(obj)?;
-                left_original.drop_ref();
-                right_original.drop_ref();
+                left.drop_ref();
+                right.drop_ref();
             }
 
             IR::UnaryOp(operation) => {
-                let (mut original, ref_obj) = self.pop_and_ref()?;
+                let mut ref_obj = self.pop_object_and_check()?;
                 let obj = match operation {
                     IROperation::Not => {
-                        let result = try_not_as_vmobject(ref_obj)
-                            .map_err(|e| VMError::VMVariableError(e))?;
+                        let result =
+                            try_not_as_vmobject(&ref_obj).map_err(VMError::VMVariableError)?;
                         gc_system.new_object(VMBoolean::new(result))
                     }
                     IROperation::Subtract => {
@@ -1232,17 +1207,17 @@ impl IRExecutor {
                             return Err(VMError::InvalidInstruction(instruction));
                         }
                     }
-                    IROperation::BitwiseNot => try_bitwise_not_as_vmobject(ref_obj, gc_system)
-                        .map_err(|e| VMError::VMVariableError(e))?,
+                    IROperation::BitwiseNot => try_bitwise_not_as_vmobject(&ref_obj, gc_system)
+                        .map_err(VMError::VMVariableError)?,
                     _ => return Err(VMError::InvalidInstruction(instruction)),
                 };
                 self.push_vmobject(obj)?;
-                original.drop_ref();
+                ref_obj.drop_ref();
             }
 
             IR::Let(name) => {
-                let (obj, obj_ref) = &mut self.pop_and_ref()?;
-                let result = self.context.let_var(name.clone(), obj_ref, gc_system);
+                let obj = &mut self.pop_object_and_check()?;
+                let result = self.context.let_var(name.clone(), obj, gc_system);
                 if result.is_err() {
                     return Err(VMError::ContextError(result.unwrap_err()));
                 }
@@ -1250,48 +1225,38 @@ impl IRExecutor {
             }
 
             IR::Get(name) => {
-                let obj = self
-                    .context
-                    .get_var(name)
-                    .map_err(|e| VMError::ContextError(e))?;
+                let obj = self.context.get_var(name).map_err(VMError::ContextError)?;
                 self.push_vmobject(obj)?;
             }
 
             IR::Set => {
-                let (value, value_ref) = &mut self.pop_and_ref()?;
-                let reference = &mut self.pop_object()?;
-                let reference = match reference {
-                    VMStackObject::VMObject(reference) => reference,
-                    _ => return Err(VMError::NotVMObject(reference.clone())),
-                };
-                let result = try_assign_as_vmobject(reference, value_ref)
-                    .map_err(|e| VMError::VMVariableError(e))?;
+                let value = &mut self.pop_object_and_check()?;
+                let reference = &mut self.pop_object_and_check()?;
+                let result = try_assign_as_vmobject(reference, value)
+                    .map_err(VMError::VMVariableError)?;
                 self.push_vmobject(result.clone_ref())?;
                 value.drop_ref();
                 reference.drop_ref();
             }
 
             IR::Return => {
-                if self.stack.len() < *self.context.stack_pointers.last().unwrap() {
-                    return Err(VMError::EmptyStack);
-                }
-                let (obj, obj_ref) = &mut self.pop_and_ref()?;
+                self.context.pop_frame_until_function(&mut self.stack)
+                    .map_err(VMError::ContextError)?;
+                let obj = &mut self.pop_object_and_check()?;
                 let ip_info = self.stack.pop().unwrap();
                 let VMStackObject::LastIP(mut self_lambda, ip, use_new_instructions) = ip_info
                 else {
                     return Err(VMError::EmptyStack);
                 };
                 self.ip = ip as isize;
-                let result = self.context.pop_frame(&mut self.stack, true);
-                if result.is_err() {
-                    return Err(VMError::ContextError(result.unwrap_err()));
-                }
-                let lambda_obj_wrapper = self_lambda.as_type::<VMVariableWrapper>();
-                let lambda_obj: &mut VMLambda = lambda_obj_wrapper.value_ref.as_type::<VMLambda>();
-                lambda_obj.set_result(obj_ref);
-                self.push_vmobject(obj_ref.clone_ref())?;
+                let lambda_obj: &mut VMLambda = self_lambda.as_type::<VMLambda>();
+                lambda_obj.set_result(obj);
+
+                self.push_vmobject(obj.clone_ref())?;
+
                 obj.drop_ref();
                 self_lambda.drop_ref();
+
                 if use_new_instructions {
                     let poped = self.lambda_instructions.pop();
                     poped.unwrap().drop_ref();
@@ -1301,29 +1266,25 @@ impl IRExecutor {
                 if self.stack.len() < *self.context.stack_pointers.last().unwrap() {
                     return Err(VMError::EmptyStack);
                 }
-                let (obj, obj_ref) = &mut self.pop_and_ref()?;
-                self.entry_lambda_wrapper
-                    .as_mut()
-                    .unwrap()
-                    .as_type::<VMVariableWrapper>()
-                    .value_ref
+                let obj = &mut self.pop_object_and_check()?;
+                self.entry_lambda
                     .as_type::<VMLambda>()
-                    .set_result(obj_ref);
-                self.push_vmobject(obj_ref.clone_ref())?;
+                    .set_result(obj);
+                self.push_vmobject(obj.clone_ref())?;
                 obj.drop_ref();
             }
             IR::Await => {
                 if self.stack.len() < *self.context.stack_pointers.last().unwrap() {
                     return Err(VMError::EmptyStack);
                 }
-                let (mut obj, obj_ref) = self.pop_and_ref()?;
-                if !obj_ref.isinstance::<VMLambda>() {
+                let mut obj = self.pop_object_and_check()?;
+                if !obj.isinstance::<VMLambda>() {
                     return Err(VMError::InvalidArgument(
-                        obj_ref,
+                        obj,
                         "Await: Not a lambda".to_string(),
                     ));
                 }
-                let lambda = obj_ref.as_const_type::<VMLambda>();
+                let lambda = obj.as_const_type::<VMLambda>();
                 let is_finished = lambda.coroutine_status == VMCoroutineStatus::Finished;
                 self.push_vmobject(gc_system.new_object(VMBoolean::new(is_finished)))?;
                 obj.drop_ref();
@@ -1332,17 +1293,7 @@ impl IRExecutor {
                 self.context.new_frame(&mut self.stack, false, 0, false);
             }
             IR::PopFrame => {
-                let obj = self.pop_object()?;
-                let obj = match obj {
-                    VMStackObject::VMObject(obj) => obj,
-                    _ => return Err(VMError::NotVMObject(obj)),
-                };
-
-                let result = self.context.pop_frame(&mut self.stack, false);
-                if result.is_err() {
-                    return Err(VMError::ContextError(result.unwrap_err()));
-                }
-                self.push_vmobject(obj.clone())?;
+                self.context.pop_frame_except_top(&mut self.stack).map_err(VMError::ContextError)?;
             }
 
             IR::Pop => {
@@ -1358,14 +1309,14 @@ impl IRExecutor {
                 self.ip += offset;
             }
             IR::JumpIfFalseOffset(offset) => {
-                let (mut obj, ref_obj) = self.pop_and_ref()?;
-                if !ref_obj.isinstance::<VMBoolean>() {
+                let mut obj = self.pop_object_and_check()?;
+                if !obj.isinstance::<VMBoolean>() {
                     return Err(VMError::VMVariableError(VMVariableError::TypeError(
-                        ref_obj.clone(),
+                        obj.clone(),
                         "JumpIfFalseOffset: Not a boolean".to_string(),
                     )));
                 }
-                if !ref_obj.as_const_type::<VMBoolean>().value {
+                if !obj.as_const_type::<VMBoolean>().value {
                     self.ip += offset;
                 }
                 obj.drop_ref();
@@ -1381,48 +1332,46 @@ impl IRExecutor {
                     .truncate(*self.context.stack_pointers.last().unwrap());
             }
             IR::GetAttr => {
-                let (mut attr, attr_ref) = self.pop_and_ref()?;
-                let (obj, ref_obj) = &mut self.pop_and_ref()?;
+                let mut attr = self.pop_object_and_check()?;
+                let obj = &mut self.pop_object_and_check()?;
 
-                let result = try_get_attr_as_vmobject(ref_obj, attr_ref)
-                    .map_err(|e| VMError::VMVariableError(e))?;
+                let result = try_get_attr_as_vmobject(obj, &attr)
+                    .map_err(VMError::VMVariableError)?;
                 self.push_vmobject(result.clone_ref())?;
                 obj.drop_ref();
                 attr.drop_ref();
             }
 
             IR::IndexOf => {
-                let (mut index, index_ref) = self.pop_and_ref()?;
-                let (obj, ref_obj) = &mut self.pop_and_ref()?;
-                let result = try_index_of_as_vmobject(ref_obj, index_ref, gc_system)
-                    .map_err(|e| VMError::VMVariableError(e))?;
+                let mut index = self.pop_object_and_check()?;
+                let obj = &mut self.pop_object_and_check()?;
+                let result = try_index_of_as_vmobject(obj, &index, gc_system)
+                    .map_err(VMError::VMVariableError)?;
                 self.push_vmobject(result)?; // 不clone是因为已经在try_index_of_as_vmobject产生了新的对象
                 obj.drop_ref();
                 index.drop_ref();
             }
 
             IR::KeyOf => {
-                let (obj, ref_obj) = &mut self.pop_and_ref()?;
-                let result =
-                    try_key_of_as_vmobject(ref_obj).map_err(|e| VMError::VMVariableError(e))?;
+                let obj = &mut self.pop_object_and_check()?;
+                let result = try_key_of_as_vmobject(obj).map_err(VMError::VMVariableError)?;
                 self.push_vmobject(result.clone_ref())?;
                 obj.drop_ref();
             }
 
             IR::ValueOf => {
-                let (obj, ref_obj) = &mut self.pop_and_ref()?;
-                let result =
-                    try_value_of_as_vmobject(ref_obj).map_err(|e| VMError::VMVariableError(e))?;
+                let obj = &mut self.pop_object_and_check()?;
+                let result = try_value_of_as_vmobject(obj).map_err(VMError::VMVariableError)?;
                 self.push_vmobject(result.clone_ref())?;
                 obj.drop_ref();
             }
 
             IR::Assert => {
-                let (mut obj, ref_obj) = self.pop_and_ref()?;
-                if !ref_obj.isinstance::<VMBoolean>() {
+                let mut obj = self.pop_object_and_check()?;
+                if !obj.isinstance::<VMBoolean>() {
                     return Err(VMError::InvalidInstruction(instruction.clone()));
                 }
-                if !ref_obj.as_const_type::<VMBoolean>().value {
+                if !obj.as_const_type::<VMBoolean>().value {
                     return Err(VMError::AssertFailed);
                 }
                 obj.drop_ref();
@@ -1430,21 +1379,16 @@ impl IRExecutor {
             }
 
             IR::SelfOf => {
-                let (mut obj, ref_obj) = self.pop_and_ref()?;
+                let mut obj = self.pop_object_and_check()?;
 
-                if !ref_obj.isinstance::<VMLambda>() {
+                if !obj.isinstance::<VMLambda>() {
                     return Err(VMError::CannotGetSelf(obj));
                 }
-                let lambda = ref_obj.as_const_type::<VMLambda>();
-                let self_obj = lambda.self_object.clone();
+                let lambda = obj.as_type::<VMLambda>();
+                let self_obj = lambda.self_object.as_mut();
                 match self_obj {
                     Some(self_obj) => {
-                        let self_obj_ref = try_value_ref_as_vmobject(self_obj.clone());
-                        if self_obj_ref.is_err() {
-                            return Err(VMError::UnableToReference(self_obj));
-                        }
-                        let mut self_obj_ref = self_obj_ref.unwrap();
-                        self.push_vmobject(self_obj_ref.clone_ref())?;
+                        self.push_vmobject(self_obj.clone_ref())?;
                     }
                     None => {
                         self.stack
@@ -1455,11 +1399,11 @@ impl IRExecutor {
             }
 
             IR::DeepCopyValue => {
-                let (obj, ref_obj) = &mut self.pop_and_ref()?;
+                let obj = &mut self.pop_object_and_check()?;
 
-                let result = try_deepcopy_as_vmobject(ref_obj, gc_system).map_err(|_| {
+                let result = try_deepcopy_as_vmobject(obj, gc_system).map_err(|_| {
                     VMError::VMVariableError(VMVariableError::TypeError(
-                        ref_obj.clone(),
+                        obj.clone(),
                         "Not a copyable object".to_string(),
                     ))
                 })?;
@@ -1468,23 +1412,17 @@ impl IRExecutor {
                 obj.drop_ref();
             }
             IR::CopyValue => {
-                let (obj, ref_obj) = &mut self.pop_and_ref()?;
+                let obj = &mut self.pop_object_and_check()?;
 
-                let result = try_copy_as_vmobject(ref_obj, gc_system).map_err(|_| {
+                let result = try_copy_as_vmobject(obj, gc_system).map_err(|_| {
                     VMError::VMVariableError(VMVariableError::TypeError(
-                        ref_obj.clone(),
+                        obj.clone(),
                         "Not a copyable object".to_string(),
                     ))
                 })?;
                 self.push_vmobject(result)?;
 
                 obj.drop_ref();
-            }
-
-            IR::RefValue => return Err(VMError::InvalidInstruction(instruction.clone())),
-
-            IR::DerefValue => {
-                return Err(VMError::InvalidInstruction(instruction.clone()));
             }
 
             IR::DebugInfo(debug_info) => {
@@ -1495,11 +1433,11 @@ impl IRExecutor {
             }
 
             IR::CallLambda => {
-                let (mut arg_tuple, arg_tuple_ref) = self.pop_and_ref()?;
-                let (lambda, lambda_ref) = &mut self.pop_and_ref()?;
+                let arg_tuple = &mut self.pop_object_and_check()?;
+                let lambda = &mut self.pop_object_and_check()?;
 
-                if lambda_ref.isinstance::<VMNativeFunction>() {
-                    let lambda_ref = lambda_ref.as_const_type::<VMNativeFunction>();
+                if lambda.isinstance::<VMNativeFunction>() {
+                    let lambda_ref = lambda.as_const_type::<VMNativeFunction>();
                     let result = lambda_ref.call(arg_tuple.clone(), gc_system);
                     if result.is_err() {
                         return Err(VMError::VMVariableError(result.unwrap_err()));
@@ -1511,21 +1449,21 @@ impl IRExecutor {
                     return Ok(None);
                 }
 
-                if !lambda_ref.isinstance::<VMLambda>() {
-                    return Err(VMError::TryEnterNotLambda(lambda_ref.clone()));
+                if !lambda.isinstance::<VMLambda>() {
+                    return Err(VMError::TryEnterNotLambda(lambda.clone()));
                 }
 
-                let lambda_obj = lambda_ref.as_const_type::<VMLambda>();
+                let lambda_obj = lambda.as_type::<VMLambda>();
 
                 let signature = lambda_obj.signature.clone();
                 let result = lambda_obj
                     .default_args_tuple
                     .as_type::<VMTuple>()
-                    .assign_members(arg_tuple_ref);
+                    .assign_members(arg_tuple);
                 if result.is_err() {
                     return Err(VMError::VMVariableError(result.unwrap_err()));
                 }
-                self.enter_lambda(lambda_ref, gc_system)?;
+                self.enter_lambda(lambda, gc_system)?;
 
                 let func_ips = &self
                     .lambda_instructions
@@ -1533,42 +1471,42 @@ impl IRExecutor {
                     .unwrap()
                     .as_const_type::<VMInstructions>()
                     .func_ips;
-                let ip = func_ips.get(&signature).unwrap().clone() as isize;
+                let ip = *func_ips.get(&signature).unwrap() as isize;
                 self.ip = ip - 1;
 
                 arg_tuple.drop_ref();
                 lambda.drop_ref();
             }
             IR::AsyncCallLambda => {
-                let (mut arg_tuple, arg_tuple_ref) = self.pop_and_ref()?;
-                let (lambda, lambda_ref) = &mut self.pop_and_ref()?;
+                let arg_tuple = &mut self.pop_object_and_check()?;
+                let lambda = &mut self.pop_object_and_check()?;
 
-                if lambda_ref.isinstance::<VMNativeFunction>() {
+                if lambda.isinstance::<VMNativeFunction>() {
                     return Err(VMError::InvalidArgument(
-                        lambda_ref.clone(),
+                        lambda.clone(),
                         "Native Function doesn't support async".to_string(),
                     ));
                 }
 
-                if !lambda_ref.isinstance::<VMLambda>() {
-                    return Err(VMError::TryEnterNotLambda(lambda_ref.clone()));
+                if !lambda.isinstance::<VMLambda>() {
+                    return Err(VMError::TryEnterNotLambda(lambda.clone()));
                 }
 
-                let lambda_obj = lambda_ref.as_const_type::<VMLambda>();
-                let default_args = lambda_obj.default_args_tuple.clone();
+                let lambda_obj = lambda.as_type::<VMLambda>();
 
-                let result = default_args
+                let result = lambda_obj
+                    .default_args_tuple
                     .as_type::<VMTuple>()
-                    .assign_members(arg_tuple_ref.clone());
+                    .assign_members(arg_tuple);
                 if result.is_err() {
                     return Err(VMError::VMVariableError(result.unwrap_err()));
                 }
 
                 let spawned_coroutines = vec![SpawnedCoroutine {
-                    lambda_ref: gc_system.new_object(VMVariableWrapper::new(lambda_ref)),
+                    lambda_ref: lambda.clone_ref(),
                     source_code: self.original_code.clone(),
                 }];
-                self.push_vmobject(lambda_ref.clone_ref())?;
+                self.push_vmobject(lambda.clone_ref())?;
 
                 arg_tuple.drop_ref();
                 lambda.drop_ref();
@@ -1576,18 +1514,18 @@ impl IRExecutor {
                 return Ok(Some(spawned_coroutines));
             }
             IR::Wrap => {
-                let (obj, ref_obj) = &mut self.pop_and_ref()?;
-                let wrapped = VMWrapper::new(ref_obj);
+                let obj = &mut self.pop_object_and_check()?;
+                let wrapped = VMWrapper::new(obj);
                 let wrapped = gc_system.new_object(wrapped);
                 self.push_vmobject(wrapped)?;
                 obj.drop_ref();
             }
 
             IR::In => {
-                let (mut container, container_ref) = self.pop_and_ref()?;
-                let (mut obj, ref_obj) = self.pop_and_ref()?;
+                let mut container = self.pop_object_and_check()?;
+                let mut obj = self.pop_object_and_check()?;
 
-                let result = try_contains_as_vmobject(container_ref, ref_obj).map_err(|_| {
+                let result = try_contains_as_vmobject(&container, &obj).map_err(|_| {
                     VMError::VMVariableError(VMVariableError::TypeError(
                         container.clone(),
                         "Not a container".to_string(),
@@ -1599,23 +1537,23 @@ impl IRExecutor {
             }
 
             IR::BuildRange => {
-                let (mut end, end_ref) = self.pop_and_ref()?;
-                let (mut start, start_ref) = self.pop_and_ref()?;
+                let mut end = self.pop_object_and_check()?;
+                let mut start = self.pop_object_and_check()?;
 
-                if !start_ref.isinstance::<VMInt>() {
+                if !start.isinstance::<VMInt>() {
                     return Err(VMError::InvalidArgument(
-                        start_ref.clone(),
+                        start.clone(),
                         "Start of range is not a VMInt".to_string(),
                     ));
                 }
-                if !end_ref.isinstance::<VMInt>() {
+                if !end.isinstance::<VMInt>() {
                     return Err(VMError::InvalidArgument(
-                        end_ref.clone(),
+                        end.clone(),
                         "End of range is not a VMInt".to_string(),
                     ));
                 }
-                let start_ref = start_ref.as_const_type::<VMInt>();
-                let end_ref = end_ref.as_const_type::<VMInt>();
+                let start_ref = start.as_const_type::<VMInt>();
+                let end_ref = end.as_const_type::<VMInt>();
 
                 let result = gc_system.new_object(VMRange::new(start_ref.value, end_ref.value));
                 self.push_vmobject(result)?;
@@ -1623,7 +1561,7 @@ impl IRExecutor {
                 end.drop_ref();
             }
             IR::TypeOf => {
-                let (mut obj, ref_obj) = self.pop_and_ref()?;
+                let mut ref_obj = self.pop_object_and_check()?;
 
                 if ref_obj.isinstance::<VMInt>() {
                     let result = gc_system.new_object(VMString::new("int".to_string()));
@@ -1665,52 +1603,36 @@ impl IRExecutor {
                     let result = gc_system.new_object(VMString::new("".to_string()));
                     self.push_vmobject(result)?;
                 }
-                obj.drop_ref();
+                ref_obj.drop_ref();
             }
 
             IR::Import(code_position) => {
-                let (mut path_arg_named, path_arg_named_ref) = self.pop_and_ref()?;
+                let mut path_arg_named = self.pop_object_and_check()?;
 
-                if !path_arg_named_ref.isinstance::<VMNamed>() {
+                if !path_arg_named.isinstance::<VMNamed>() {
                     return Err(VMError::InvalidArgument(
-                        path_arg_named_ref.clone(),
+                        path_arg_named.clone(),
                         format!(
                             "Import requires VMNamed but got {:?}",
-                            try_repr_vmobject(path_arg_named_ref.clone(), None)
+                            try_repr_vmobject(path_arg_named.clone(), None)
                         ),
                     ));
                 }
 
-                let path_arg_named_ref = path_arg_named_ref.as_const_type::<VMNamed>();
-                let path = path_arg_named_ref.key.clone();
-                let path_ref = try_value_ref_as_vmobject(path.clone());
-                if path_ref.is_err() {
-                    return Err(VMError::UnableToReference(path));
-                }
-                let path_ref = path_ref.unwrap();
-                if !path_ref.isinstance::<VMString>() {
+                let path_arg_named_ref = path_arg_named.as_type::<VMNamed>();
+                let path = &mut path_arg_named_ref.key;
+                if !path.isinstance::<VMString>() {
                     return Err(VMError::InvalidArgument(
-                        path_ref.clone(),
+                        path.clone(),
                         format!(
                             "Import requires VMString but got {:?}",
-                            try_repr_vmobject(path_ref, None)
+                            try_repr_vmobject(path.clone(), None)
                         ),
                     ));
                 }
-                let path_ref = path_ref.as_const_type::<VMString>();
+                let path_ref = path.as_const_type::<VMString>();
 
-                let arg_tuple = path_arg_named_ref.value.clone();
-                let mut arg_tuple_ref = try_value_ref_as_vmobject(arg_tuple.clone())
-                    .map_err(|_| VMError::UnableToReference(path_arg_named_ref.value.clone()))?;
-                if !arg_tuple_ref.isinstance::<VMTuple>() {
-                    return Err(VMError::InvalidArgument(
-                        arg_tuple_ref.clone(),
-                        format!(
-                            "Import as VMLambda requires VMTuple but got {:?}",
-                            try_repr_vmobject(arg_tuple_ref, None)
-                        ),
-                    ));
-                }
+                let arg_tuple = &mut path_arg_named_ref.value;
 
                 let path = path_ref.value.clone();
                 let path = path.as_str();
@@ -1755,7 +1677,7 @@ impl IRExecutor {
                 let lambda = VMLambda::new(
                     *code_position,
                     "__main__".to_string(),
-                    &mut arg_tuple_ref, // !!!
+                    arg_tuple, // !!!
                     None,
                     &mut vm_instructions,
                     &mut lambda_result,
@@ -1767,36 +1689,37 @@ impl IRExecutor {
             }
 
             IR::Alias(alias) => {
-                let (obj, ref_obj) = &mut self.pop_and_ref()?;
-                let copied = try_copy_as_vmobject(ref_obj, gc_system)
-                    .map_err(|e| VMError::VMVariableError(e))?;
+                let obj = &mut self.pop_object_and_check()?;
+                let mut copied =
+                    try_copy_as_vmobject(obj, gc_system).map_err(VMError::VMVariableError)?;
                 let obj_alias =
-                    try_alias_as_vmobject(&copied).map_err(|e| VMError::VMVariableError(e))?;
+                    try_alias_as_vmobject(&mut copied).map_err(VMError::VMVariableError)?;
                 obj_alias.push(alias.clone());
                 self.push_vmobject(copied)?;
                 obj.drop_ref();
             }
 
             IR::WipeAlias => {
-                let (obj, ref_obj) = &mut self.pop_and_ref()?;
-                let copied = try_copy_as_vmobject(ref_obj, gc_system)
-                    .map_err(|e| VMError::VMVariableError(e))?;
+                let obj = &mut self.pop_object_and_check()?;
+                let mut copied =
+                    try_copy_as_vmobject(obj, gc_system).map_err(VMError::VMVariableError)?;
                 let obj_alias =
-                    try_alias_as_vmobject(&copied).map_err(|e| VMError::VMVariableError(e))?;
+                    try_alias_as_vmobject(&mut copied).map_err(VMError::VMVariableError)?;
                 obj_alias.clear();
                 self.push_vmobject(copied)?;
                 obj.drop_ref();
             }
 
             IR::AliasOf => {
-                let (mut obj, ref_obj) = self.pop_and_ref()?;
+                let mut obj = self.pop_object_and_check()?;
                 let obj_alias =
-                    try_alias_as_vmobject(&ref_obj).map_err(|e| VMError::VMVariableError(e))?;
+                    try_const_alias_as_vmobject(&obj).map_err(VMError::VMVariableError)?;
                 let mut tuple = Vec::new();
                 for alias in obj_alias.iter() {
                     tuple.push(gc_system.new_object(VMString::new(alias.clone())));
                 }
-                let result = gc_system.new_object(VMTuple::new(tuple.iter_mut().collect()));
+                let mut tuple_refs = tuple.iter_mut().collect();
+                let result = gc_system.new_object(VMTuple::new(&mut tuple_refs));
                 for alias in tuple.iter_mut() {
                     alias.drop_ref();
                 }
