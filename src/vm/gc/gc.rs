@@ -68,6 +68,11 @@ impl GCRef {
         unsafe {
             let obj = self.reference as *mut dyn GCObject;
             (*obj).free();
+        }
+    }
+
+    pub(self) fn delete(&self) {
+        unsafe {
             let _ = Box::from_raw(self.reference);
         }
     }
@@ -465,9 +470,11 @@ impl GCSystem {
         self.objects = new_objects;
 
         // 现在安全地释放对象，因为它们已经从列表中移除
-        for obj in dead_objects {
-            // println!("{}", format!("[GC] Freeing object: {:?}", obj).to_string().red().to_string());
+        for obj in &dead_objects {
             obj.free();
+        }
+        for obj in dead_objects {
+            obj.delete();
         }
     }
 
@@ -504,9 +511,11 @@ impl GCSystem {
         self.objects = new_objects;
 
         // 最后释放死亡对象
-        for obj in dead_objects {
-            // println!("{}", format!("[GC] Freeing object: {:?}", obj).to_string().red().to_string());
+        for obj in &dead_objects {
             obj.free();
+        }
+        for obj in dead_objects {
+            obj.delete();
         }
     }
     pub fn collect(&mut self) {
