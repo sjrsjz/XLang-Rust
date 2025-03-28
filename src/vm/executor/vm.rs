@@ -1034,6 +1034,12 @@ impl IRExecutor {
             }
             IR::LoadLambda(signature, code_position) => {
                 let instruction = &mut self.pop_object_and_check()?;
+                if !instruction.isinstance::<VMInstructions>() {
+                    return Err(VMError::InvalidArgument(
+                        instruction.clone(),
+                        "LoadLambda requires a VMInstructions".to_string(),
+                    ));
+                }
                 let default_args_tuple = &mut self.pop_object_and_check()?;
                 if !default_args_tuple.isinstance::<VMTuple>() {
                     return Err(VMError::ArgumentIsNotTuple(default_args_tuple.clone()));
