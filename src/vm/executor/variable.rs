@@ -2224,31 +2224,44 @@ impl GCObject for VMTuple {
 
 impl VMObject for VMTuple {
     fn deepcopy(&mut self, gc_system: &mut GCSystem) -> Result<GCRef, VMVariableError> {
-        // 深拷贝元组中的每个元素
-        let mut new_values = Vec::with_capacity(self.values.len());
-        for value in &mut self.values {
-            let copied_value = try_deepcopy_as_vmobject(value, gc_system)?;
+        // 第一阶段：收集所有需要克隆的值
+        let values = self.values.clone();
+        let auto_bind = self.auto_bind;
+        let alias = self.alias.clone();
+        
+        // 第二阶段：脱离 self 的引用关系，单独处理元素的深拷贝
+        let mut new_values = Vec::with_capacity(values.len());
+        
+        // 对每个元素进行深拷贝
+        for mut value in values {
+            let copied_value = try_deepcopy_as_vmobject(&mut value, gc_system)?;
             new_values.push(copied_value);
         }
+        
         // 将 Vec<GCRef> 转换为 Vec<&mut GCRef>
         let mut refs_as_mut: Vec<&mut GCRef> = new_values.iter_mut().collect();
 
         // 创建新的元组对象
-        let mut new_tuple = gc_system.new_object(VMTuple::new_with_alias(&mut refs_as_mut, &self.alias));
-
-        if self.auto_bind {
-            Self::set_lambda_self(&mut new_tuple);
+        let mut new_tuple = gc_system.new_object(VMTuple::new_with_alias(
+            &mut refs_as_mut, 
+            &alias
+        ));
+        
+        // 如果原对象有 auto_bind 标记，则设置新对象的 auto_bind
+        if auto_bind {
+            let tuple = new_tuple.as_type::<VMTuple>();
+            tuple.auto_bind = true;
+            VMTuple::set_lambda_self(&mut new_tuple);
         }
+        
         Ok(new_tuple)
     }
+
 
     fn copy(&mut self, gc_system: &mut GCSystem) -> Result<GCRef, VMVariableError> {
         // 浅拷贝元组中的每个元素
         let mut mut_refs = self.values.iter_mut().collect();
-        let mut new_tuple = gc_system.new_object(VMTuple::new_with_alias(&mut mut_refs, &self.alias));
-        if self.auto_bind {
-            Self::set_lambda_self(&mut new_tuple);
-        }
+        let new_tuple = gc_system.new_object(VMTuple::new_with_alias(&mut mut_refs, &self.alias));
         Ok(new_tuple)
     }
 
@@ -2575,7 +2588,7 @@ impl VMObject for VMLambda {
             .as_type::<VMTuple>()
             .deepcopy(gc_system)?;
 
-        let mut new_result = self.result.as_type::<VMNull>().deepcopy(gc_system)?;
+        let mut new_result = try_deepcopy_as_vmobject(&mut self.result, gc_system)?;
         let mut new_lambda_instructions = self
             .lambda_instructions
             .as_type::<VMInstructions>()
@@ -2585,7 +2598,7 @@ impl VMObject for VMLambda {
             self.code_position,
             self.signature.clone(),
             &mut new_default_args_tuple,
-            self.self_object.as_mut(),
+            None,
             &mut new_lambda_instructions,
             &mut new_result,
             &self.alias,
@@ -2604,7 +2617,7 @@ impl VMObject for VMLambda {
             self.code_position,
             self.signature.clone(),
             &mut new_default_args_tuple,
-            self.self_object.as_mut(),
+            None,
             &mut self.lambda_instructions,
             &mut new_result,
             &self.alias,

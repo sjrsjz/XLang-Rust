@@ -1608,7 +1608,18 @@ impl IRExecutor {
                 } else if ref_obj.isinstance::<VMBoolean>() {
                     let result = gc_system.new_object(VMString::new("bool".to_string()));
                     self.push_vmobject(result)?;
-                } else {
+                } else if ref_obj.isinstance::<VMInstructions>() {
+                    let result = gc_system.new_object(VMString::new("instructions".to_string()));
+                    self.push_vmobject(result)?;
+                } else if ref_obj.isinstance::<VMNativeFunction>() {
+                    let result = gc_system.new_object(VMString::new("native_function".to_string()));
+                    self.push_vmobject(result)?;
+                } else if ref_obj.isinstance::<VMBytes>() {
+                    let result = gc_system.new_object(VMString::new("bytes".to_string()));
+                    self.push_vmobject(result)?;
+                }
+                
+                else {
                     let result = gc_system.new_object(VMString::new("".to_string()));
                     self.push_vmobject(result)?;
                 }

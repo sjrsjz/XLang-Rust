@@ -1,3 +1,11 @@
+a:= bind T::{
+    A => ()->null,
+};
+b:= deepcopy a;
+print(aliasof a);
+print(aliasof U::(wipe aliasof b));
+
+
 foo := (n=>0)->{a:=n;if(n<10){foo(a+1)}};foo();
 
 create_async_func := () -> (n=>0) -> {

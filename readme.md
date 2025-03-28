@@ -102,6 +102,7 @@ b = 2; // 赋值变量 b
 print(a); // 2
 ```
 如果想要**值传递**，可以用 `copy` 关键字
+*注意*: `copy` 和 `deepcopy` 的lambda对象会丢失 `self` 引用（因为目前的代码无法绕过UB行为去实现深拷贝）
 
 ```xlang
 a := 1; // 定义变量 a
@@ -269,6 +270,8 @@ print(a); // 1
 // print(b); // 错误，变量 b 不在作用域内
 ```
 
+如果采用 `dyn` 语法，则指定lambda对象的字节码由程序动态生成而非在编译期指定
+
 ### 改变优先级
 
 使用括号 `()` 或 `[]` 或 `{}` 来改变优先级，`()` 和 `[]` 用于改变表达式的优先级，`{}` 用于新建作用域同时改变表达式的优先级
@@ -350,13 +353,15 @@ while(n = n + 1; n < 1000000){
 
 XLang-Rust 支持模块化编程，每一个程序都可以被当作一个模块，并使用 `compile` 选项编译成字节码
 
-使用 `import module_file => param_tuple` 语法导入模块，`module_file` 是模块文件名（字节码），`param_tuple` 是参数元组或一般值，如果 `param_tuple` 不是元组，则解析器会强制将其包装成元组。加载后的结果返回一个包装后的lambda对象，
+使用 `param_tuple -> dyn import module_file` 语法导入模块，`module_file` 是模块文件名（字节码），`param_tuple` 是参数元组或一般值，如果 `param_tuple` 不是元组，则解析器会强制将其包装成元组。加载后的结果返回一个包装后的lambda对象，
 
 ```xlang
-moduleA := import 'moduleA.xir' => (param1 => null, param2 => null);
+moduleA := (param1 => null, param2 => null) -> dyn import "moduleA.xir";
 loaded := moduleA();
 print(loaded);
 ```
+
+其中 `import` 语句导入指定文件的字节码 (`VMInstruction`)，`dyn` 表示lambda对象指向的字节码是由程序动态生成的
 
 ### bind
 XLang-Rust 支持 `bind` 语法，`bind` 语法用于将一个元组内被命名参数包裹的lambda的self引用绑定到元组上
@@ -455,6 +460,8 @@ wiped := wipe aliased;
 print(wiped); // 1
 print(aliasof wiped); // ()
 ```
+
+*注意*: `alias::value` 会浅拷贝对象，因此如果对象是一个lambda对象，则会丢失 `self` 引用
 
 ### range
 
