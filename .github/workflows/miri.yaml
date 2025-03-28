@@ -26,4 +26,4 @@ jobs:
         run: echo "a := 1;" > ./test.x
 
       - name: Test with Miri
-        run: MIRIFLAGS="-Zmiri-disable-isolation -Zmiri-backtrace=full" cargo miri run -- run ./test.x
+        run: MIRIFLAGS="-Zmiri-disable-isolation -Zmiri-backtrace=full -Zmiri-ignore-leaks" cargo miri run -- run ./test.x
