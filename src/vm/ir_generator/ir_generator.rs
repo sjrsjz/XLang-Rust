@@ -654,6 +654,12 @@ impl<'t> IRGenerator<'t> {
                 instructions.push(IR::RedirectLabel(label));
                 Ok(instructions)
             }
+            ASTNodeType::AssumeTuple => {
+                let mut instructions = Vec::new();
+                instructions.push(debug_info);
+                instructions.extend(self.generate_without_redirect(&ast_node.children[0])?);
+                Ok(instructions)
+            }
         }
     }
     /// 重定向所有跳转指令，将RedirectJump和RedirectJumpIfFalse转换为JumpOffset和JumpIfFalse

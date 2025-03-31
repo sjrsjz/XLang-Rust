@@ -394,6 +394,7 @@ pub enum ASTNodeType {
     LambdaCall,                  // x (tuple)
     Operation(ASTNodeOperation), // x + y, x - y, x * y, x / y ...
     Tuple,                       // x, y, z, ...
+    AssumeTuple,               // ...value
     KeyValue,                    // x: y
     IndexOf,                     // x[y]
     GetAttr,                     // x.y
@@ -810,6 +811,12 @@ fn match_all<'t>(
     node_matcher.add_matcher(Box::new(
         |tokens, current| -> Result<(Option<ASTNode<'t>>, usize), ParserError<'t>> {
             match_named_to_null(tokens, current)
+        },
+    ));
+
+    node_matcher.add_matcher(Box::new(
+        |tokens, current| -> Result<(Option<ASTNode<'t>>, usize), ParserError<'t>> {
+            match_assume_tuple(tokens, current)
         },
     ));
 
@@ -2050,7 +2057,7 @@ fn match_lambda_def<'t>(
             left_tokens.last().unwrap().last().unwrap(),
         ));
     }
-    if left.node_type != ASTNodeType::Tuple{
+    if left.node_type != ASTNodeType::Tuple && left.node_type != ASTNodeType::AssumeTuple {
         left = ASTNode::new(
             ASTNodeType::Tuple,
             Some(&tokens[current][0]),
@@ -2174,6 +2181,38 @@ fn match_named_to_null<'t>(
         ));
     }
     Ok((None, 0))
+}
+
+fn match_assume_tuple<'t>(
+    tokens: &Vec<GatheredTokens<'t>>,
+    current: usize,
+) -> Result<(Option<ASTNode<'t>>, usize), ParserError<'t>> {
+    if current + 1 >= tokens.len() {
+        return Ok((None, 0));
+    }
+    if !is_symbol(&tokens[current], "..."){
+        return Ok((None, 0));
+    } 
+    let left_tokens = &tokens[current + 1..].to_vec();
+    let (node, node_offset) = match_all(left_tokens, 0)?;
+    if node.is_none() {
+        return Ok((None, 0));
+    }
+    let node = node.unwrap();
+    if node_offset != left_tokens.len() {
+        return Err(ParserError::NotFullyMatched(
+            left_tokens.first().unwrap().first().unwrap(),
+            left_tokens.last().unwrap().last().unwrap(),
+        ));
+    }
+    Ok((
+        Some(ASTNode::new(
+            ASTNodeType::AssumeTuple,
+            Some(&tokens[current][0]),
+            Some(vec![node]),
+        )),
+        node_offset + 1,
+    ))
 }
 
 fn match_alias<'t>(
@@ -2408,7 +2447,7 @@ fn match_member_access_and_call<'t>(
             let args_node = args_node.unwrap();
 
             // 如果不是元组类型，将其包装为元组
-            let args = if args_node.node_type != ASTNodeType::Tuple {
+            let args = if args_node.node_type != ASTNodeType::Tuple && args_node.node_type != ASTNodeType::AssumeTuple {
                 ASTNode::new(
                     ASTNodeType::Tuple,
                     Some(&tokens[access_pos][0]),
