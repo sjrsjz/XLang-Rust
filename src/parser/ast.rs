@@ -2043,12 +2043,19 @@ fn match_lambda_def<'t>(
     if left.is_none() {
         return Ok((None, 0));
     }
-    let left = left.unwrap();
+    let mut left = left.unwrap();
     if left_offset != left_tokens.len() {
         return Err(ParserError::NotFullyMatched(
             left_tokens.first().unwrap().first().unwrap(),
             left_tokens.last().unwrap().last().unwrap(),
         ));
+    }
+    if left.node_type != ASTNodeType::Tuple{
+        left = ASTNode::new(
+            ASTNodeType::Tuple,
+            Some(&tokens[current][0]),
+            Some(vec![left]),
+        );
     }
     let is_dyn = current + 2 < tokens.len() && is_identifier(&tokens[current + 2], "dyn");
     let offset = if is_dyn {

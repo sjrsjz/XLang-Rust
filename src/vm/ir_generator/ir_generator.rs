@@ -145,10 +145,6 @@ impl<'t> IRGenerator<'t> {
                     let expr_instructions =
                         self.generate_without_redirect(&ast_node.children[1])?;
                     instructions.extend(args_instructions);
-                    if args.node_type != ASTNodeType::Tuple {
-                        instructions.push(IR::BuildTuple(1));
-                    }
-
                     instructions.extend(expr_instructions);
 
                     instructions.push(IR::LoadLambda(
@@ -170,9 +166,6 @@ impl<'t> IRGenerator<'t> {
                         .append(full_signature.clone(), body_instructions);
 
                     instructions.extend(args_instructions);
-                    if args.node_type != ASTNodeType::Tuple {
-                        instructions.push(IR::BuildTuple(1));
-                    }
                     instructions.push(IR::ForkInstruction);
                     instructions.push(IR::LoadLambda(
                         full_signature,
