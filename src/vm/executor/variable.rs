@@ -1771,11 +1771,14 @@ impl VMObject for VMKeyVal {
     fn deepcopy(&mut self, gc_system: &mut GCSystem) -> Result<GCRef, VMVariableError> {
         let mut new_key = try_deepcopy_as_vmobject(&mut self.key, gc_system)?;
         let mut new_value = try_deepcopy_as_vmobject(&mut self.value, gc_system)?;
-        Ok(gc_system.new_object(VMKeyVal::new_with_alias(
+        let new_keyval = gc_system.new_object(VMKeyVal::new_with_alias(
             &mut new_key,
             &mut new_value,
             &self.alias,
-        )))
+        ));
+        new_key.drop_ref();
+        new_value.drop_ref();
+        Ok(new_keyval)
     }
 
     fn copy(&mut self, gc_system: &mut GCSystem) -> Result<GCRef, VMVariableError> {
@@ -1885,11 +1888,14 @@ impl VMObject for VMNamed {
     fn deepcopy(&mut self, gc_system: &mut GCSystem) -> Result<GCRef, VMVariableError> {
         let mut new_key = try_deepcopy_as_vmobject(&mut self.key, gc_system)?;
         let mut new_value = try_deepcopy_as_vmobject(&mut self.value, gc_system)?;
-        Ok(gc_system.new_object(VMNamed::new_with_alias(
+        let new_named = gc_system.new_object(VMNamed::new_with_alias(
             &mut new_key,
             &mut new_value,
             &self.alias,
-        )))
+        ));
+        new_key.drop_ref();
+        new_value.drop_ref();
+        Ok(new_named)
     }
 
     fn copy(&mut self, gc_system: &mut GCSystem) -> Result<GCRef, VMVariableError> {
@@ -2253,6 +2259,10 @@ impl VMObject for VMTuple {
             tuple.auto_bind = true;
             VMTuple::set_lambda_self(&mut new_tuple);
         }
+
+        for val in refs_as_mut {
+            val.drop_ref();
+        }
         
         Ok(new_tuple)
     }
@@ -2594,7 +2604,7 @@ impl VMObject for VMLambda {
             .as_type::<VMInstructions>()
             .deepcopy(gc_system)?;
 
-        Ok(gc_system.new_object(VMLambda::new_with_alias(
+        let new_lambda = gc_system.new_object(VMLambda::new_with_alias(
             self.code_position,
             self.signature.clone(),
             &mut new_default_args_tuple,
@@ -2602,7 +2612,11 @@ impl VMObject for VMLambda {
             &mut new_lambda_instructions,
             &mut new_result,
             &self.alias,
-        )))
+        ));
+        new_default_args_tuple.drop_ref();
+        new_lambda_instructions.drop_ref();
+        new_result.drop_ref();
+        Ok(new_lambda)
     }
 
     fn copy(&mut self, gc_system: &mut GCSystem) -> Result<GCRef, VMVariableError> {

@@ -575,7 +575,7 @@ impl<'t> IRGenerator<'t> {
                     }
                     ASTNodeModifier::Copy => {
                         instructions.extend(self.generate_without_redirect(&ast_node.children[0])?);
-                        instructions.push(IR::DeepCopyValue);
+                        instructions.push(IR::CopyValue);
                     }
                     ASTNodeModifier::DeepCopy => {
                         instructions.extend(self.generate_without_redirect(&ast_node.children[0])?);

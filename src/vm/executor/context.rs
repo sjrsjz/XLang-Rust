@@ -158,7 +158,7 @@ impl Context {
                 VMStackObject::VMObject(obj_ref) => {
                     obj_ref.drop_ref();
                 }
-                VMStackObject::LastIP(self_lambda, ip, use_new_instructions) => {
+                VMStackObject::LastIP(self_lambda, _ip, use_new_instructions) => {
                     // 这里的self_lambda是一个函数对象，可能会被GC回收
                     self_lambda.drop_ref();
                     if *use_new_instructions {
@@ -174,8 +174,6 @@ impl Context {
                         }
                     }
                 }
-                _ => {}
-                
             }
             
         }
