@@ -60,8 +60,11 @@ pub enum IR{
     TypeOf, // pop object and get the type of the object
     CallLambda, // pop lambda and arguments from stack and call lambda
     Return, // pop value from stack and return it
+    Raise, // raise value
     NewFrame, // create new frame
+    NewBoundaryFrame(isize), // create new boundary frame
     PopFrame, // pop frame
+    PopBoundaryFrame, // pop boundary frame
     Pop, // pop value from stack and discard it
     JumpOffset(isize), // jump to offset
     JumpIfFalseOffset(isize), // jump to offset if false
@@ -76,13 +79,14 @@ pub enum IR{
     RedirectJump(String), // redirect ir, not for vm just for ir generation
     RedirectJumpIfFalse(String), 
     RedirectLabel(String),
+    RedirectNewBoundaryFrame(String),
     Alias(String),
     WipeAlias,
     AliasOf,
     In,
-    Yield,
+    Emit,
     AsyncCallLambda,
-    Await,
+    IsFinished,
 }
 
 #[derive(Serialize, Deserialize, Debug)]

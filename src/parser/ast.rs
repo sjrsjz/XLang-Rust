@@ -387,6 +387,7 @@ pub enum ASTNodeType {
     Variable(String),            // Variable
     Let(String),                 // x := expression
     Body,                        // {...}
+    Boundary,                  // boundary {...}
     Assign,                      // x = expression
     LambdaDef(bool),                   // tuple -> body or tuple -> dyn expression
     Expressions,                 // expression1; expression2; ...
@@ -397,6 +398,7 @@ pub enum ASTNodeType {
     IndexOf,                     // x[y]
     GetAttr,                     // x.y
     Return,                      // return expression
+    Raise,                      // raise expression
     If,    // if expression truecondition || if expression truecondition else falsecondition
     While, // while expression body
     Modifier(ASTNodeModifier), // modifier expression
@@ -655,7 +657,7 @@ fn match_all<'t>(
 
     node_matcher.add_matcher(Box::new(
         |tokens, current| -> Result<(Option<ASTNode<'t>>, usize), ParserError<'t>> {
-            match_return_and_yield(tokens, current)
+            match_return_yield_raise(tokens, current)
         },
     ));
 
@@ -880,14 +882,14 @@ fn match_expressions<'t>(
     ))
 }
 
-fn match_return_and_yield<'t>(
+fn match_return_yield_raise<'t>(
     tokens: &Vec<GatheredTokens<'t>>,
     current: usize,
 ) -> Result<(Option<ASTNode<'t>>, usize), ParserError<'t>> {
     if current >= tokens.len() {
         return Ok((None, 0));
     }
-    if !is_identifier(&tokens[current], "return") && !is_identifier(&tokens[current], "yield") {
+    if !is_identifier(&tokens[current], "return") && !is_identifier(&tokens[current], "yield") && !is_identifier(&tokens[current], "raise") {
         return Ok((None, 0));
     }
     let right_tokens = tokens[current + 1..].to_vec();
@@ -903,10 +905,11 @@ fn match_return_and_yield<'t>(
     }
     let right = right.unwrap();
 
-    let node_type = if is_identifier(&tokens[current], "return") {
-        ASTNodeType::Return
-    } else {
-        ASTNodeType::Yield
+    let node_type = match tokens[current][0].token {
+        "return" => ASTNodeType::Return,
+        "yield" => ASTNodeType::Yield,
+        "raise" => ASTNodeType::Raise,
+        _ => unreachable!(),        
     };
     Ok((
         Some(ASTNode::new(
@@ -2079,7 +2082,7 @@ fn match_modifier<'t>(
     if tokens[current].len() == 1
         && vec![
             "deepcopy", "copy", "ref", "deref", "keyof", "valueof", "selfof", "assert", "import",
-            "wrap", "typeof", "await", "wipe", "aliasof", "bind",
+            "wrap", "typeof", "await", "wipe", "aliasof", "bind", "boundary"
         ]
         .contains(&tokens[current][0].token)
     {
@@ -2088,6 +2091,17 @@ fn match_modifier<'t>(
             return Ok((None, 0));
         }
         let node = node.unwrap();
+
+        if tokens[current][0].token == "boundary" {
+            return Ok((
+                Some(ASTNode::new(
+                    ASTNodeType::Boundary,
+                    Some(&tokens[current][0]),
+                    Some(vec![node]),
+                )),
+                node_offset + 1,
+            ));
+        }
 
         let modifier = match tokens[current][0].token {
             "deepcopy" => ASTNodeModifier::DeepCopy,

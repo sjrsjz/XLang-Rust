@@ -330,11 +330,18 @@ impl<'t> IRGenerator<'t> {
                 instructions.push(IR::Return);
                 Ok(instructions)
             }
+            ASTNodeType::Raise => {
+                let mut instructions = Vec::new();
+                instructions.push(debug_info);
+                instructions.extend(self.generate_without_redirect(&ast_node.children[0])?);
+                instructions.push(IR::Raise);
+                Ok(instructions)
+            }
             ASTNodeType::Yield => {
                 let mut instructions = Vec::new();
                 instructions.push(debug_info);
                 instructions.extend(self.generate_without_redirect(&ast_node.children[0])?);
-                instructions.push(IR::Yield);
+                instructions.push(IR::Emit);
                 Ok(instructions)
             }
             ASTNodeType::Number(number_str) => {
@@ -590,7 +597,7 @@ impl<'t> IRGenerator<'t> {
                         let (label, _) = self.new_label();
                         instructions.push(IR::RedirectLabel(label.clone()));
                         instructions.extend(self.generate_without_redirect(&ast_node.children[0])?);
-                        instructions.push(IR::Await);
+                        instructions.push(IR::IsFinished);
                         instructions.push(IR::RedirectJumpIfFalse(label));
                         instructions.push(IR::LoadNull);
                     }
@@ -644,6 +651,16 @@ impl<'t> IRGenerator<'t> {
                 instructions.push(IR::LoadBytes(decoded_bytes));
                 Ok(instructions)
             }
+            ASTNodeType::Boundary => {
+                let mut instructions = Vec::new();
+                instructions.push(debug_info);
+                let (label, _) = self.new_label();
+                instructions.push(IR::RedirectNewBoundaryFrame(label.clone()));
+                instructions.extend(self.generate_without_redirect(&ast_node.children[0])?);
+                instructions.push(IR::PopBoundaryFrame);
+                instructions.push(IR::RedirectLabel(label));
+                Ok(instructions)
+            }
         }
     }
     /// 重定向所有跳转指令，将RedirectJump和RedirectJumpIfFalse转换为JumpOffset和JumpIfFalse
@@ -683,6 +700,14 @@ impl<'t> IRGenerator<'t> {
                     if let Some(&target_pos) = label_map.get(label) {
                         let offset = target_pos as isize - i as isize - 1;
                         reduced_irs[i] = IR::JumpIfFalseOffset(offset);
+                    } else {
+                        return Err(IRGeneratorError::InvalidLabel);
+                    }
+                }
+                IR::RedirectNewBoundaryFrame(label) => {
+                    if let Some(&target_pos) = label_map.get(label) {
+                        let offset = target_pos as isize - i as isize - 1;
+                        reduced_irs[i] = IR::NewBoundaryFrame(offset);
                     } else {
                         return Err(IRGeneratorError::InvalidLabel);
                     }

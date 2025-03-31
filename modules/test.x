@@ -5,6 +5,22 @@ b:= deepcopy a;
 print(aliasof a);
 print(aliasof U::(wipe aliasof b));
 
+in := "Hello";
+A := boundary {
+    if (in != "hello") {
+        raise Err::'You should enter "hello"'
+    };
+    in
+};
+
+is_err := (v?) -> "Err" in aliasof v;
+
+if (is_err(A)){
+    print("ERROR:", A)
+} else {
+    print(A)
+};
+
 
 foo := (n=>0)->{a:=n;if(n<10){foo(a+1)}};foo();
 

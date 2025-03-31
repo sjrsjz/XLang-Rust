@@ -6,15 +6,23 @@ use super::variable::try_assign_as_vmobject;
 use super::variable::try_repr_vmobject;
 use super::variable::VMStackObject;
 use super::variable::VMVariableError;
+
+#[derive(Debug, PartialEq, Eq)]
+pub enum ContextFrameType {
+    FunctionFrame, // 函数帧
+    NormalFrame,   // 普通帧
+    BoundaryFrame,      // 边界帧
+}
+
 #[derive(Debug)]
 pub struct Context {
-    pub(crate) frames: Vec<(HashMap<String, GCRef>, bool, usize, bool)>, // vars, is_function_frame, function_code_position, is_hidden_frame
+    pub(crate) frames: Vec<(HashMap<String, GCRef>, ContextFrameType, usize, bool)>, // vars, is_function_frame, function_code_position, is_hidden_frame
     pub(crate) stack_pointers: Vec<usize>,
 }
 
 #[derive(Debug)]
 pub enum ContextError {
-    NoFrame,
+    NoFrame(ContextFrameType),
     NoVariable(String),
     ExistingVariable(String),
     OfflinedObject(GCRef),
@@ -26,7 +34,14 @@ pub enum ContextError {
 impl ContextError {
     pub fn to_string(&self) -> String {
         match self {
-            ContextError::NoFrame => "No frame".to_string(),
+            ContextError::NoFrame(frame_type) => format!(
+                "No frame: {:?}",
+                match frame_type {
+                    ContextFrameType::FunctionFrame => "Function Frame",
+                    ContextFrameType::NormalFrame => "Normal Frame",
+                    ContextFrameType::BoundaryFrame => "Boundary Frame",
+                }
+            ),
             ContextError::NoVariable(name) => format!("No variable: {}", name),
             ContextError::ExistingVariable(name) => format!("Existing variable: {}", name),
             ContextError::OfflinedObject(obj) => format!(
@@ -62,13 +77,13 @@ impl Context {
     pub fn new_frame(
         &mut self,
         stack: &Vec<VMStackObject>,
-        is_function_frame: bool,
+        frame_type: ContextFrameType,
         function_code_position: usize,
         is_hidden_frame: bool,
     ) {
         self.frames.push((
             HashMap::default(),
-            is_function_frame,
+            frame_type,
             function_code_position,
             is_hidden_frame,
         ));
@@ -78,26 +93,47 @@ impl Context {
     pub fn pop_frame_until_function(
         &mut self,
         stack: &mut Vec<VMStackObject>,
+        instructions: &mut Vec<GCRef>,
     ) -> Result<(), ContextError> {
-        while !self.frames.is_empty() && !self.frames.last().unwrap().1 {
-            self.pop_frame_except_top(stack)?;            
+        while !self.frames.is_empty()
+            && self.frames.last().unwrap().1 != ContextFrameType::FunctionFrame
+        {
+            self.pop_frame_except_top(stack, instructions)?;
         }
         if self.frames.is_empty() {
-            return Err(ContextError::NoFrame);
+            return Err(ContextError::NoFrame(ContextFrameType::FunctionFrame));
         }
         // 处理函数帧的情况
-        self.pop_frame_except_top(stack)?;
+        self.pop_frame_except_top(stack, instructions)?;
+        Ok(())
+    }
+
+    pub fn pop_frame_until_boundary(
+        &mut self,
+        stack: &mut Vec<VMStackObject>,
+        instructions: &mut Vec<GCRef>,
+    ) -> Result<(), ContextError> {
+        while !self.frames.is_empty()
+            && self.frames.last().unwrap().1 != ContextFrameType::BoundaryFrame
+        {
+            self.pop_frame_except_top(stack, instructions)?;
+        }
+        if self.frames.is_empty() {
+            return Err(ContextError::NoFrame(ContextFrameType::BoundaryFrame));
+        }
+        // 处理边界帧的情况
+        self.pop_frame_except_top(stack, instructions)?;
         Ok(())
     }
 
     pub fn pop_frame_except_top(
         &mut self,
         stack: &mut Vec<VMStackObject>,
+        instructions: &mut Vec<GCRef>
     ) -> Result<(), ContextError> {
-
         // 处理单个帧弹出的情况
         if self.frames.is_empty() {
-            return Err(ContextError::NoFrame);
+            return Err(ContextError::NoFrame(ContextFrameType::NormalFrame));
         }
 
         // 1. 收集当前帧的变量
@@ -118,15 +154,36 @@ impl Context {
 
         // 5. 处理栈上的对象
         for i in stack_pointer..stack.len() - 1 {
-            if let VMStackObject::VMObject(obj_ref) = &mut stack[i] {
-                obj_ref.drop_ref();
+            match &mut stack[i] {
+                VMStackObject::VMObject(obj_ref) => {
+                    obj_ref.drop_ref();
+                }
+                VMStackObject::LastIP(self_lambda, ip, use_new_instructions) => {
+                    // 这里的self_lambda是一个函数对象，可能会被GC回收
+                    self_lambda.drop_ref();
+                    if *use_new_instructions {
+                        let mut poped = instructions.pop();
+                        let poped_mut = poped.as_mut();
+                        if let Some(instruction) = poped_mut {
+                            // 这里的instruction是一个函数对象，可能会被GC回收
+                            instruction.drop_ref();
+                        } else {
+                            return Err(ContextError::ContextError(
+                                "No instructions left in the stack".to_string(),
+                            ));
+                        }
+                    }
+                }
+                _ => {}
+                
             }
+            
         }
 
         // 6. 截断栈（但不删除最后一个元素）
         let last_element = stack.pop().unwrap();
         stack.truncate(stack_pointer);
-        stack.push(last_element);        
+        stack.push(last_element);
 
         Ok(())
     }
@@ -148,7 +205,7 @@ impl Context {
             vars.insert(name, value.clone_ref());
             Ok(())
         } else {
-            Err(ContextError::NoFrame)
+            Err(ContextError::NoFrame(ContextFrameType::NormalFrame))
         }
     }
 
@@ -193,36 +250,41 @@ impl Context {
                     .to_string(),
             );
 
-            for (i, (vars, is_function_frame, function_code_position, is_hidden_frame)) in
+            for (i, (vars, frame_type, function_code_position, is_hidden_frame)) in
                 self.frames.iter().enumerate().rev()
             {
                 // Frame header
-                let frame_type = if *is_function_frame {
-                    "Function Frame"
-                } else {
-                    "Normal Frame"
+                let frame_type_str = match frame_type {
+                    ContextFrameType::FunctionFrame => "Function Frame",
+                    ContextFrameType::NormalFrame => "Normal Frame",
+                    ContextFrameType::BoundaryFrame => "Boundary Frame",
                 };
                 let hidden_status = if *is_hidden_frame { " (Hidden)" } else { "" };
 
                 // 使用统一颜色区分函数帧和普通帧
                 let frame_header = if *is_hidden_frame {
-                    format!("Frame #{} - {}{}\n", i, frame_type, hidden_status)
+                    format!("Frame #{} - {}{}\n", i, frame_type_str, hidden_status)
                         .dimmed()
                         .to_string()
-                } else if *is_function_frame {
-                    format!("Frame #{} - {}{}\n", i, frame_type, hidden_status)
+                } else if *frame_type == ContextFrameType::FunctionFrame {
+                    format!("Frame #{} - {}{}\n", i, frame_type_str, hidden_status)
                         .color(function_color)
                         .bold()
                         .to_string()
+                } else if *frame_type == ContextFrameType::BoundaryFrame {
+                    format!("Frame #{} - {}{}\n", i, frame_type_str, hidden_status)
+                        .color(section_color)
+                        .bold()
+                        .to_string()
                 } else {
-                    format!("Frame #{} - {}{}\n", i, frame_type, hidden_status)
+                    format!("Frame #{} - {}{}\n", i, frame_type_str, hidden_status)
                         .color(normal_color)
                         .bold()
                         .to_string()
                 };
                 output.push_str(&frame_header);
 
-                if *is_function_frame {
+                if *frame_type == ContextFrameType::FunctionFrame {
                     let position_info =
                         format!("Function code position: {}\n", function_code_position);
                     output.push_str(&position_info.color(function_color).to_string());

@@ -855,7 +855,7 @@ impl IRExecutor {
         }
 
         self.context
-            .new_frame(&self.stack, true, code_position, false);
+            .new_frame(&self.stack, ContextFrameType::FunctionFrame, code_position, false);
         let default_args = &mut lambda.default_args_tuple;
 
         for v_ref in default_args.as_type::<VMTuple>().values.iter_mut() {
@@ -1255,7 +1255,7 @@ impl IRExecutor {
             }
 
             IR::Return => {
-                self.context.pop_frame_until_function(&mut self.stack)
+                self.context.pop_frame_until_function(&mut self.stack, &mut self.lambda_instructions)
                     .map_err(VMError::ContextError)?;
                 let obj = &mut self.pop_object_and_check()?;
                 let ip_info = self.stack.pop().unwrap();
@@ -1277,7 +1277,31 @@ impl IRExecutor {
                     poped.unwrap().drop_ref();
                 }
             }
-            IR::Yield => {
+
+            IR::Raise => {
+                self.context.pop_frame_until_boundary(&mut self.stack, &mut self.lambda_instructions)
+                    .map_err(VMError::ContextError)?;
+                let obj = &mut self.pop_object_and_check()?;
+                let ip_info = self.stack.pop().unwrap();
+                let VMStackObject::LastIP(mut self_lambda, ip, use_new_instructions) = ip_info
+                else {
+                    return Err(VMError::EmptyStack);
+                };
+                self.ip = ip as isize;
+                
+                self.push_vmobject(obj.clone_ref())?;
+
+                obj.drop_ref();
+                self_lambda.drop_ref();
+
+                if use_new_instructions {
+                    let poped = self.lambda_instructions.pop();
+                    poped.unwrap().drop_ref();
+                }
+            }
+
+
+            IR::Emit => {
                 if self.stack.len() < *self.context.stack_pointers.last().unwrap() {
                     return Err(VMError::EmptyStack);
                 }
@@ -1288,7 +1312,7 @@ impl IRExecutor {
                 self.push_vmobject(obj.clone_ref())?;
                 obj.drop_ref();
             }
-            IR::Await => {
+            IR::IsFinished => {
                 if self.stack.len() < *self.context.stack_pointers.last().unwrap() {
                     return Err(VMError::EmptyStack);
                 }
@@ -1305,10 +1329,43 @@ impl IRExecutor {
                 obj.drop_ref();
             }
             IR::NewFrame => {
-                self.context.new_frame(&mut self.stack, false, 0, false);
+                self.context.new_frame(&mut self.stack, ContextFrameType::NormalFrame, 0, false);
+            }
+            IR::NewBoundaryFrame(offset) => {
+                self.stack.push(VMStackObject::LastIP(
+                    self.entry_lambda.clone_ref(),
+                    (self.ip + offset) as usize, // raise和pop跳转位置
+                    false,
+                ));
+                self.context.new_frame(
+                    &mut self.stack,
+                    ContextFrameType::BoundaryFrame,
+                    0,
+                    false,
+                );
             }
             IR::PopFrame => {
-                self.context.pop_frame_except_top(&mut self.stack).map_err(VMError::ContextError)?;
+                self.context.pop_frame_except_top(&mut self.stack, &mut self.lambda_instructions).map_err(VMError::ContextError)?;
+            }
+            IR::PopBoundaryFrame => {
+                self.context.pop_frame_except_top(&mut self.stack, &mut self.lambda_instructions).map_err(VMError::ContextError)?;
+                let obj = self.pop_object_and_check()?;
+                let ip_info = self.stack.pop().unwrap();
+                if let VMStackObject::LastIP(mut self_lambda, ip, use_new_instructions) = ip_info
+                {
+                    self.ip = ip as isize;
+                    if use_new_instructions {
+                        let poped = self.lambda_instructions.pop();
+                        poped.unwrap().drop_ref();
+                    }
+                    self_lambda.drop_ref();
+                    self.push_vmobject(obj)?;
+                }
+                else {
+                    return Err(VMError::DetailedError(
+                        "PopBoundaryFrame: Not a LastIP".to_string(),
+                    ));
+                };
             }
 
             IR::Pop => {
