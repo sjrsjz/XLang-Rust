@@ -1,10 +1,6 @@
 use rustc_hash::FxHashMap as HashMap;
-use std::fs::File;
-use std::io::Read;
 
 use crate::vm::ir::DebugInfo;
-use crate::vm::ir::IROperation;
-use crate::vm::ir::IRPackage;
 use crate::vm::ir::IR;
 
 use super::super::gc::gc::*;
@@ -823,7 +819,7 @@ impl IRExecutor {
     }
 }
 
-pub(self) mod vm_instructions {
+ mod vm_instructions {
 
     use std::fs::File;
     use std::io::Read;
@@ -921,7 +917,7 @@ pub(self) mod vm_instructions {
         instruction.drop_ref();
         Ok(())
     }
-    pub fn fork_instruction(vm: &mut IRExecutor, gc_system: &mut GCSystem) -> Result<(), VMError> {
+    pub fn fork_instruction(vm: &mut IRExecutor, _gc_system: &mut GCSystem) -> Result<(), VMError> {
         let forked = vm.lambda_instructions.last_mut().unwrap().clone_ref();
         vm.push_vmobject(forked)?;
         Ok(())
@@ -1134,7 +1130,7 @@ pub(self) mod vm_instructions {
 
     pub fn get_var(
         vm: &mut IRExecutor,
-        gc_system: &mut GCSystem,
+        _gc_system: &mut GCSystem,
         name: String,
     ) -> Result<(), VMError> {
         let obj = vm.context.get_var(&name).map_err(VMError::ContextError)?;
@@ -1142,7 +1138,7 @@ pub(self) mod vm_instructions {
         Ok(())
     }
 
-    pub fn set_var(vm: &mut IRExecutor, gc_system: &mut GCSystem) -> Result<(), VMError> {
+    pub fn set_var(vm: &mut IRExecutor, _gc_system: &mut GCSystem) -> Result<(), VMError> {
         let value = &mut vm.pop_object_and_check()?;
         let reference = &mut vm.pop_object_and_check()?;
         let result = try_assign_as_vmobject(reference, value).map_err(VMError::VMVariableError)?;
@@ -1152,7 +1148,7 @@ pub(self) mod vm_instructions {
         Ok(())
     }
 
-    pub fn return_value(vm: &mut IRExecutor, gc_system: &mut GCSystem) -> Result<(), VMError> {
+    pub fn return_value(vm: &mut IRExecutor, _gc_system: &mut GCSystem) -> Result<(), VMError> {
         vm.context
             .pop_frame_until_function(&mut vm.stack, &mut vm.lambda_instructions)
             .map_err(VMError::ContextError)?;
@@ -1176,7 +1172,7 @@ pub(self) mod vm_instructions {
         }
         Ok(())
     }
-    pub fn raise(vm: &mut IRExecutor, gc_system: &mut GCSystem) -> Result<(), VMError> {
+    pub fn raise(vm: &mut IRExecutor, _gc_system: &mut GCSystem) -> Result<(), VMError> {
         vm.context
             .pop_frame_until_boundary(&mut vm.stack, &mut vm.lambda_instructions)
             .map_err(VMError::ContextError)?;
@@ -1199,7 +1195,7 @@ pub(self) mod vm_instructions {
         Ok(())
     }
 
-    pub fn emit(vm: &mut IRExecutor, gc_system: &mut GCSystem) -> Result<(), VMError> {
+    pub fn emit(vm: &mut IRExecutor, _gc_system: &mut GCSystem) -> Result<(), VMError> {
         if vm.stack.len() < *vm.context.stack_pointers.last().unwrap() {
             return Err(VMError::EmptyStack);
         }
@@ -1226,14 +1222,14 @@ pub(self) mod vm_instructions {
         obj.drop_ref();
         Ok(())
     }
-    pub fn new_frame(vm: &mut IRExecutor, gc_system: &mut GCSystem) -> Result<(), VMError> {
+    pub fn new_frame(vm: &mut IRExecutor, _gc_system: &mut GCSystem) -> Result<(), VMError> {
         vm.context
             .new_frame(&mut vm.stack, ContextFrameType::NormalFrame, 0, false);
         Ok(())
     }
     pub fn new_boundary_frame(
         vm: &mut IRExecutor,
-        gc_system: &mut GCSystem,
+        _gc_system: &mut GCSystem,
         offset: isize,
     ) -> Result<(), VMError> {
         vm.stack.push(VMStackObject::LastIP(
@@ -1245,7 +1241,7 @@ pub(self) mod vm_instructions {
             .new_frame(&mut vm.stack, ContextFrameType::BoundaryFrame, 0, false);
         Ok(())
     }
-    pub fn pop_frame(vm: &mut IRExecutor, gc_system: &mut GCSystem) -> Result<(), VMError> {
+    pub fn pop_frame(vm: &mut IRExecutor, _gc_system: &mut GCSystem) -> Result<(), VMError> {
         vm.context
             .pop_frame_except_top(&mut vm.stack, &mut vm.lambda_instructions)
             .map_err(VMError::ContextError)?;
@@ -1253,7 +1249,7 @@ pub(self) mod vm_instructions {
     }
     pub fn pop_boundary_frame(
         vm: &mut IRExecutor,
-        gc_system: &mut GCSystem,
+        _gc_system: &mut GCSystem,
     ) -> Result<(), VMError> {
         vm.context
             .pop_frame_except_top(&mut vm.stack, &mut vm.lambda_instructions)
@@ -1275,7 +1271,7 @@ pub(self) mod vm_instructions {
         };
         Ok(())
     }
-    pub fn discard_top(vm: &mut IRExecutor, gc_system: &mut GCSystem) -> Result<(), VMError> {
+    pub fn discard_top(vm: &mut IRExecutor, _gc_system: &mut GCSystem) -> Result<(), VMError> {
         let obj = vm.pop_object()?;
         let mut obj = match obj {
             VMStackObject::VMObject(obj) => obj,
@@ -1286,7 +1282,7 @@ pub(self) mod vm_instructions {
     }
     pub fn jump_if_false(
         vm: &mut IRExecutor,
-        gc_system: &mut GCSystem,
+        _gc_system: &mut GCSystem,
         offset: isize,
     ) -> Result<(), VMError> {
         let mut obj = vm.pop_object_and_check()?;
@@ -1302,7 +1298,7 @@ pub(self) mod vm_instructions {
         obj.drop_ref();
         Ok(())
     }
-    pub fn reset_stack(vm: &mut IRExecutor, gc_system: &mut GCSystem) -> Result<(), VMError> {
+    pub fn reset_stack(vm: &mut IRExecutor, _gc_system: &mut GCSystem) -> Result<(), VMError> {
         for i in *vm.context.stack_pointers.last().unwrap()..vm.stack.len() {
             let obj = vm.stack[i].clone();
             if let VMStackObject::VMObject(mut obj) = obj {
@@ -1313,7 +1309,7 @@ pub(self) mod vm_instructions {
             .truncate(*vm.context.stack_pointers.last().unwrap());
         Ok(())
     }
-    pub fn get_attr(vm: &mut IRExecutor, gc_system: &mut GCSystem) -> Result<(), VMError> {
+    pub fn get_attr(vm: &mut IRExecutor, _gc_system: &mut GCSystem) -> Result<(), VMError> {
         let mut attr = vm.pop_object_and_check()?;
         let obj = &mut vm.pop_object_and_check()?;
 
@@ -1333,14 +1329,14 @@ pub(self) mod vm_instructions {
         index.drop_ref();
         Ok(())
     }
-    pub fn key_of(vm: &mut IRExecutor, gc_system: &mut GCSystem) -> Result<(), VMError> {
+    pub fn key_of(vm: &mut IRExecutor, _gc_system: &mut GCSystem) -> Result<(), VMError> {
         let obj = &mut vm.pop_object_and_check()?;
         let result = try_key_of_as_vmobject(obj).map_err(VMError::VMVariableError)?;
         vm.push_vmobject(result.clone_ref())?;
         obj.drop_ref();
         Ok(())
     }
-    pub fn value_of(vm: &mut IRExecutor, gc_system: &mut GCSystem) -> Result<(), VMError> {
+    pub fn value_of(vm: &mut IRExecutor, _gc_system: &mut GCSystem) -> Result<(), VMError> {
         let obj = &mut vm.pop_object_and_check()?;
         let result = try_value_of_as_vmobject(obj).map_err(VMError::VMVariableError)?;
         vm.push_vmobject(result.clone_ref())?;
@@ -1454,7 +1450,7 @@ pub(self) mod vm_instructions {
     }
     pub fn async_call_lambda(
         vm: &mut IRExecutor,
-        gc_system: &mut GCSystem,
+        _gc_system: &mut GCSystem,
     ) -> Result<Option<Vec<SpawnedCoroutine>>, VMError> {
         let arg_tuple = &mut vm.pop_object_and_check()?;
         let lambda = &mut vm.pop_object_and_check()?;
@@ -1489,7 +1485,7 @@ pub(self) mod vm_instructions {
         arg_tuple.drop_ref();
         lambda.drop_ref();
 
-        return Ok(Some(spawned_coroutines));
+        Ok(Some(spawned_coroutines))
     }
     pub fn wrap(vm: &mut IRExecutor, gc_system: &mut GCSystem) -> Result<(), VMError> {
         let obj = &mut vm.pop_object_and_check()?;
@@ -2019,15 +2015,12 @@ impl IRExecutor {
             IR::Alias(alias) => {
                 vm_instructions::alias(self, gc_system, alias.clone())?;
             }
-
             IR::WipeAlias => {
                 vm_instructions::wipe_alias(self, gc_system)?;
             }
-
             IR::AliasOf => {
                 vm_instructions::alias_of(self, gc_system)?;
             }
-
             _ => return Err(VMError::InvalidInstruction(instruction.clone())),
         }
 
