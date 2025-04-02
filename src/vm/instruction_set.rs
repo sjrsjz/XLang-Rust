@@ -354,6 +354,21 @@ pub struct VMInstructionPackage {
 }
 
 impl VMInstructionPackage {
+    pub fn new(
+        function_ips: HashMap<String, usize>,
+        code: Vec<u32>,
+        string_pool: Vec<String>,
+        bytes_pool: Vec<Vec<u8>>,
+        debug_infos: HashMap<usize, DebugInfo>,
+    ) -> Self {
+        VMInstructionPackage {
+            function_ips,
+            code,
+            string_pool,
+            bytes_pool,
+            debug_infos,
+        }
+    }
     pub fn get_table(&self) -> &HashMap<String, usize> {
         &self.function_ips
     }

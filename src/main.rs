@@ -7,9 +7,11 @@ use vm::executor::variable::VMLambda;
 use vm::executor::variable::VMTuple;
 
 use vm::gc::gc::GCRef;
+use vm::instruction_set::VMInstructionPackage;
 use vm::ir::DebugInfo;
 use vm::ir::IRPackage;
 use vm::ir::IR;
+use vm::ir_translator::IRTranslator;
 
 use self::parser::ast::ast_token_stream;
 use self::parser::ast::build_ast;
@@ -80,24 +82,19 @@ fn build_code(code: &str) -> Result<IRPackage, String> {
     };
 
     let mut ir = ir;
-    ir.push((DebugInfo{code_position: 0},IR::Return));
+    ir.push((DebugInfo { code_position: 0 }, IR::Return));
     functions.append("__main__".to_string(), ir);
 
     Ok(functions.build_instructions())
 }
 
 // Execute compiled code
-fn execute_ir(package: IRPackage, source_code: Option<String>) -> Result<(), VMError> {
-    let IRPackage {
-        instructions,
-        function_ips,
-    } = package;
-
+fn execute_ir(package: VMInstructionPackage, source_code: Option<String>) -> Result<(), VMError> {
     let mut coroutine_pool = VMCoroutinePool::new(true);
     let mut gc_system = GCSystem::new(None);
 
     let mut default_args_tuple = gc_system.new_object(VMTuple::new(&mut vec![]));
-    let mut lambda_instructions = gc_system.new_object(VMInstructions::new(instructions, function_ips));
+    let mut lambda_instructions = gc_system.new_object(VMInstructions::new(&package));
     let mut lambda_result = gc_system.new_object(VMNull::new());
     let mut main_lambda = gc_system.new_object(VMLambda::new(
         0,
@@ -112,12 +109,15 @@ fn execute_ir(package: IRPackage, source_code: Option<String>) -> Result<(), VME
     lambda_result.drop_ref();
 
     main_lambda.clone_ref();
-    let _coro_id =
-        coroutine_pool.new_coroutine(&mut main_lambda, source_code, &mut gc_system)?;
+    let _coro_id = coroutine_pool.new_coroutine(&mut main_lambda, source_code, &mut gc_system)?;
 
     let result = coroutine_pool.run_until_finished(&mut gc_system);
     if let Err(e) = result {
-        eprintln!("{} {}", "VM Crashed!:".bright_red().underline().bold(), e.to_string());
+        eprintln!(
+            "{} {}",
+            "VM Crashed!:".bright_red().underline().bold(),
+            e.to_string()
+        );
         return Err(VMError::AssertFailed);
     }
 
@@ -139,22 +139,17 @@ fn execute_ir(package: IRPackage, source_code: Option<String>) -> Result<(), VME
 }
 
 fn execute_ir_repl(
-    package: IRPackage,
+    package: VMInstructionPackage,
     source_code: Option<String>,
     gc_system: &mut GCSystem,
     input_arguments: &mut GCRef,
 ) -> Result<GCRef, VMError> {
-    let IRPackage {
-        instructions,
-        function_ips,
-    } = package;
-
     let mut coroutine_pool = VMCoroutinePool::new(false);
 
-    let mut key = gc_system.new_object(VMString::new("Out".to_string()));
+    let mut key = gc_system.new_object(VMString::new(&"Out"));
     let mut named: GCRef = gc_system.new_object(VMNamed::new(&mut key, input_arguments));
     let mut default_args_tuple = gc_system.new_object(VMTuple::new(&mut vec![&mut named]));
-    let mut lambda_instructions = gc_system.new_object(VMInstructions::new(instructions, function_ips));
+    let mut lambda_instructions = gc_system.new_object(VMInstructions::new(&package));
     let mut lambda_result: GCRef = gc_system.new_object(VMNull::new());
     let mut main_lambda = gc_system.new_object(VMLambda::new(
         0,
@@ -176,8 +171,7 @@ fn execute_ir_repl(
     wrapped.clone_ref();
 
     main_lambda.drop_ref();
-    let _coro_id =
-        coroutine_pool.new_coroutine(&mut wrapped, source_code, gc_system)?;
+    let _coro_id = coroutine_pool.new_coroutine(&mut wrapped, source_code, gc_system)?;
 
     coroutine_pool.run_until_finished(gc_system)?;
     gc_system.collect();
@@ -191,25 +185,48 @@ fn run_file(path: &PathBuf) -> Result<(), String> {
     if extension == "xir" {
         // Execute IR file
         match IRPackage::read_from_file(path.to_str().unwrap()) {
-            Ok(package) => match execute_ir(package, None) {
-                Ok(_) => {
-                    Ok(())
+            Ok(package) => {
+                let mut translator = IRTranslator::new(&package);
+                let result = if translator.translate().is_ok() {
+                    translator.get_result()
+                } else {
+                    return Err("IR translation failed.".to_string());
+                };
+
+                match execute_ir(result, None) {
+                    Ok(_) => Ok(()),
+                    Err(e) => Err(format!("Execution error: {}", e.to_string())
+                        .bright_red()
+                        .to_string()),
                 }
-                Err(e) => Err(format!("Execution error: {}", e.to_string()).bright_red().to_string()),
-            },
-            Err(e) => Err(format!("Error reading IR file: {}", e).bright_red().to_string()),
+            }
+            Err(e) => Err(format!("Error reading IR file: {}", e)
+                .bright_red()
+                .to_string()),
         }
     } else {
         // Assume it's a source file, compile and execute
         match fs::read_to_string(path) {
             Ok(code) => match build_code(&code) {
-                Ok(package) => match execute_ir(package, Some(code)) {
-                    Ok(_) => Ok(()),
-                    Err(e) => Err(format!("Execution error: {}", e.to_string()).bright_red().to_string()),
-                },
+                Ok(package) => {
+                    let mut translator = IRTranslator::new(&package);
+                    let result = if translator.translate().is_ok() {
+                        translator.get_result()
+                    } else {
+                        return Err("IR translation failed.".to_string());
+                    };
+                    match execute_ir(result, Some(code)) {
+                        Ok(_) => Ok(()),
+                        Err(e) => Err(format!("Execution error: {}", e.to_string())
+                            .bright_red()
+                            .to_string()),
+                    }
+                }
                 Err(e) => Err(format!("Compilation error: {}", e).bright_red().to_string()),
             },
-            Err(e) => Err(format!("File reading error: {}", e).bright_red().to_string()),
+            Err(e) => Err(format!("File reading error: {}", e)
+                .bright_red()
+                .to_string()),
         }
     }
 }
@@ -218,7 +235,11 @@ fn compile_file(input: &PathBuf, output: Option<PathBuf>) -> Result<(), String> 
     // Read source code
     let code = match fs::read_to_string(input) {
         Ok(content) => content,
-        Err(e) => return Err(format!("Error reading source file: {}", e).bright_red().to_string()),
+        Err(e) => {
+            return Err(format!("Error reading source file: {}", e)
+                .bright_red()
+                .to_string())
+        }
     };
 
     // Compile source code
@@ -241,7 +262,9 @@ fn compile_file(input: &PathBuf, output: Option<PathBuf>) -> Result<(), String> 
     if let Some(parent) = output_path.parent() {
         if !parent.exists() {
             if let Err(e) = fs::create_dir_all(parent) {
-                return Err(format!("Error creating output directory: {}", e).bright_red().to_string());
+                return Err(format!("Error creating output directory: {}", e)
+                    .bright_red()
+                    .to_string());
             }
         }
     }
@@ -255,7 +278,9 @@ fn compile_file(input: &PathBuf, output: Option<PathBuf>) -> Result<(), String> 
             );
             Ok(())
         }
-        Err(e) => Err(format!("Error saving IR to file: {}", e).bright_red().to_string()),
+        Err(e) => Err(format!("Error saving IR to file: {}", e)
+            .bright_red()
+            .to_string()),
     }
 }
 
@@ -579,51 +604,67 @@ fn run_repl() -> Result<(), String> {
 
                 // 处理完整输入
                 match build_code(&input_buffer) {
-                    Ok(package) => match execute_ir_repl(
-                        package,
-                        Some(input_buffer.to_string()),
-                        &mut gc_system,
-                        &mut input_arguments,
-                    ) {
-                        Ok(mut lambda_ref) => {
-                            let executed = lambda_ref.as_const_type::<VMLambda>();
-                            let result_ref = executed.result.clone();
-                            let idx = input_arguments.as_type::<VMTuple>().values.len();
-                            match try_repr_vmobject(result_ref.clone(), None) {
-                                Ok(value) => {
-                                    if !result_ref.isinstance::<VMNull>() {
-                                        println!(
-                                            "{} = {}",
-                                            format!("Out[{}]", idx).blue().bold(),
-                                            value.bright_white().bold()
-                                        );
+                    Ok(package) => {
+                        let mut translator = IRTranslator::new(&package);
+                        if translator.translate().is_ok() {
+                            let result = translator.get_result();
+                            match execute_ir_repl(
+                                result,
+                                Some(input_buffer.to_string()),
+                                &mut gc_system,
+                                &mut input_arguments,
+                            ) {
+                                Ok(mut lambda_ref) => {
+                                    let executed = lambda_ref.as_const_type::<VMLambda>();
+                                    let result_ref = executed.result.clone();
+                                    let idx = input_arguments.as_type::<VMTuple>().values.len();
+                                    match try_repr_vmobject(result_ref.clone(), None) {
+                                        Ok(value) => {
+                                            if !result_ref.isinstance::<VMNull>() {
+                                                println!(
+                                                    "{} = {}",
+                                                    format!("Out[{}]", idx).blue().bold(),
+                                                    value.bright_white().bold()
+                                                );
+                                            }
+                                            let mut result_ref = result_ref.clone();
+                                            let result = input_arguments
+                                                .as_type::<VMTuple>()
+                                                .append(&mut result_ref);
+                                            if result.is_err() {
+                                                println!(
+                                                    "{}",
+                                                    format!(
+                                                        "Error: {}",
+                                                        result.unwrap_err().to_string()
+                                                    )
+                                                    .red()
+                                                );
+                                            }
+                                        }
+                                        Err(err) => {
+                                            println!(
+                                                "{}{}",
+                                                format!("Out[{}]", idx).blue().bold(),
+                                                format!("<Unable to repr: {}>", err.to_string())
+                                                    .red()
+                                            );
+                                        }
                                     }
-                                    let mut result_ref = result_ref.clone();
-                                    let result = input_arguments
-                                        .as_type::<VMTuple>()
-                                        .append(&mut result_ref);
-                                    if result.is_err() {
-                                        println!(
-                                            "{}",
-                                            format!("Error: {}", result.unwrap_err().to_string()).red()
-                                        );
-                                    }
+                                    lambda_ref.drop_ref();
                                 }
-                                Err(err) => {
-                                    println!(
-                                        "{}{}",
-                                        format!("Out[{}]", idx).blue().bold(),
-                                        format!("<Unable to repr: {}>", err.to_string()).red()
-                                    );
-                                }
+                                Err(e) => println!(
+                                    "{}",
+                                    format!("Execution error: {}", e.to_string())
+                                        .red()
+                                        .bold()
+                                        .underline()
+                                ),
                             }
-                            lambda_ref.drop_ref();
+                        } else {
+                            println!("{}", "IR translation failed.".red());
                         }
-                        Err(e) => println!(
-                            "{}",
-                            format!("Execution error: {}", e.to_string()).red().bold().underline()
-                        ),
-                    },
+                    }
                     Err(e) => println!("{}", format!("Compilation error: {}", e).red().bold()),
                 }
                 gc_system.collect();

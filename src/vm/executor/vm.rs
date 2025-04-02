@@ -1,5 +1,6 @@
 use rustc_hash::FxHashMap as HashMap;
 
+use crate::vm::instruction_set::VMInstruction;
 use crate::vm::ir::DebugInfo;
 use crate::vm::ir::IR;
 use crate::vm::opcode::Instruction32;
@@ -270,8 +271,11 @@ pub struct SpawnedCoroutine {
     source_code: Option<String>,
 }
 
-type InstructionHandler =
-    fn(&mut IRExecutor, &ProcessedOpcode, &mut GCSystem) -> Result<Option<Vec<SpawnedCoroutine>>, VMError>;
+type InstructionHandler = fn(
+    &mut IRExecutor,
+    &ProcessedOpcode,
+    &mut GCSystem,
+) -> Result<Option<Vec<SpawnedCoroutine>>, VMError>;
 
 #[derive(Debug)]
 pub struct IRExecutor {
@@ -589,74 +593,104 @@ mod native_functions {
 
 impl IRExecutor {
     pub fn new(entry_lambda: &GCRef, original_code: Option<String>) -> Self {
-        let instruction_table: Vec<InstructionHandler> = vec![
-            vm_instructions::load_float,
-            vm_instructions::load_string,
-            vm_instructions::load_bool,
-            vm_instructions::load_null,
-            vm_instructions::load_bytes,
-            vm_instructions::load_lambda,
-            vm_instructions::fork_instruction,
-            vm_instructions::build_tuple,
-            vm_instructions::bind_self,
-            vm_instructions::build_keyval,
-            vm_instructions::build_named,
-            vm_instructions::let_var,
-            vm_instructions::get_var,
-            vm_instructions::set_var,
-            vm_instructions::return_value,
-            vm_instructions::raise,
-            vm_instructions::emit,
-            vm_instructions::is_finished,
-            vm_instructions::new_frame,
-            vm_instructions::new_boundary_frame,
-            vm_instructions::pop_frame,
-            vm_instructions::pop_boundary_frame,
-            vm_instructions::discard_top,
-            vm_instructions::jump_if_false,
-            vm_instructions::reset_stack,
-            vm_instructions::get_attr,
-            vm_instructions::index_of,
-            vm_instructions::key_of,
-            vm_instructions::value_of,
-            vm_instructions::assert,
-            vm_instructions::self_of,
-            vm_instructions::deepcopy,
-            vm_instructions::copy,
-            vm_instructions::call_lambda,
-            vm_instructions::async_call_lambda,
-            vm_instructions::wrap,
-            vm_instructions::is_in,
-            vm_instructions::build_range,
-            vm_instructions::type_of,
-            vm_instructions::import,
-            vm_instructions::alias,
-            vm_instructions::wipe_alias,
-            vm_instructions::alias_of,
-            vm_instructions::binary_add,
-            vm_instructions::binary_subtract,
-            vm_instructions::binary_multiply,
-            vm_instructions::binary_divide,
-            vm_instructions::binary_modulus,
-            vm_instructions::binary_power,
-            vm_instructions::binary_bitwise_and,
-            vm_instructions::binary_bitwise_or,
-            vm_instructions::binary_bitwise_xor,
-            vm_instructions::binary_shift_left,
-            vm_instructions::binary_shift_right,
-            vm_instructions::binary_equal,
-            vm_instructions::binary_not_equal,
-            vm_instructions::binary_greater,
-            vm_instructions::binary_less,
-            vm_instructions::binary_greater_equal,
-            vm_instructions::binary_less_equal,
-            vm_instructions::binary_and,
-            vm_instructions::binary_or,
-            vm_instructions::unary_not,
-            vm_instructions::unary_minus,
-            vm_instructions::unary_plus,
-            vm_instructions::unary_bitwise_not,
-        ];
+        let mut instruction_table: Vec<InstructionHandler> = vec![
+        |_, _, _| Ok(None); // 默认处理函数 - 返回无效指令错误
+        256 // 数组大小，确保能容纳所有可能的操作码
+    ];
+
+        // 使用枚举值作为索引，填充对应的处理函数
+        // 栈操作
+        instruction_table[VMInstruction::LoadNull as usize] = vm_instructions::load_null;
+        instruction_table[VMInstruction::LoadInt32 as usize] = vm_instructions::load_int;
+        instruction_table[VMInstruction::LoadInt64 as usize] = vm_instructions::load_int;
+        instruction_table[VMInstruction::LoadFloat32 as usize] = vm_instructions::load_float;
+        instruction_table[VMInstruction::LoadFloat64 as usize] = vm_instructions::load_float;
+        instruction_table[VMInstruction::LoadString as usize] = vm_instructions::load_string;
+        instruction_table[VMInstruction::LoadBytes as usize] = vm_instructions::load_bytes;
+        instruction_table[VMInstruction::LoadBool as usize] = vm_instructions::load_bool;
+        instruction_table[VMInstruction::LoadLambda as usize] = vm_instructions::load_lambda;
+        instruction_table[VMInstruction::Pop as usize] = vm_instructions::discard_top;
+
+        // 数据结构构建
+        instruction_table[VMInstruction::BuildTuple as usize] = vm_instructions::build_tuple;
+        instruction_table[VMInstruction::BuildKeyValue as usize] = vm_instructions::build_keyval;
+        instruction_table[VMInstruction::BuildNamed as usize] = vm_instructions::build_named;
+        instruction_table[VMInstruction::BuildRange as usize] = vm_instructions::build_range;
+
+        // 二元操作符
+        instruction_table[VMInstruction::BinaryAdd as usize] = vm_instructions::binary_add;
+        instruction_table[VMInstruction::BinarySub as usize] = vm_instructions::binary_subtract;
+        instruction_table[VMInstruction::BinaryMul as usize] = vm_instructions::binary_multiply;
+        instruction_table[VMInstruction::BinaryDiv as usize] = vm_instructions::binary_divide;
+        instruction_table[VMInstruction::BinaryMod as usize] = vm_instructions::binary_modulus;
+        instruction_table[VMInstruction::BinaryPow as usize] = vm_instructions::binary_power;
+        instruction_table[VMInstruction::BinaryBitAnd as usize] =
+            vm_instructions::binary_bitwise_and;
+        instruction_table[VMInstruction::BinaryBitOr as usize] = vm_instructions::binary_bitwise_or;
+        instruction_table[VMInstruction::BinaryBitXor as usize] =
+            vm_instructions::binary_bitwise_xor;
+        instruction_table[VMInstruction::BinaryShl as usize] = vm_instructions::binary_shift_left;
+        instruction_table[VMInstruction::BinaryShr as usize] = vm_instructions::binary_shift_right;
+        instruction_table[VMInstruction::BinaryAnd as usize] = vm_instructions::binary_and;
+        instruction_table[VMInstruction::BinaryOr as usize] = vm_instructions::binary_or;
+        instruction_table[VMInstruction::BinaryEq as usize] = vm_instructions::binary_equal;
+        instruction_table[VMInstruction::BinaryNe as usize] = vm_instructions::binary_not_equal;
+        instruction_table[VMInstruction::BinaryGt as usize] = vm_instructions::binary_greater;
+        instruction_table[VMInstruction::BinaryLt as usize] = vm_instructions::binary_less;
+        instruction_table[VMInstruction::BinaryGe as usize] = vm_instructions::binary_greater_equal;
+        instruction_table[VMInstruction::BinaryLe as usize] = vm_instructions::binary_less_equal;
+        instruction_table[VMInstruction::BinaryIn as usize] = vm_instructions::is_in;
+
+        // 一元操作
+        instruction_table[VMInstruction::UnaryNot as usize] = vm_instructions::unary_not;
+        instruction_table[VMInstruction::UnaryBitNot as usize] = vm_instructions::unary_bitwise_not;
+        instruction_table[VMInstruction::UnaryAbs as usize] = vm_instructions::unary_plus;
+        instruction_table[VMInstruction::UnaryNeg as usize] = vm_instructions::unary_minus;
+
+        // 变量与引用
+        instruction_table[VMInstruction::StoreVar as usize] = vm_instructions::let_var;
+        instruction_table[VMInstruction::LoadVar as usize] = vm_instructions::get_var;
+        instruction_table[VMInstruction::SetValue as usize] = vm_instructions::set_var;
+        instruction_table[VMInstruction::WrapObj as usize] = vm_instructions::wrap;
+        instruction_table[VMInstruction::GetAttr as usize] = vm_instructions::get_attr;
+        instruction_table[VMInstruction::IndexOf as usize] = vm_instructions::index_of;
+        instruction_table[VMInstruction::KeyOf as usize] = vm_instructions::key_of;
+        instruction_table[VMInstruction::ValueOf as usize] = vm_instructions::value_of;
+        instruction_table[VMInstruction::SelfOf as usize] = vm_instructions::self_of;
+        instruction_table[VMInstruction::TypeOf as usize] = vm_instructions::type_of;
+        instruction_table[VMInstruction::DeepCopy as usize] = vm_instructions::deepcopy;
+        instruction_table[VMInstruction::ShallowCopy as usize] = vm_instructions::copy;
+
+        // 控制流
+        instruction_table[VMInstruction::Call as usize] = vm_instructions::call_lambda;
+        instruction_table[VMInstruction::AsyncCall as usize] = vm_instructions::async_call_lambda;
+        instruction_table[VMInstruction::Return as usize] = vm_instructions::return_value;
+        instruction_table[VMInstruction::Raise as usize] = vm_instructions::raise;
+        instruction_table[VMInstruction::JumpIfFalse as usize] = vm_instructions::jump_if_false;
+
+        // 帧操作
+        instruction_table[VMInstruction::NewFrame as usize] = vm_instructions::new_frame;
+        instruction_table[VMInstruction::NewBoundaryFrame as usize] =
+            vm_instructions::new_boundary_frame;
+        instruction_table[VMInstruction::PopFrame as usize] = vm_instructions::pop_frame;
+        instruction_table[VMInstruction::PopBoundaryFrame as usize] =
+            vm_instructions::pop_boundary_frame;
+        instruction_table[VMInstruction::ResetStack as usize] = vm_instructions::reset_stack;
+
+        // 模块操作
+        instruction_table[VMInstruction::Import as usize] = vm_instructions::import;
+
+        // 特殊操作
+        instruction_table[VMInstruction::Fork as usize] = vm_instructions::fork_instruction;
+        instruction_table[VMInstruction::BindSelf as usize] = vm_instructions::bind_self;
+        instruction_table[VMInstruction::Assert as usize] = vm_instructions::assert;
+        instruction_table[VMInstruction::Emit as usize] = vm_instructions::emit;
+        instruction_table[VMInstruction::IsFinished as usize] = vm_instructions::is_finished;
+
+        // 别名操作
+        instruction_table[VMInstruction::Alias as usize] = vm_instructions::alias;
+        instruction_table[VMInstruction::WipeAlias as usize] = vm_instructions::wipe_alias;
+        instruction_table[VMInstruction::AliasOf as usize] = vm_instructions::alias_of;
 
         IRExecutor {
             context: Context::new(),
@@ -866,7 +900,7 @@ impl IRExecutor {
         );
 
         for (name, func) in built_in_functions.iter_mut() {
-            let result = context.let_var(name.clone(), func, gc_system);
+            let result = context.let_var(name, func, gc_system);
             func.drop_ref();
             if result.is_err() {
                 return Err(VMError::ContextError(result.unwrap_err()));
@@ -919,11 +953,11 @@ mod vm_instructions {
         vm: &mut IRExecutor,
         opcode: &ProcessedOpcode,
         gc_system: &mut GCSystem,
-    ) -> Result<(), VMError> {
+    ) -> Result<Option<Vec<SpawnedCoroutine>>, VMError> {
         if let OpcodeArgument::Int64(value) = opcode.operand1 {
             let obj = gc_system.new_object(VMInt::new(value));
             vm.push_vmobject(obj)?;
-            Ok(())
+            Ok(None)
         } else {
             Err(VMError::InvalidInstruction(opcode.clone()))
         }
@@ -1058,7 +1092,7 @@ mod vm_instructions {
     ) -> Result<Option<Vec<SpawnedCoroutine>>, VMError> {
         let forked = vm.lambda_instructions.last_mut().unwrap().clone_ref();
         vm.push_vmobject(forked)?;
-        Ok(())
+        Ok(None)
     }
     pub fn build_tuple(
         vm: &mut IRExecutor,
@@ -1532,13 +1566,24 @@ mod vm_instructions {
         opcode: &ProcessedOpcode,
         gc_system: &mut GCSystem,
     ) -> Result<Option<Vec<SpawnedCoroutine>>, VMError> {
-        let obj = &mut vm.pop_object_and_check()?;
-        let result = vm.context.let_var(name, obj, gc_system);
-        if result.is_err() {
-            return Err(VMError::ContextError(result.unwrap_err()));
+        if let OpcodeArgument::Int64(name_idx) = opcode.operand1 {
+            let obj = &mut vm.pop_object_and_check()?;
+            let name = &vm
+                .lambda_instructions
+                .last()
+                .unwrap()
+                .as_const_type::<VMInstructions>()
+                .vm_instructions_package
+                .get_string_pool()[name_idx as usize];
+            let result = vm.context.let_var(name, obj, gc_system);
+            if result.is_err() {
+                return Err(VMError::ContextError(result.unwrap_err()));
+            }
+            vm.push_vmobject(obj.clone())?;
+            Ok(None)
+        } else {
+            return Err(VMError::InvalidInstruction(opcode.clone()));
         }
-        vm.push_vmobject(obj.clone())?;
-        Ok(None)
     }
 
     pub fn get_var(
@@ -1546,9 +1591,20 @@ mod vm_instructions {
         opcode: &ProcessedOpcode,
         gc_system: &mut GCSystem,
     ) -> Result<Option<Vec<SpawnedCoroutine>>, VMError> {
-        let obj = vm.context.get_var(&name).map_err(VMError::ContextError)?;
-        vm.push_vmobject(obj)?;
-        Ok(None)
+        if let OpcodeArgument::Int64(name_idx) = opcode.operand1 {
+            let name = &vm
+                .lambda_instructions
+                .last()
+                .unwrap()
+                .as_const_type::<VMInstructions>()
+                .vm_instructions_package
+                .get_string_pool()[name_idx as usize];
+            let obj = vm.context.get_var(name).map_err(VMError::ContextError)?;
+            vm.push_vmobject(obj)?;
+            Ok(None)
+        } else {
+            return Err(VMError::InvalidInstruction(opcode.clone()));
+        }
     }
 
     pub fn set_var(
@@ -1669,9 +1725,12 @@ mod vm_instructions {
         opcode: &ProcessedOpcode,
         gc_system: &mut GCSystem,
     ) -> Result<Option<Vec<SpawnedCoroutine>>, VMError> {
+        let OpcodeArgument::Int64(offset) = opcode.operand1 else {
+            return Err(VMError::InvalidInstruction(opcode.clone()));
+        };
         vm.stack.push(VMStackObject::LastIP(
             vm.entry_lambda.clone_ref(),
-            (vm.ip + offset) as usize, // raise和pop跳转位置
+            (vm.ip + offset as isize) as usize, // raise和pop跳转位置
             false,
         ));
         vm.context
@@ -1731,6 +1790,9 @@ mod vm_instructions {
         opcode: &ProcessedOpcode,
         gc_system: &mut GCSystem,
     ) -> Result<Option<Vec<SpawnedCoroutine>>, VMError> {
+        let OpcodeArgument::Int64(offset) = opcode.operand1 else {
+            return Err(VMError::InvalidInstruction(opcode.clone()));
+        };
         let mut obj = vm.pop_object_and_check()?;
         if !obj.isinstance::<VMBoolean>() {
             return Err(VMError::VMVariableError(VMVariableError::TypeError(
@@ -1739,7 +1801,7 @@ mod vm_instructions {
             )));
         }
         if !obj.as_const_type::<VMBoolean>().value {
-            vm.ip += offset;
+            vm.ip += offset as isize;
         }
         obj.drop_ref();
         Ok(None)
@@ -1926,7 +1988,8 @@ mod vm_instructions {
             .last()
             .unwrap()
             .as_const_type::<VMInstructions>()
-            .func_ips;
+            .vm_instructions_package
+            .get_table();
         let ip = *func_ips.get(&signature).unwrap() as isize;
         vm.ip = ip - 1;
 
@@ -2154,6 +2217,17 @@ mod vm_instructions {
         opcode: &ProcessedOpcode,
         gc_system: &mut GCSystem,
     ) -> Result<Option<Vec<SpawnedCoroutine>>, VMError> {
+        let OpcodeArgument::Int64(name_idx) = opcode.operand1 else {
+            return Err(VMError::InvalidInstruction(opcode.clone()));
+        };
+        let alias = vm
+            .lambda_instructions
+            .last()
+            .unwrap()
+            .as_const_type::<VMInstructions>()
+            .vm_instructions_package
+            .get_string_pool()[name_idx as usize]
+            .clone();
         let obj = &mut vm.pop_object_and_check()?;
         let mut copied = try_copy_as_vmobject(obj, gc_system).map_err(VMError::VMVariableError)?;
         let obj_alias = try_alias_as_vmobject(&mut copied).map_err(VMError::VMVariableError)?;
@@ -2184,7 +2258,7 @@ mod vm_instructions {
         let obj_alias = try_const_alias_as_vmobject(&obj).map_err(VMError::VMVariableError)?;
         let mut tuple = Vec::new();
         for alias in obj_alias.iter() {
-            tuple.push(gc_system.new_object(VMString::new(alias.clone())));
+            tuple.push(gc_system.new_object(VMString::new(&alias)));
         }
         let mut tuple_refs = tuple.iter_mut().collect();
         let result = gc_system.new_object(VMTuple::new(&mut tuple_refs));
@@ -2261,8 +2335,7 @@ impl IRExecutor {
                 ));
             }
             let name = name.as_const_type::<VMString>();
-            let name = name.value.clone();
-            let result = self.context.let_var(name.clone(), value, gc_system);
+            let result = self.context.let_var(&name.value, value, gc_system);
 
             if result.is_err() {
                 return Err(VMError::ContextError(result.unwrap_err()));
@@ -2271,17 +2344,13 @@ impl IRExecutor {
 
         if lambda.self_object.is_some() {
             let self_obj_ref = lambda.self_object.as_mut().unwrap();
-            let result = self
-                .context
-                .let_var("self".to_string(), self_obj_ref, gc_system);
+            let result = self.context.let_var("self", self_obj_ref, gc_system);
             if result.is_err() {
                 return Err(VMError::ContextError(result.unwrap_err()));
             }
         }
 
-        let result = self
-            .context
-            .let_var("this".to_string(), lambda_object, gc_system);
+        let result = self.context.let_var("this", lambda_object, gc_system);
         if result.is_err() {
             return Err(VMError::ContextError(result.unwrap_err()));
         }
@@ -2330,9 +2399,17 @@ impl IRExecutor {
                 .unwrap()
                 .as_const_type::<VMInstructions>();
             if self.ip < vm_instruction.vm_instructions_package.get_code().len() as isize {
-                let instruction =
-                    vm_instruction.vm_instructions_package.get_code()[self.ip as usize].clone();
+                let code: &Vec<u32> = vm_instruction.vm_instructions_package.get_code();
+                let mut ip = self.ip as usize;
+                let mut instruction_32 = Instruction32::new(code, &mut ip);
 
+                let decoded = instruction_32.get_processed_opcode();
+                if decoded.is_none() {
+                    return Err(VMError::AssertFailed);
+                }
+                let decoded = decoded.unwrap();
+
+                self.ip = ip as isize;
                 // if let IR::DebugInfo(_) = instruction {} else{
                 //     println!("{}: {:?}", self.ip, instruction); // debug
                 // }
@@ -2349,7 +2426,13 @@ impl IRExecutor {
                 // self.context.debug_print_all_vars();
                 // gc_system.collect(); // debug
                 // self.debug_output_stack();
-                spawned_coroutines = self.execute_instruction(instruction, gc_system)?;
+                spawned_coroutines = self.instruction_table
+                    .get(decoded.instruction as usize)
+                    .unwrap()(
+                    self,
+                    &decoded,
+                    gc_system,
+                )?;
 
                 //self.debug_output_stack(); // debug
                 //println!("");
@@ -2375,14 +2458,5 @@ impl IRExecutor {
     fn push_vmobject(&mut self, obj: GCRef) -> Result<(), VMError> {
         self.stack.push(VMStackObject::VMObject(obj.clone()));
         Ok(())
-    }
-
-    pub fn execute_instruction(
-        &mut self,
-        code: &Vec<u32>,
-        ip: &mut isize,
-        gc_system: &mut GCSystem,
-    ) -> Result<Option<Vec<SpawnedCoroutine>>, VMError> {
-        Ok(None)
     }
 }

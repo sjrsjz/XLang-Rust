@@ -184,18 +184,18 @@ impl Context {
 
     pub fn let_var(
         &mut self,
-        name: String,
+        name: &str,
         value: &mut GCRef,
         _gc_system: &mut GCSystem,
     ) -> Result<(), ContextError> {
         if let Some((vars, _, _, _)) = self.frames.last_mut() {
-            if let Some(existing_var) = vars.get_mut(&name) {
+            if let Some(existing_var) = vars.get_mut(name) {
                 let mut old = existing_var.clone();
                 *existing_var = value.clone_ref();
                 old.drop_ref(); // 扔掉旧的引用，因为已经被覆盖了
                 return Ok(());
             }
-            vars.insert(name, value.clone_ref());
+            vars.insert(name.to_string(), value.clone_ref());
             Ok(())
         } else {
             Err(ContextError::NoFrame(ContextFrameType::NormalFrame))

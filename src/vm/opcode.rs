@@ -92,7 +92,7 @@ pub enum OpcodeArgument {
 }
 #[derive(Debug, Clone)]
 pub struct ProcessedOpcode {
-    instruction: u8,
+    pub instruction: u8,
     pub operand1: OpcodeArgument,
     pub operand2: OpcodeArgument,
     pub operand3: OpcodeArgument,

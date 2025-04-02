@@ -1,3 +1,5 @@
+use std::result::Result;
+
 use super::instruction_set::*;
 use super::ir::DebugInfo;
 use super::ir::IROperation;
@@ -236,7 +238,7 @@ impl IRTranslator {
                         IROperation::LessEqual => VMInstruction::BinaryLe,
                         _ => {
                             return Err(IRTranslatorError::InvalidInstruction(IR::BinaryOp(
-                                op.clone(),
+                                op.clone()
                             )))
                         }
                     };
@@ -685,5 +687,9 @@ impl IRTranslator {
             }
         }
         Ok(())
+    }
+
+    pub fn get_result(&self) -> VMInstructionPackage {
+        VMInstructionPackage::new(self.function_ips.clone(), self.code.clone(), self.string_pool.clone(), self.bytes_pool.clone(), self.debug_infos.clone())
     }
 }
