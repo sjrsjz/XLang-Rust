@@ -1770,6 +1770,10 @@ impl IRExecutor {
             }
         }
 
+        let result = self.context.let_var("this".to_string(), lambda_object, gc_system);
+        if result.is_err() {
+            return Err(VMError::ContextError(result.unwrap_err()));
+        }
         Ok(())
     }
 

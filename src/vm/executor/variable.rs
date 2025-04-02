@@ -2650,31 +2650,31 @@ impl VMObject for VMLambda {
         // 先获取新值的引用并增加引用计数，确保不会在过程中被释放
         let v_lambda = value.as_type::<VMLambda>();
         let mut new_default_args_tuple = v_lambda.default_args_tuple.clone();
-        let mut new_lambda_instructions = v_lambda.lambda_instructions.clone();
+        //let mut new_lambda_instructions = v_lambda.lambda_instructions.clone();
         let mut new_result = v_lambda.result.clone();
         let mut old_default_args_tuple = self.default_args_tuple.clone();
-        let mut old_lambda_instructions = self.lambda_instructions.clone();
+        //let mut old_lambda_instructions = self.lambda_instructions.clone();
         let mut old_result = self.result.clone();
 
         // 移除旧引用
         self.get_traceable()
             .remove_reference(&mut old_default_args_tuple);
 
-        self.get_traceable()
-            .remove_reference(&mut old_lambda_instructions);
+        //self.get_traceable()
+        //    .remove_reference(&mut old_lambda_instructions);
 
         self.get_traceable().remove_reference(&mut old_result);
 
         // 设置新引用
         self.default_args_tuple = new_default_args_tuple.clone();
-        self.lambda_instructions = new_lambda_instructions.clone();
+        //self.lambda_instructions = new_lambda_instructions.clone();
         self.result = new_result.clone();
 
         // 添加对新值的引用关系
         self.get_traceable()
             .add_reference(&mut new_default_args_tuple);
-        self.get_traceable()
-            .add_reference(&mut new_lambda_instructions);
+        //self.get_traceable()
+        //    .add_reference(&mut new_lambda_instructions);
         self.get_traceable().add_reference(&mut new_result);
 
         Ok(value)
