@@ -9,7 +9,7 @@ use colored::Colorize;
  */
 use std::{collections::HashMap, fmt::Debug};
 
-use crate::vm::ir::IR;
+use crate::vm::{instruction_set::VMInstructionPackage, ir::IR};
 
 use super::super::gc::gc::{GCObject, GCRef, GCSystem, GCTraceable};
 
@@ -1106,17 +1106,17 @@ pub struct VMString {
 }
 
 impl VMString {
-    pub fn new(value: String) -> Self {
+    pub fn new(value: &str) -> Self {
         VMString {
-            value,
+            value: value.to_string(),
             traceable: GCTraceable::new::<VMString>(None),
             alias: Vec::new(),
         }
     }
 
-    pub fn new_with_alias(value: String, alias: &Vec<String>) -> Self {
+    pub fn new_with_alias(value: &str, alias: &Vec<String>) -> Self {
         VMString {
-            value,
+            value: value.to_string(),
             traceable: GCTraceable::new::<VMString>(None),
             alias: alias.clone(),
         }
@@ -1159,7 +1159,7 @@ impl VMString {
     pub fn add(&mut self, other: &mut GCRef, gc_system: &mut GCSystem) -> Result<GCRef, VMVariableError> {
         if other.isinstance::<VMString>() {
             let other_string = other.as_const_type::<VMString>();
-            return Ok(gc_system.new_object(VMString::new(format!(
+            return Ok(gc_system.new_object(VMString::new(&format!(
                 "{}{}",
                 self.value, other_string.value
             ))));
@@ -1186,7 +1186,7 @@ impl VMString {
             }
             let char = self.value.chars().nth(index_int.value as usize).unwrap();
 
-            return Ok(gc_system.new_object(VMString::new(char.to_string())));
+            return Ok(gc_system.new_object(VMString::new(&char.to_string())));
         } else if index.isinstance::<VMRange>() {
             let range = index.as_const_type::<VMRange>();
             let start = range.start;
@@ -1198,7 +1198,7 @@ impl VMString {
                 ));
             }
             let substring = &self.value[start as usize..end as usize];
-            return Ok(gc_system.new_object(VMString::new(substring.to_string())));
+            return Ok(gc_system.new_object(VMString::new(substring)));
         }
 
         Err(VMVariableError::ValueError2Param(
@@ -1237,11 +1237,11 @@ impl GCObject for VMString {
 
 impl VMObject for VMString {
     fn deepcopy(&mut self, gc_system: &mut GCSystem) -> Result<GCRef, VMVariableError> {
-        Ok(gc_system.new_object(VMString::new_with_alias(self.value.clone(), &self.alias)))
+        Ok(gc_system.new_object(VMString::new_with_alias(&self.value, &self.alias)))
     }
 
     fn copy(&mut self, gc_system: &mut GCSystem) -> Result<GCRef, VMVariableError> {
-        Ok(gc_system.new_object(VMString::new_with_alias(self.value.clone(), &self.alias)))
+        Ok(gc_system.new_object(VMString::new_with_alias(&self.value, &self.alias)))
     }
 
     fn assign<'t>(&mut self, value: &'t mut GCRef) -> Result<&'t mut GCRef, VMVariableError> {
@@ -2323,30 +2323,26 @@ impl VMObject for VMTuple {
 // 作为VMLambda的执行环境
 #[derive(Debug)]
 pub struct VMInstructions {
-    pub instructions: Vec<IR>,
-    pub func_ips: HashMap<String, usize>,
+    pub vm_instructions_package: VMInstructionPackage,
     traceable: GCTraceable,
     alias: Vec<String>,
 }
 
 impl VMInstructions {
-    pub fn new(instructions: Vec<IR>, func_ips: HashMap<String, usize>) -> Self {
+    pub fn new(vm_instructions_package: &VMInstructionPackage) -> Self {
         VMInstructions {
-            instructions,
-            func_ips,
+            vm_instructions_package: vm_instructions_package.clone(),
             traceable: GCTraceable::new::<VMInstructions>(None),
             alias: Vec::new(),
         }
     }
 
     pub fn new_with_alias(
-        instructions: Vec<IR>,
-        func_ips: HashMap<String, usize>,
+        vm_instructions_package: &VMInstructionPackage,
         alias: &Vec<String>,
     ) -> Self {
         VMInstructions {
-            instructions,
-            func_ips,
+            vm_instructions_package: vm_instructions_package.clone(),
             traceable: GCTraceable::new::<VMInstructions>(None),
             alias: alias.clone(),
         }
@@ -2369,16 +2365,14 @@ impl GCObject for VMInstructions {
 impl VMObject for VMInstructions {
     fn deepcopy(&mut self, gc_system: &mut GCSystem) -> Result<GCRef, VMVariableError> {
         Ok(gc_system.new_object(VMInstructions::new_with_alias(
-            self.instructions.clone(),
-            self.func_ips.clone(),
+            &self.vm_instructions_package,
             &self.alias,
         )))
     }
 
     fn copy(&mut self, gc_system: &mut GCSystem) -> Result<GCRef, VMVariableError> {
         Ok(gc_system.new_object(VMInstructions::new_with_alias(
-            self.instructions.clone(),
-            self.func_ips.clone(),
+            &self.vm_instructions_package,
             &self.alias,
         )))
     }
@@ -2907,17 +2901,17 @@ pub struct VMBytes {
 }
 
 impl VMBytes {
-    pub fn new(value: Vec<u8>) -> Self {
+    pub fn new(value: &Vec<u8>) -> Self {
         VMBytes {
-            value,
+            value: value.clone(),
             traceable: GCTraceable::new::<VMBytes>(None),
             alias: Vec::new(),
         }
     }
 
-    pub fn new_with_alias(value: Vec<u8>, alias: &Vec<String>) -> Self {
+    pub fn new_with_alias(value: &Vec<u8>, alias: &Vec<String>) -> Self {
         VMBytes {
-            value,
+            value: value.clone(),
             traceable: GCTraceable::new::<VMBytes>(None),
             alias: alias.clone(),
         }
@@ -2955,7 +2949,7 @@ impl VMBytes {
             let other_bytes = other.as_const_type::<VMBytes>();
             let mut new_value = self.value.clone();
             new_value.extend_from_slice(&other_bytes.value);
-            return Ok(gc_system.new_object(VMBytes::new(new_value)));
+            return Ok(gc_system.new_object(VMBytes::new(&new_value)));
         }
         Err(VMVariableError::ValueError2Param(
             GCRef::wrap(self),
@@ -2990,7 +2984,7 @@ impl VMBytes {
                 ));
             }
             let slice = &self.value[start as usize..end as usize];
-            return Ok(gc_system.new_object(VMBytes::new(slice.to_vec())));
+            return Ok(gc_system.new_object(VMBytes::new(&slice.to_vec())));
         }
 
         Err(VMVariableError::ValueError2Param(
@@ -3042,11 +3036,11 @@ impl GCObject for VMBytes {
 
 impl VMObject for VMBytes {
     fn deepcopy(&mut self, gc_system: &mut GCSystem) -> Result<GCRef, VMVariableError> {
-        Ok(gc_system.new_object(VMBytes::new_with_alias(self.value.clone(), &self.alias)))
+        Ok(gc_system.new_object(VMBytes::new_with_alias(&self.value, &self.alias)))
     }
 
     fn copy(&mut self, gc_system: &mut GCSystem) -> Result<GCRef, VMVariableError> {
-        Ok(gc_system.new_object(VMBytes::new_with_alias(self.value.clone(), &self.alias)))
+        Ok(gc_system.new_object(VMBytes::new_with_alias(&self.value, &self.alias)))
     }
 
     fn assign<'t>(&mut self, value: &'t mut GCRef) -> Result<&'t mut GCRef, VMVariableError> {

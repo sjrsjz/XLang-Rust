@@ -74,7 +74,6 @@ pub enum IR{
     RefValue, // get reference value
     DerefValue, // get dereference value
     Assert, // assert value
-    DebugInfo(DebugInfo), // debug info
     Import, // import module from file
     RedirectJump(String), // redirect ir, not for vm just for ir generation
     RedirectJumpIfFalse(String), 
@@ -89,9 +88,9 @@ pub enum IR{
     IsFinished,
 }
 
-#[derive(Serialize, Deserialize, Debug)]
+#[derive(Serialize, Deserialize, Debug, Clone)]
 pub struct IRPackage {
-    pub instructions: Vec<IR>,
+    pub instructions: Vec<(DebugInfo, IR)>,
     pub function_ips: HashMap<String, usize>,
 }
 impl IRPackage {
@@ -158,7 +157,7 @@ impl IRPackage {
 
 #[derive(Debug)]
 pub struct Functions{
-    function_instructions: HashMap<String, Vec<IR>>, // function name and instructions
+    function_instructions: HashMap<String, Vec<(DebugInfo, IR)>>, // function name and instructions
 }
 
 impl Default for Functions {
@@ -173,13 +172,13 @@ impl Functions {
             function_instructions: HashMap::new(),
         }
     }
-    pub fn append(&mut self, function_name: String, instructions: Vec<IR>) {
+    pub fn append(&mut self, function_name: String, instructions: Vec<(DebugInfo, IR)>) {
         self.function_instructions.insert(function_name, instructions);
     }
 
     pub fn build_instructions(&mut self) -> IRPackage {
         let mut func_ips = HashMap::new();
-        let mut instructions = Vec::<IR>::new();
+        let mut instructions = Vec::new();
         for (func_name, func_instructions) in self.function_instructions.iter() {
             func_ips.insert(func_name.clone(), instructions.len());
             instructions.extend(func_instructions.clone());

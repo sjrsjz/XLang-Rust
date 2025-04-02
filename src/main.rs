@@ -7,6 +7,7 @@ use vm::executor::variable::VMLambda;
 use vm::executor::variable::VMTuple;
 
 use vm::gc::gc::GCRef;
+use vm::ir::DebugInfo;
 use vm::ir::IRPackage;
 use vm::ir::IR;
 
@@ -79,7 +80,7 @@ fn build_code(code: &str) -> Result<IRPackage, String> {
     };
 
     let mut ir = ir;
-    ir.push(IR::Return);
+    ir.push((DebugInfo{code_position: 0},IR::Return));
     functions.append("__main__".to_string(), ir);
 
     Ok(functions.build_instructions())

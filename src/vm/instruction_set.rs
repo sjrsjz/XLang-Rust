@@ -1,3 +1,7 @@
+use serde::{Deserialize, Serialize};
+
+use super::ir::DebugInfo;
+
 /// 虚拟机指令集
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 #[repr(u8)]
@@ -45,6 +49,8 @@ pub enum VMInstruction {
     // 一元操作
     UnaryNot = 40,       // !
     UnaryBitNot = 41,    // ~
+    UnaryAbs = 42,       // abs
+    UnaryNeg = 43,       // -    
     
     // 变量与引用
     StoreVar = 50,       // 存储变量
@@ -139,6 +145,8 @@ impl VMInstruction {
             
             Self::UnaryNot => "UnaryNot",
             Self::UnaryBitNot => "UnaryBitNot",
+            Self::UnaryAbs => "UnaryAbs",
+            Self::UnaryNeg => "UnaryNeg",
             
             Self::StoreVar => "StoreVar",
             Self::LoadVar => "LoadVar",
@@ -226,6 +234,8 @@ impl VMInstruction {
             
             40 => Some(Self::UnaryNot),
             41 => Some(Self::UnaryBitNot),
+            42 => Some(Self::UnaryAbs),
+            43 => Some(Self::UnaryNeg),
             
             50 => Some(Self::StoreVar),
             51 => Some(Self::LoadVar),
@@ -289,7 +299,7 @@ impl VMInstruction {
             Self::AsyncCall | Self::Return | Self::Raise | Self::NewFrame |
             Self::PopFrame | Self::PopBoundaryFrame | Self::ResetStack | Self::Import |
             Self::Fork | Self::Assert | Self::Emit | Self::IsFinished |
-            Self::WipeAlias | Self::AliasOf | Self::Nop => false,
+            Self::WipeAlias | Self::AliasOf | Self::Nop | Self::UnaryAbs | Self::UnaryNeg => false,
             
             // 有参数的指令
             Self::LoadInt32 | Self::LoadInt64 | Self::LoadFloat32 | Self::LoadFloat64 |
@@ -316,7 +326,7 @@ impl VMInstruction {
             Self::AsyncCall | Self::Return | Self::Raise | Self::NewFrame |
             Self::PopFrame | Self::PopBoundaryFrame | Self::ResetStack | Self::Import |
             Self::Fork | Self::Assert | Self::Emit | Self::IsFinished |
-            Self::WipeAlias | Self::AliasOf | Self::Nop => 0,
+            Self::WipeAlias | Self::AliasOf | Self::Nop | Self::UnaryAbs | Self::UnaryNeg => 0,
             
             // 单参数指令
             Self::LoadInt32 | Self::LoadBool | Self::BuildTuple | Self::Jump |
@@ -330,5 +340,30 @@ impl VMInstruction {
             Self::LoadString | Self::LoadBytes | Self::StoreVar | Self::LoadVar |
             Self::Alias => 1, // 这里指逻辑参数数量
         }
+    }
+}
+
+use rustc_hash::FxHashMap as HashMap;
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct VMInstructionPackage {
+    function_ips: HashMap<String, usize>, // 签名定位表
+    code: Vec<u32>,
+    string_pool: Vec<String>,
+    bytes_pool: Vec<Vec<u8>>,
+    debug_infos: HashMap<usize, DebugInfo>,
+}
+
+impl VMInstructionPackage {
+    pub fn get_table(&self) -> &HashMap<String, usize> {
+        &self.function_ips
+    }
+    pub fn get_code(&self) -> &Vec<u32> {
+        &self.code
+    }
+    pub fn get_string_pool(&self) -> &Vec<String> {
+        &self.string_pool
+    }
+    pub fn get_bytes_pool(&self) -> &Vec<Vec<u8>> {
+        &self.bytes_pool
     }
 }

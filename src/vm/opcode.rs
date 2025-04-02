@@ -1,13 +1,74 @@
+use std::ops::BitOr;
+
 #[derive(Debug)]
 pub struct Opcode32 {
     opcode: u32,
+}
+impl Opcode32 {
+    pub fn build_opcode(
+        instruction: u8,
+        operand1: u8,
+        operand2: u8,
+        operand3: u8,
+    ) -> Opcode32 {
+        let opcode = ((instruction as u32) << 24)
+            | ((operand1 as u32) << 16)
+            | ((operand2 as u32) << 8)
+            | (operand3 as u32);
+        Opcode32 { opcode }
+    }
+    pub fn get_opcode(&self) -> u32 {
+        self.opcode
+    }
+    pub fn lower32(uint: u64) -> u32 {
+        (uint & 0xFFFFFFFF) as u32
+    }
+    pub fn upper32(uint: u64) -> u32 {
+        ((uint >> 32) & 0xFFFFFFFF) as u32
+    }
+    pub fn f64lower32(uint: f64) -> u32 {
+        let bits = uint.to_bits();
+        (bits & 0xFFFFFFFF) as u32
+    }
+    pub fn f64upper32(uint: f64) -> u32 {
+        let bits = uint.to_bits();
+        ((bits >> 32) & 0xFFFFFFFF) as u32
+    }
+    pub fn f32lower32(uint: f32) -> u32 {
+        let bits = uint.to_bits();
+        (bits & 0xFFFFFFFF) as u32
+    }
 }
 
 pub enum OperandFlag {
     Valid = 0b00000001,
     UseConstPool = 0b00000010,
     ArgSize64 = 0b000000100,
-    ConstType = 0b00001000, // string/byte array or int/float, determine by UseConstPool
+    ShiftType = 0b00001000, // string/byte array or int/float, determine by UseConstPool
+}
+
+impl BitOr for OperandFlag {
+    type Output = u8;
+
+    fn bitor(self, rhs: Self) -> Self::Output {
+        (self as u8) | (rhs as u8)
+    }   
+}
+
+impl BitOr<u8> for OperandFlag {
+    type Output = u8;
+
+    fn bitor(self, rhs: u8) -> Self::Output {
+        (self as u8) | rhs
+    }
+}
+
+impl BitOr<OperandFlag> for u8 {
+    type Output = u8;
+
+    fn bitor(self, rhs: OperandFlag) -> Self::Output {
+        self | (rhs as u8)
+    }
 }
 
 pub struct DecodedOpcode {
@@ -32,26 +93,37 @@ pub enum OpcodeArgument {
 #[derive(Debug, Clone)]
 pub struct ProcessedOpcode {
     instruction: u8,
-    operand1: OpcodeArgument,
-    operand2: OpcodeArgument,
-    operand3: OpcodeArgument,
+    pub operand1: OpcodeArgument,
+    pub operand2: OpcodeArgument,
+    pub operand3: OpcodeArgument,
 }
 
 #[derive(Debug)]
-pub struct Instruction32 {
-    bytes: Vec<u32>, // 4 bytes
-    pointer: usize,
+pub struct Instruction32<'t> {
+    bytes: &'t Vec<u32>, // 4 bytes
+    pointer: &'t mut usize,
 }
 
-impl Instruction32 {
-    pub fn new(bytes: Vec<u32>) -> Self {
-        Instruction32 { bytes, pointer: 0 }
+impl<'t> Instruction32<'t> {
+    pub fn new(bytes: &'t Vec<u32>, pointer: &'t mut usize) -> Self {
+        Instruction32 { bytes, pointer }
     }
 
-    pub fn get_next(&mut self) -> Option<u32> {
-        if self.pointer < self.bytes.len() {
-            let byte = self.bytes[self.pointer];
-            self.pointer += 1;
+    pub fn take_u32(&mut self) -> Option<u32> {
+        if *self.pointer < self.bytes.len() as usize {
+            let byte = self.bytes[*self.pointer];
+            *self.pointer += 1;
+            Some(byte)
+        } else {
+            None
+        }
+    }
+
+    pub fn take_u64(&mut self) -> Option<u64> {
+        if *self.pointer + 1 < self.bytes.len() as usize {
+            let byte = ((self.bytes[*self.pointer] as u64) << 32)
+                | (self.bytes[*self.pointer + 1] as u64);
+            *self.pointer += 2;
             Some(byte)
         } else {
             None
@@ -59,7 +131,7 @@ impl Instruction32 {
     }
 
     pub fn get_processed_opcode(&mut self) -> Option<ProcessedOpcode> {
-        let opcode = self.get_next()?;
+        let opcode = self.take_u32()?;
         let decoded_opcode = self.decode_opcode(opcode);
         let operand1_arg = self.get_operand_arg(decoded_opcode.operand1)?;
         let operand2_arg = self.get_operand_arg(decoded_opcode.operand2)?;
@@ -88,7 +160,7 @@ impl Instruction32 {
         // 处理常量池引用
         if (operand_flags & OperandFlag::UseConstPool as u8) != 0 {
             // 根据常量类型决定返回字符串引用或字节数组引用
-            return if (operand_flags & OperandFlag::ConstType as u8) != 0 {
+            return if (operand_flags & OperandFlag::ShiftType as u8) != 0 {
                 OpcodeArgument::String(arg_value)
             } else {
                 OpcodeArgument::ByteArray(arg_value)
@@ -96,7 +168,7 @@ impl Instruction32 {
         }
 
         // 处理直接值
-        if (operand_flags & OperandFlag::ConstType as u8) != 0 {
+        if (operand_flags & OperandFlag::ShiftType as u8) != 0 {
             // 浮点数值
             return if (operand_flags & OperandFlag::ArgSize64 as u8) != 0 {
                 // 64位浮点数
@@ -135,12 +207,11 @@ impl Instruction32 {
         }
         if (operand & OperandFlag::ArgSize64 as u8) != 0 {
             // 64 bit
-            let arg_l = self.get_next()?;
-            let arg_h = self.get_next()?;
-            Some(((arg_h as u64) << 32) | (arg_l as u64))
+            let arg = self.take_u64()?;
+            Some(arg)
         } else {
             // 32 bit
-            let arg = self.get_next()?;
+            let arg = self.take_u32()?;
             Some(arg as u64)
         }
     }
