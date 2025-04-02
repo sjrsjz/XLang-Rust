@@ -160,7 +160,7 @@ impl<'t> Instruction32<'t> {
         // 处理常量池引用
         if (operand_flags & OperandFlag::UseConstPool as u8) != 0 {
             // 根据常量类型决定返回字符串引用或字节数组引用
-            return if (operand_flags & OperandFlag::ShiftType as u8) != 0 {
+            return if (operand_flags & OperandFlag::ShiftType as u8) == 0 {
                 OpcodeArgument::String(arg_value)
             } else {
                 OpcodeArgument::ByteArray(arg_value)

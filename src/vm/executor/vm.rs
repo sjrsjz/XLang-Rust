@@ -1022,7 +1022,7 @@ mod vm_instructions {
         opcode: &ProcessedOpcode,
         gc_system: &mut GCSystem,
     ) -> Result<Option<Vec<SpawnedCoroutine>>, VMError> {
-        if let OpcodeArgument::String(value) = opcode.operand1 {
+        if let OpcodeArgument::ByteArray(value) = opcode.operand1 {
             let bytes = &vm
                 .lambda_instructions
                 .last()
@@ -1042,7 +1042,7 @@ mod vm_instructions {
         opcode: &ProcessedOpcode,
         gc_system: &mut GCSystem,
     ) -> Result<Option<Vec<SpawnedCoroutine>>, VMError> {
-        if let OpcodeArgument::Int64(sign_idx) = opcode.operand1 {
+        if let OpcodeArgument::String(sign_idx) = opcode.operand1 {
             if let OpcodeArgument::Int64(code_position) = opcode.operand2 {
                 let instruction = &mut vm.pop_object_and_check()?;
                 if !instruction.isinstance::<VMInstructions>() {

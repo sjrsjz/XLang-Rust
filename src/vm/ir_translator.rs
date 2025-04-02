@@ -26,6 +26,7 @@ pub struct IRTranslator {
 
 impl IRTranslator {
     pub fn new(ir_package: &IRPackage) -> Self {
+        println!("IR: {:?}", ir_package);
         IRTranslator {
             ir_package: ir_package.clone(),
             function_ips: HashMap::default(),
@@ -148,7 +149,7 @@ impl IRTranslator {
                     self.code.push(
                         Opcode32::build_opcode(
                             VMInstruction::Fork as u8,
-                            OperandFlag::Valid | OperandFlag::ArgSize64,
+                            0,
                             0,
                             0,
                         )
@@ -172,7 +173,7 @@ impl IRTranslator {
                     self.code.push(
                         Opcode32::build_opcode(
                             VMInstruction::BuildKeyValue as u8,
-                            OperandFlag::Valid | OperandFlag::ArgSize64,
+                            0,
                             0,
                             0,
                         )
@@ -183,7 +184,7 @@ impl IRTranslator {
                     self.code.push(
                         Opcode32::build_opcode(
                             VMInstruction::BuildNamed as u8,
-                            OperandFlag::Valid | OperandFlag::ArgSize64,
+                            0,
                             0,
                             0,
                         )
@@ -194,7 +195,7 @@ impl IRTranslator {
                     self.code.push(
                         Opcode32::build_opcode(
                             VMInstruction::BuildRange as u8,
-                            OperandFlag::Valid | OperandFlag::ArgSize64,
+                            0,
                             0,
                             0,
                         )
@@ -205,7 +206,7 @@ impl IRTranslator {
                     self.code.push(
                         Opcode32::build_opcode(
                             VMInstruction::BindSelf as u8,
-                            OperandFlag::Valid | OperandFlag::ArgSize64,
+                            0,
                             0,
                             0,
                         )
@@ -242,7 +243,7 @@ impl IRTranslator {
                     self.code.push(
                         Opcode32::build_opcode(
                             opcode as u8,
-                            OperandFlag::Valid | OperandFlag::ArgSize64 | OperandFlag::ShiftType,
+                            0,
                             0,
                             0,
                         )
@@ -264,7 +265,7 @@ impl IRTranslator {
                     self.code.push(
                         Opcode32::build_opcode(
                             opcode as u8,
-                            OperandFlag::Valid | OperandFlag::ArgSize64 | OperandFlag::ShiftType,
+                            0,
                             0,
                             0,
                         )
@@ -276,7 +277,7 @@ impl IRTranslator {
                         Opcode32::build_opcode(
                             VMInstruction::StoreVar as u8,
                             OperandFlag::Valid | OperandFlag::ArgSize64,
-                            OperandFlag::Valid | OperandFlag::ArgSize64,
+                            0,
                             0,
                         )
                         .get_opcode(),
@@ -290,7 +291,7 @@ impl IRTranslator {
                         Opcode32::build_opcode(
                             VMInstruction::LoadVar as u8,
                             OperandFlag::Valid | OperandFlag::ArgSize64,
-                            OperandFlag::Valid | OperandFlag::ArgSize64,
+                            0,
                             0,
                         )
                         .get_opcode(),
@@ -303,7 +304,7 @@ impl IRTranslator {
                     self.code.push(
                         Opcode32::build_opcode(
                             VMInstruction::SetValue as u8,
-                            OperandFlag::Valid | OperandFlag::ArgSize64,
+                            0,
                             0,
                             0,
                         )
@@ -314,7 +315,7 @@ impl IRTranslator {
                     self.code.push(
                         Opcode32::build_opcode(
                             VMInstruction::WrapObj as u8,
-                            OperandFlag::Valid | OperandFlag::ArgSize64,
+                            0,
                             0,
                             0,
                         )
@@ -325,7 +326,7 @@ impl IRTranslator {
                     self.code.push(
                         Opcode32::build_opcode(
                             VMInstruction::GetAttr as u8,
-                            OperandFlag::Valid | OperandFlag::ArgSize64,
+                            0,
                             0,
                             0,
                         )
@@ -336,7 +337,7 @@ impl IRTranslator {
                     self.code.push(
                         Opcode32::build_opcode(
                             VMInstruction::IndexOf as u8,
-                            OperandFlag::Valid | OperandFlag::ArgSize64,
+                            0,
                             0,
                             0,
                         )
@@ -347,7 +348,7 @@ impl IRTranslator {
                     self.code.push(
                         Opcode32::build_opcode(
                             VMInstruction::KeyOf as u8,
-                            OperandFlag::Valid | OperandFlag::ArgSize64,
+                            0,
                             0,
                             0,
                         )
@@ -358,7 +359,7 @@ impl IRTranslator {
                     self.code.push(
                         Opcode32::build_opcode(
                             VMInstruction::ValueOf as u8,
-                            OperandFlag::Valid | OperandFlag::ArgSize64,
+                            0,
                             0,
                             0,
                         )
@@ -369,7 +370,7 @@ impl IRTranslator {
                     self.code.push(
                         Opcode32::build_opcode(
                             VMInstruction::SelfOf as u8,
-                            OperandFlag::Valid | OperandFlag::ArgSize64,
+                            0,
                             0,
                             0,
                         )
@@ -380,7 +381,7 @@ impl IRTranslator {
                     self.code.push(
                         Opcode32::build_opcode(
                             VMInstruction::TypeOf as u8,
-                            OperandFlag::Valid | OperandFlag::ArgSize64,
+                            0,
                             0,
                             0,
                         )
@@ -391,7 +392,7 @@ impl IRTranslator {
                     self.code.push(
                         Opcode32::build_opcode(
                             VMInstruction::Call as u8,
-                            OperandFlag::Valid | OperandFlag::ArgSize64,
+                            0,
                             0,
                             0,
                         )
@@ -402,7 +403,7 @@ impl IRTranslator {
                     self.code.push(
                         Opcode32::build_opcode(
                             VMInstruction::Return as u8,
-                            OperandFlag::Valid | OperandFlag::ArgSize64,
+                            0,
                             0,
                             0,
                         )
@@ -413,7 +414,7 @@ impl IRTranslator {
                     self.code.push(
                         Opcode32::build_opcode(
                             VMInstruction::Raise as u8,
-                            OperandFlag::Valid | OperandFlag::ArgSize64,
+                            0,
                             0,
                             0,
                         )
@@ -424,7 +425,7 @@ impl IRTranslator {
                     self.code.push(
                         Opcode32::build_opcode(
                             VMInstruction::NewFrame as u8,
-                            OperandFlag::Valid | OperandFlag::ArgSize64,
+                            0,
                             0,
                             0,
                         )
@@ -449,7 +450,7 @@ impl IRTranslator {
                     self.code.push(
                         Opcode32::build_opcode(
                             VMInstruction::PopFrame as u8,
-                            OperandFlag::Valid | OperandFlag::ArgSize64,
+                            0,
                             0,
                             0,
                         )
@@ -460,7 +461,7 @@ impl IRTranslator {
                     self.code.push(
                         Opcode32::build_opcode(
                             VMInstruction::PopBoundaryFrame as u8,
-                            OperandFlag::Valid | OperandFlag::ArgSize64,
+                            0,
                             0,
                             0,
                         )
@@ -471,7 +472,7 @@ impl IRTranslator {
                     self.code.push(
                         Opcode32::build_opcode(
                             VMInstruction::Pop as u8,
-                            OperandFlag::Valid | OperandFlag::ArgSize64,
+                            0,
                             0,
                             0,
                         )
@@ -510,7 +511,7 @@ impl IRTranslator {
                     self.code.push(
                         Opcode32::build_opcode(
                             VMInstruction::ResetStack as u8,
-                            OperandFlag::Valid | OperandFlag::ArgSize64,
+                            0,
                             0,
                             0,
                         )
@@ -521,7 +522,7 @@ impl IRTranslator {
                     self.code.push(
                         Opcode32::build_opcode(
                             VMInstruction::DeepCopy as u8,
-                            OperandFlag::Valid | OperandFlag::ArgSize64,
+                            0,
                             0,
                             0,
                         )
@@ -532,7 +533,7 @@ impl IRTranslator {
                     self.code.push(
                         Opcode32::build_opcode(
                             VMInstruction::ShallowCopy as u8,
-                            OperandFlag::Valid | OperandFlag::ArgSize64,
+                            0,
                             0,
                             0,
                         )
@@ -543,7 +544,7 @@ impl IRTranslator {
                     self.code.push(
                         Opcode32::build_opcode(
                             VMInstruction::MakeRef as u8,
-                            OperandFlag::Valid | OperandFlag::ArgSize64,
+                            0,
                             0,
                             0,
                         )
@@ -554,7 +555,7 @@ impl IRTranslator {
                     self.code.push(
                         Opcode32::build_opcode(
                             VMInstruction::Deref as u8,
-                            OperandFlag::Valid | OperandFlag::ArgSize64,
+                            0,
                             0,
                             0,
                         )
@@ -565,7 +566,7 @@ impl IRTranslator {
                     self.code.push(
                         Opcode32::build_opcode(
                             VMInstruction::Assert as u8,
-                            OperandFlag::Valid | OperandFlag::ArgSize64,
+                            0,
                             0,
                             0,
                         )
@@ -576,7 +577,7 @@ impl IRTranslator {
                     self.code.push(
                         Opcode32::build_opcode(
                             VMInstruction::Import as u8,
-                            OperandFlag::Valid | OperandFlag::ArgSize64,
+                            0,
                             0,
                             0,
                         )
@@ -601,7 +602,7 @@ impl IRTranslator {
                     self.code.push(
                         Opcode32::build_opcode(
                             VMInstruction::WipeAlias as u8,
-                            OperandFlag::Valid | OperandFlag::ArgSize64,
+                            0,
                             0,
                             0,
                         )
@@ -612,7 +613,7 @@ impl IRTranslator {
                     self.code.push(
                         Opcode32::build_opcode(
                             VMInstruction::BinaryIn as u8,
-                            OperandFlag::Valid | OperandFlag::ArgSize64,
+                            0,
                             0,
                             0,
                         )
@@ -623,7 +624,7 @@ impl IRTranslator {
                     self.code.push(
                         Opcode32::build_opcode(
                             VMInstruction::AliasOf as u8,
-                            OperandFlag::Valid | OperandFlag::ArgSize64,
+                            0,
                             0,
                             0,
                         )
@@ -634,7 +635,7 @@ impl IRTranslator {
                     self.code.push(
                         Opcode32::build_opcode(
                             VMInstruction::Emit as u8,
-                            OperandFlag::Valid | OperandFlag::ArgSize64,
+                            0,
                             0,
                             0,
                         )
@@ -645,7 +646,7 @@ impl IRTranslator {
                     self.code.push(
                         Opcode32::build_opcode(
                             VMInstruction::AsyncCall as u8,
-                            OperandFlag::Valid | OperandFlag::ArgSize64,
+                            0,
                             0,
                             0,
                         )
@@ -656,7 +657,7 @@ impl IRTranslator {
                     self.code.push(
                         Opcode32::build_opcode(
                             VMInstruction::IsFinished as u8,
-                            OperandFlag::Valid | OperandFlag::ArgSize64,
+                            0,
                             0,
                             0,
                         )
