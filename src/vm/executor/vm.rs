@@ -819,7 +819,7 @@ impl IRExecutor {
     }
 }
 
- mod vm_instructions {
+mod vm_instructions {
 
     use std::fs::File;
     use std::io::Read;
@@ -1770,7 +1770,9 @@ impl IRExecutor {
             }
         }
 
-        let result = self.context.let_var("this".to_string(), lambda_object, gc_system);
+        let result = self
+            .context
+            .let_var("this".to_string(), lambda_object, gc_system);
         if result.is_err() {
             return Err(VMError::ContextError(result.unwrap_err()));
         }
@@ -1810,50 +1812,42 @@ impl IRExecutor {
             .coroutine_status;
 
         let mut spawned_coroutines = None;
-        if !self.lambda_instructions.is_empty()
-            && self.ip
-                < self
-                    .lambda_instructions
-                    .last()
-                    .unwrap()
-                    .as_const_type::<VMInstructions>()
-                    .instructions
-                    .len() as isize
-            && *coroutine_status != VMCoroutineStatus::Finished
+        if !self.lambda_instructions.is_empty() && *coroutine_status != VMCoroutineStatus::Finished
         {
-            let instruction = self
+            let vm_instruction = self
                 .lambda_instructions
                 .last()
                 .unwrap()
-                .as_const_type::<VMInstructions>()
-                .instructions[self.ip as usize]
-                .clone();
+                .as_const_type::<VMInstructions>();
+            if self.ip < vm_instruction.instructions.len() as isize {
+                let instruction = vm_instruction.instructions[self.ip as usize].clone();
 
-            // if let IR::DebugInfo(_) = instruction {} else{
-            //     println!("{}: {:?}", self.ip, instruction); // debug
-            // }
+                // if let IR::DebugInfo(_) = instruction {} else{
+                //     println!("{}: {:?}", self.ip, instruction); // debug
+                // }
 
-            // println!("");
-            // if self.debug_info.is_some() {
-            //     let debug_info = self.debug_info.as_ref().unwrap();
-            //     println!(
-            //         "{}: {}",
-            //         self.ip,
-            //         self.repr_current_code(Some(debug_info.code_position))
-            //     ); // debug
-            // }
-            // self.context.debug_print_all_vars();
-            // gc_system.collect(); // debug
-            // self.debug_output_stack();
-            spawned_coroutines = self.execute_instruction(instruction, gc_system)?;
+                // println!("");
+                // if self.debug_info.is_some() {
+                //     let debug_info = self.debug_info.as_ref().unwrap();
+                //     println!(
+                //         "{}: {}",
+                //         self.ip,
+                //         self.repr_current_code(Some(debug_info.code_position))
+                //     ); // debug
+                // }
+                // self.context.debug_print_all_vars();
+                // gc_system.collect(); // debug
+                // self.debug_output_stack();
+                spawned_coroutines = self.execute_instruction(instruction, gc_system)?;
 
-            //self.debug_output_stack(); // debug
-            //println!("");
+                //self.debug_output_stack(); // debug
+                //println!("");
 
-            //gc_system.collect(); // debug
-            //println!("GC Count: {}", gc_system.count()); // debug
-            //gc_system.print_reference_graph(); // debug
-            self.ip += 1;
+                //gc_system.collect(); // debug
+                //println!("GC Count: {}", gc_system.count()); // debug
+                //gc_system.print_reference_graph(); // debug
+                self.ip += 1;
+            }
         } else if *coroutine_status != VMCoroutineStatus::Finished {
             let mut result = self.pop_object_and_check()?;
             let lambda_obj = self.entry_lambda.as_type::<VMLambda>();

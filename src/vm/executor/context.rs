@@ -136,21 +136,16 @@ impl Context {
             return Err(ContextError::NoFrame(ContextFrameType::NormalFrame));
         }
 
-        // 1. 收集当前帧的变量
-        let mut variables_to_offline: Vec<GCRef> =
-            self.frames.last().unwrap().0.values().cloned().collect();
-
+        for variable in self.frames.last_mut().unwrap().0.values_mut() {
+            variable.drop_ref();
+        }
         // 2. 保存栈指针
-        let stack_pointer = self.stack_pointers.last().cloned().unwrap_or(0);
+        let stack_pointer = self.stack_pointers.pop().unwrap_or(0);
 
         // 3. 安全地更新帧和栈指针
         self.frames.pop();
-        self.stack_pointers.pop();
 
         // 4. 离线变量（在数据结构已更新后）
-        for variable in variables_to_offline.iter_mut() {
-            variable.drop_ref();
-        }
 
         // 5. 处理栈上的对象
         for i in stack_pointer..stack.len() - 1 {
@@ -163,8 +158,7 @@ impl Context {
                     self_lambda.drop_ref();
                     if *use_new_instructions {
                         let mut poped = instructions.pop();
-                        let poped_mut = poped.as_mut();
-                        if let Some(instruction) = poped_mut {
+                        if let Some(instruction) = poped.as_mut() {
                             // 这里的instruction是一个函数对象，可能会被GC回收
                             instruction.drop_ref();
                         } else {
@@ -179,9 +173,11 @@ impl Context {
         }
 
         // 6. 截断栈（但不删除最后一个元素）
-        let last_element = stack.pop().unwrap();
-        stack.truncate(stack_pointer);
-        stack.push(last_element);
+        if stack.len() == 0 {
+            return Err(ContextError::ContextError("Empty stack".to_string()));
+        }
+        stack[stack_pointer] = stack[stack.len() - 1].clone();
+        stack.truncate(stack_pointer + 1);
 
         Ok(())
     }
@@ -193,13 +189,12 @@ impl Context {
         _gc_system: &mut GCSystem,
     ) -> Result<(), ContextError> {
         if let Some((vars, _, _, _)) = self.frames.last_mut() {
-            if vars.contains_key(&name) {
-                let mut var = vars.get(&name).unwrap().clone();
-                vars.insert(name.clone(), value.clone_ref());
-                var.drop_ref(); // 扔掉旧的引用，因为已经被覆盖了
+            if let Some(existing_var) = vars.get_mut(&name) {
+                let mut old = existing_var.clone();
+                *existing_var = value.clone_ref();
+                old.drop_ref(); // 扔掉旧的引用，因为已经被覆盖了
                 return Ok(());
             }
-
             vars.insert(name, value.clone_ref());
             Ok(())
         } else {

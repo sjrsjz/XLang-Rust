@@ -6,4 +6,4 @@ fib := (n => 0) -> {
     }
 };
 
-print("Fibonacci of 10 is:", fib(10));
+print("Fibonacci of 10 is:", fib(27));
