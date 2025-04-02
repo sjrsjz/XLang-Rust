@@ -26,13 +26,9 @@ pub struct IRTranslator {
 
 impl IRTranslator {
     pub fn new(ir_package: &IRPackage) -> Self {
-        let mut function_ips = HashMap::default();
-        for (name, ip) in ir_package.function_ips.iter() {
-            function_ips.insert(name.clone(), *ip);
-        }
         IRTranslator {
             ir_package: ir_package.clone(),
-            function_ips,
+            function_ips: HashMap::default(),
             ir_to_ip: vec![],
             code: vec![],
             string_pool: vec![],
@@ -54,9 +50,10 @@ impl IRTranslator {
 
 impl IRTranslator {
     pub fn translate(&mut self) -> Result<(), IRTranslatorError> {
-        let mut redirect_table = Vec::<(usize, isize, bool)>::new(); // bool 表示是 i64 填充
+        let mut redirect_table = Vec::<(usize/*偏移计算位置*/, usize/*填充位置*/, usize/*跳转的ir*/, bool)>::new(); // bool 表示是 i64 填充
         let cloned = self.ir_package.instructions.clone();
-        for (debug_info, ir) in cloned {
+        for idx in 0..cloned.len() {
+            let (debug_info, ir) = cloned[idx].clone();
             self.ir_to_ip.push(self.code.len());
             self.debug_infos.insert(self.code.len(), debug_info);
             match ir {
@@ -444,9 +441,9 @@ impl IRTranslator {
                         )
                         .get_opcode(),
                     );
-                    redirect_table.push((self.code.len() - 1, ir_offset, true));
                     self.code.push(0u32);
                     self.code.push(0u32);
+                    redirect_table.push((self.code.len() - 1, self.code.len() - 3, (idx as isize + ir_offset) as usize, true));
                 }
                 IR::PopFrame => {
                     self.code.push(
@@ -491,9 +488,9 @@ impl IRTranslator {
                         )
                         .get_opcode(),
                     );
-                    redirect_table.push((self.code.len() - 1, offset, false));
                     self.code.push(0u32);
                     self.code.push(0u32);
+                    redirect_table.push((self.code.len() - 1, self.code.len() - 3, (idx as isize + offset) as usize, true));
                 }
                 IR::JumpIfFalseOffset(offset) => {
                     self.code.push(
@@ -505,9 +502,9 @@ impl IRTranslator {
                         )
                         .get_opcode(),
                     );
-                    redirect_table.push((self.code.len() - 1, offset, false));
                     self.code.push(0u32);
                     self.code.push(0u32);
+                    redirect_table.push((self.code.len() - 1, self.code.len() - 3, (idx as isize + offset) as usize, true));
                 }
                 IR::ResetStack => {
                     self.code.push(
@@ -674,18 +671,24 @@ impl IRTranslator {
 
         // 处理跳转指令
         // 偏移是相对于操作数而言的，而非相对于指令起始地址
-        for (ip, offset, is_i64) in redirect_table {
-            let calced_offset = *self.ir_to_ip.get((ip as isize + offset) as usize).ok_or(
-                IRTranslatorError::InvalidInstruction(IR::JumpOffset(offset)),
+        for (ip, write_ip, ir_ip, is_i64) in redirect_table {
+            let calced_offset = *self.ir_to_ip.get(ir_ip).ok_or(
+                IRTranslatorError::InvalidInstruction(IR::JumpOffset(ir_ip as isize)),
             )? as isize
                 - ip as isize;
             if is_i64 {
-                self.code[ip] = Opcode32::lower32(calced_offset as u64);
-                self.code[ip + 1] = Opcode32::upper32(calced_offset as u64);
+                self.code[write_ip] = Opcode32::lower32(calced_offset as u64);
+                self.code[write_ip + 1] = Opcode32::upper32(calced_offset as u64);
             } else {
-                self.code[ip] = calced_offset as u32;
+                self.code[write_ip] = calced_offset as u32;
             }
         }
+
+        // 填充签名跳转表
+        for (name, ip) in self.ir_package.function_ips.iter() {
+            self.function_ips.insert(name.clone(), self.ir_to_ip[*ip]);
+        }
+
         Ok(())
     }
 

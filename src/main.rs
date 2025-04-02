@@ -187,10 +187,14 @@ fn run_file(path: &PathBuf) -> Result<(), String> {
         match IRPackage::read_from_file(path.to_str().unwrap()) {
             Ok(package) => {
                 let mut translator = IRTranslator::new(&package);
-                let result = if translator.translate().is_ok() {
+                let translate_result = translator.translate();
+                let result = if translate_result.is_ok() {
                     translator.get_result()
                 } else {
-                    return Err("IR translation failed.".to_string());
+                    return Err(format!(
+                        "IR translation failed. {:?}",
+                        translate_result.err().unwrap()
+                    ));
                 };
 
                 match execute_ir(result, None) {
@@ -210,10 +214,14 @@ fn run_file(path: &PathBuf) -> Result<(), String> {
             Ok(code) => match build_code(&code) {
                 Ok(package) => {
                     let mut translator = IRTranslator::new(&package);
-                    let result = if translator.translate().is_ok() {
+                    let translate_result = translator.translate();
+                    let result = if translate_result.is_ok() {
                         translator.get_result()
                     } else {
-                        return Err("IR translation failed.".to_string());
+                        return Err(format!(
+                            "IR translation failed. {:?}",
+                            translate_result.err().unwrap()
+                        ));
                     };
                     match execute_ir(result, Some(code)) {
                         Ok(_) => Ok(()),

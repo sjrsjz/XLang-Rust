@@ -2403,6 +2403,7 @@ impl IRExecutor {
                 let mut ip = self.ip as usize;
                 let mut instruction_32 = Instruction32::new(code, &mut ip);
 
+                println!("# ip -> {}", self.ip); // debug
                 let decoded = instruction_32.get_processed_opcode();
                 if decoded.is_none() {
                     return Err(VMError::AssertFailed);
@@ -2426,6 +2427,7 @@ impl IRExecutor {
                 // self.context.debug_print_all_vars();
                 // gc_system.collect(); // debug
                 // self.debug_output_stack();
+                println!("{}: {:?}", self.ip, decoded); // debug
                 spawned_coroutines = self.instruction_table
                     .get(decoded.instruction as usize)
                     .unwrap()(
@@ -2440,7 +2442,7 @@ impl IRExecutor {
                 //gc_system.collect(); // debug
                 //println!("GC Count: {}", gc_system.count()); // debug
                 //gc_system.print_reference_graph(); // debug
-                self.ip += 1;
+                //self.ip += 1;
             }
         } else if *coroutine_status != VMCoroutineStatus::Finished {
             let mut result = self.pop_object_and_check()?;

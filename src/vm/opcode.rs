@@ -121,8 +121,8 @@ impl<'t> Instruction32<'t> {
 
     pub fn take_u64(&mut self) -> Option<u64> {
         if *self.pointer + 1 < self.bytes.len() as usize {
-            let byte = ((self.bytes[*self.pointer] as u64) << 32)
-                | (self.bytes[*self.pointer + 1] as u64);
+            let byte = ((self.bytes[*self.pointer + 1] as u64) << 32)
+                | (self.bytes[*self.pointer] as u64);
             *self.pointer += 2;
             Some(byte)
         } else {
