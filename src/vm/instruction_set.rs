@@ -351,6 +351,7 @@ pub struct VMInstructionPackage {
     string_pool: Vec<String>,
     bytes_pool: Vec<Vec<u8>>,
     debug_infos: HashMap<usize, DebugInfo>,
+    source: Option<String>,
 }
 
 impl VMInstructionPackage {
@@ -360,6 +361,7 @@ impl VMInstructionPackage {
         string_pool: Vec<String>,
         bytes_pool: Vec<Vec<u8>>,
         debug_infos: HashMap<usize, DebugInfo>,
+        source: Option<String>,
     ) -> Self {
         VMInstructionPackage {
             function_ips,
@@ -367,6 +369,7 @@ impl VMInstructionPackage {
             string_pool,
             bytes_pool,
             debug_infos,
+            source,
         }
     }
     pub fn get_table(&self) -> &HashMap<String, usize> {
@@ -380,5 +383,11 @@ impl VMInstructionPackage {
     }
     pub fn get_bytes_pool(&self) -> &Vec<Vec<u8>> {
         &self.bytes_pool
+    }
+    pub fn get_source(&self) -> &Option<String> {
+        &self.source
+    }
+    pub fn get_debug_info(&self) -> &HashMap<usize, DebugInfo> {
+        &self.debug_infos
     }
 }

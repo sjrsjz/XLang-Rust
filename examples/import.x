@@ -1,8 +1,8 @@
 choice := input("Select Module-1?(y/n): ");
 my_module := () -> dyn if (choice == "y") {
-    import "module.xir"
+    import "module.xbc"
 } else {
-    import "module-2.xir"
+    import "module-2.xbc"
 };
 my_module := my_module();
 my_module.my_func();

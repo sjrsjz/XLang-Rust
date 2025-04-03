@@ -1,7 +1,6 @@
 use rustc_hash::FxHashMap as HashMap;
 
 use crate::vm::instruction_set::VMInstruction;
-use crate::vm::ir::DebugInfo;
 use crate::vm::opcode::Instruction32;
 use crate::vm::opcode::ProcessedOpcode;
 
@@ -118,7 +117,6 @@ impl VMCoroutinePool {
     pub fn new_coroutine(
         &mut self,
         lambda_object: &mut GCRef,
-        original_code: Option<String>,
         gc_system: &mut GCSystem,
     ) -> Result<isize, VMError> {
         if !lambda_object.isinstance::<VMLambda>() {
@@ -126,7 +124,7 @@ impl VMCoroutinePool {
                 "lambda_object must be a VMLambda".to_string(),
             ));
         }
-        let mut executor = VMExecutor::new(&lambda_object.clone_ref(), original_code);
+        let mut executor = VMExecutor::new(&lambda_object.clone_ref());
 
         // 检查是否已有执行器使用该 lambda
         for (executor, _) in &self.executors {
@@ -250,8 +248,7 @@ impl VMCoroutinePool {
             if let Some(mut coroutines) = spawned_coroutines {
                 for coroutine in coroutines.iter_mut() {
                     let lambda_object = &mut coroutine.lambda_ref;
-                    let source_code = coroutine.source_code.clone();
-                    self.new_coroutine(lambda_object, source_code, gc_system)?;
+                    self.new_coroutine(lambda_object, gc_system)?;
                 }
             }
 
@@ -266,7 +263,6 @@ impl VMCoroutinePool {
 #[derive(Debug)]
 pub struct SpawnedCoroutine {
     lambda_ref: GCRef,
-    source_code: Option<String>,
 }
 
 type InstructionHandler = fn(
@@ -281,8 +277,6 @@ pub struct VMExecutor {
     stack: Vec<VMStackObject>,
     ip: isize,
     lambda_instructions: Vec<GCRef>,
-    original_code: Option<String>,
-    debug_info: Option<DebugInfo>,
     entry_lambda: GCRef,
     instruction_table: Vec<InstructionHandler>,
 }
@@ -445,7 +439,7 @@ mod native_functions {
             return Ok(gc_system.new_object(VMString::new(&data)));
         }
         if tuple_obj.values[0].isinstance::<VMNull>() {
-            return Ok(gc_system.new_object(VMString::new(&"null")));
+            return Ok(gc_system.new_object(VMString::new("null")));
         }
         if tuple_obj.values[0].isinstance::<VMBoolean>() {
             let data = tuple_obj.values[0]
@@ -590,7 +584,7 @@ mod native_functions {
 }
 
 impl VMExecutor {
-    pub fn new(entry_lambda: &GCRef, original_code: Option<String>) -> Self {
+    pub fn new(entry_lambda: &GCRef) -> Self {
         let mut instruction_table: Vec<InstructionHandler> = vec![
         |_, opcode, _| Err(VMError::InvalidInstruction(opcode.clone())); // 默认处理函数 - 返回无效指令错误
         256 // 数组大小，确保能容纳所有可能的操作码
@@ -696,30 +690,38 @@ impl VMExecutor {
             stack: Vec::new(),
             ip: 0,
             lambda_instructions: Vec::new(),
-            original_code,
-            debug_info: None,
             entry_lambda: entry_lambda.clone(),
             instruction_table,
         }
     }
-    pub fn set_debug_info(&mut self, debug_info: DebugInfo) {
-        self.debug_info = Some(debug_info);
-    }
+
     pub fn repr_current_code(&self, context_lines: Option<usize>) -> String {
         use colored::*;
         use unicode_segmentation::UnicodeSegmentation;
 
         let context_lines = context_lines.unwrap_or(2); // Default to 2 lines of context
 
-        if self.original_code.is_none() || self.debug_info.is_none() {
+        let instruction_package = self
+            .lambda_instructions
+            .last()
+            .unwrap()
+            .as_const_type::<VMInstructions>();
+        let original_code = instruction_package.vm_instructions_package.get_source();
+
+        let debug_info = instruction_package
+            .vm_instructions_package
+            .get_debug_info()
+            .get(&(self.ip as usize));
+
+        if original_code.is_none() || debug_info.is_none() {
             return String::from("[Source code information not available]")
                 .bright_yellow()
                 .italic()
                 .to_string();
         }
 
-        let source_code = self.original_code.as_ref().unwrap();
-        let debug_info = self.debug_info.as_ref().unwrap();
+        let source_code = original_code.as_ref().unwrap();
+        let debug_info = debug_info.unwrap();
 
         // Check if current IP is out of bounds
         if self.ip < 0
@@ -730,7 +732,7 @@ impl VMExecutor {
                     .unwrap()
                     .as_const_type::<VMInstructions>()
                     .vm_instructions_package
-                    .get_bytes_pool()
+                    .get_code()
                     .len()
         {
             return format!("[IP out of range: {}]", self.ip)
@@ -789,7 +791,7 @@ impl VMExecutor {
 
             // Format line content - highlight current line
             let line_content = if i == line_num {
-                lines[i].bright_white().bold().to_string()
+                lines[i].bright_white().underline().bold().to_string()
             } else {
                 lines[i].white().to_string()
             };
@@ -815,7 +817,7 @@ impl VMExecutor {
                 };
 
                 marker.push_str(&" ".repeat(prefix_graphemes));
-                marker.push_str(&"^".bright_green().bold().to_string());
+                marker.push_str(&"^".bright_red().bold().to_string());
 
                 result.push_str(&marker);
                 result.push('\n');
@@ -831,14 +833,13 @@ impl VMExecutor {
             .vm_instructions_package
             .get_code()[self.ip as usize];
 
+        let decoded = Instruction32::decode_opcode(*instruction);
+
         // Format current instruction info
         result.push_str(&format!(
             "{} {} {}\n",
             "Current instruction:".bright_blue().bold(),
-            format!("{:?}", instruction)
-                .bright_cyan()
-                .bold()
-                .underline(),
+            decoded.to_string().bright_cyan().bold().underline(),
             format!("(IP: {})", self.ip).bright_blue().bold()
         ));
 
@@ -932,14 +933,14 @@ impl VMExecutor {
 }
 
 mod vm_instructions {
-    use std::fs::File;
-    use std::io::Read;
     use crate::vm::executor::context::ContextFrameType;
     use crate::vm::executor::variable::*;
     use crate::vm::executor::vm::VMError;
     use crate::vm::gc::gc::GCSystem;
     use crate::vm::opcode::{OpcodeArgument, ProcessedOpcode};
     use crate::VMExecutor;
+    use std::fs::File;
+    use std::io::Read;
 
     use super::SpawnedCoroutine;
 
@@ -1576,7 +1577,7 @@ mod vm_instructions {
             vm.push_vmobject(obj.clone())?;
             Ok(None)
         } else {
-            return Err(VMError::InvalidInstruction(opcode.clone()));
+            Err(VMError::InvalidInstruction(opcode.clone()))
         }
     }
 
@@ -1597,7 +1598,7 @@ mod vm_instructions {
             vm.push_vmobject(obj)?;
             Ok(None)
         } else {
-            return Err(VMError::InvalidInstruction(opcode.clone()));
+            Err(VMError::InvalidInstruction(opcode.clone()))
         }
     }
 
@@ -2033,7 +2034,6 @@ mod vm_instructions {
 
         let spawned_coroutines = vec![SpawnedCoroutine {
             lambda_ref: lambda.clone_ref(),
-            source_code: vm.original_code.clone(),
         }];
         vm.push_vmobject(lambda.clone_ref())?;
 
@@ -2263,7 +2263,7 @@ mod vm_instructions {
         let obj_alias = try_const_alias_as_vmobject(&obj).map_err(VMError::VMVariableError)?;
         let mut tuple = Vec::new();
         for alias in obj_alias.iter() {
-            tuple.push(gc_system.new_object(VMString::new(&alias)));
+            tuple.push(gc_system.new_object(VMString::new(alias)));
         }
         let mut tuple_refs = tuple.iter_mut().collect();
         let result = gc_system.new_object(VMTuple::new(&mut tuple_refs));
@@ -2432,13 +2432,10 @@ impl VMExecutor {
                 // gc_system.collect(); // debug
                 // self.debug_output_stack();
                 // println!("{}: {}", self.ip, decoded.to_string()); // debug
-                spawned_coroutines = self.instruction_table
+                spawned_coroutines = self
+                    .instruction_table
                     .get(decoded.instruction as usize)
-                    .unwrap()(
-                    self,
-                    &decoded,
-                    gc_system,
-                )?;
+                    .unwrap()(self, &decoded, gc_system)?;
 
                 //self.debug_output_stack(); // debug
                 //println!("");

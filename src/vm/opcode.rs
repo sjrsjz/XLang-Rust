@@ -38,7 +38,7 @@ impl Opcode32 {
     }
     pub fn f32lower32(uint: f32) -> u32 {
         let bits = uint.to_bits();
-        (bits & 0xFFFFFFFF) as u32
+        bits
     }
 }
 
@@ -82,6 +82,15 @@ pub struct DecodedOpcode {
     operand3: u8,
 }
 
+impl DecodedOpcode{
+    pub fn to_string(&self) -> String {
+        format!(
+            "Instruction: {:?}, Operand1: {}, Operand2: {}, Operand3: {}",
+            VMInstruction::from_opcode(self.instruction), self.operand1, self.operand2, self.operand3
+        )
+    }
+}
+
 #[derive(Debug, Clone)]
 pub enum OpcodeArgument {
     None,
@@ -121,8 +130,9 @@ impl<'t> Instruction32<'t> {
         Instruction32 { bytes, pointer }
     }
 
+    #[inline]
     pub fn take_u32(&mut self) -> Option<u32> {
-        if *self.pointer < self.bytes.len() as usize {
+        if *self.pointer < self.bytes.len() {
             let byte = self.bytes[*self.pointer];
             *self.pointer += 1;
             Some(byte)
@@ -131,8 +141,9 @@ impl<'t> Instruction32<'t> {
         }
     }
 
+    #[inline]
     pub fn take_u64(&mut self) -> Option<u64> {
-        if *self.pointer + 1 < self.bytes.len() as usize {
+        if *self.pointer + 1 < self.bytes.len() {
             let byte = ((self.bytes[*self.pointer + 1] as u64) << 32)
                 | (self.bytes[*self.pointer] as u64);
             *self.pointer += 2;
@@ -142,9 +153,10 @@ impl<'t> Instruction32<'t> {
         }
     }
 
+    #[inline]
     pub fn get_processed_opcode(&mut self) -> Option<ProcessedOpcode> {
         let opcode = self.take_u32()?;
-        let decoded_opcode = self.decode_opcode(opcode);
+        let decoded_opcode = Self::decode_opcode(opcode);
         let operand1_arg = self.get_operand_arg(decoded_opcode.operand1)?;
         let operand2_arg = self.get_operand_arg(decoded_opcode.operand2)?;
         let operand3_arg = self.get_operand_arg(decoded_opcode.operand3)?;
@@ -163,6 +175,7 @@ impl<'t> Instruction32<'t> {
     }
 
     // 根据操作数标志和原始值构建具体的操作数类型
+    #[inline]
     fn build_operand_argument(&self, operand_flags: u8, arg_value: u64) -> OpcodeArgument {
         // 如果操作数无效，返回None
         if (operand_flags & OperandFlag::Valid as u8) == 0 {
@@ -200,7 +213,9 @@ impl<'t> Instruction32<'t> {
             OpcodeArgument::Int32(arg_value as i32)
         }
     }
-    fn decode_opcode(&self, opcode: u32) -> DecodedOpcode {
+
+    #[inline]
+    pub fn decode_opcode(opcode: u32) -> DecodedOpcode {
         let instruction = (opcode >> 24) as u8;
         let operand1 = ((opcode >> 16) & 0xFF) as u8;
         let operand2 = ((opcode >> 8) & 0xFF) as u8;
@@ -213,6 +228,8 @@ impl<'t> Instruction32<'t> {
             operand3,
         }
     }
+
+    #[inline]
     fn get_operand_arg(&mut self, operand: u8) -> Option<u64> {
         if (operand & OperandFlag::Valid as u8) == 0 {
             return Some(0);

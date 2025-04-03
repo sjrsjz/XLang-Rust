@@ -106,7 +106,7 @@ impl IRTranslator {
                     self.code.push(
                         Opcode32::build_opcode(
                             VMInstruction::LoadBytes as u8,
-                            OperandFlag::Valid | OperandFlag::ArgSize64 | OperandFlag::UseConstPool,
+                            OperandFlag::Valid | OperandFlag::ArgSize64 | OperandFlag::UseConstPool | OperandFlag::ShiftType,
                             0,
                             0,
                         )
@@ -693,6 +693,6 @@ impl IRTranslator {
     }
 
     pub fn get_result(&self) -> VMInstructionPackage {
-        VMInstructionPackage::new(self.function_ips.clone(), self.code.clone(), self.string_pool.clone(), self.bytes_pool.clone(), self.debug_infos.clone())
+        VMInstructionPackage::new(self.function_ips.clone(), self.code.clone(), self.string_pool.clone(), self.bytes_pool.clone(), self.debug_infos.clone(), self.ir_package.source.clone())
     }
 }

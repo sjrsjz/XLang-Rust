@@ -37,22 +37,37 @@ struct Cli {
 
 #[derive(Subcommand)]
 enum Commands {
-    /// Compile source code to XLang IR file
+    /// Compile source code to XLang IR file or bytecode
     Compile {
         /// Input source code file path
         #[arg(required = true)]
         input: PathBuf,
 
-        /// Output IR file path (defaults to same name as input but with .xir extension)
+        /// Output file path (defaults to same name as input but with .xir or .xbc extension)
         #[arg(short, long)]
         output: Option<PathBuf>,
+        
+        /// Compile directly to bytecode instead of IR
+        #[arg(short, long)]
+        bytecode: bool,
     },
 
-    /// Execute XLang source code or compiled IR file
+    /// Execute XLang source code, IR file, or bytecode file
     Run {
-        /// Input file path (source code or .xir file)
+        /// Input file path (source code, .xir file, or .xbc bytecode file)
         #[arg(required = true)]
         input: PathBuf,
+    },
+
+    /// Translate IR file to bytecode file
+    Translate {
+        /// Input IR file path
+        #[arg(required = true)]
+        input: PathBuf,
+
+        /// Output bytecode file path (defaults to same name as input but with .xbc extension)
+        #[arg(short, long)]
+        output: Option<PathBuf>,
     },
 
     /// Interactive interpreter mode
@@ -85,11 +100,20 @@ fn build_code(code: &str) -> Result<IRPackage, String> {
     ir.push((DebugInfo { code_position: 0 }, IR::Return));
     functions.append("__main__".to_string(), ir);
 
-    Ok(functions.build_instructions())
+    Ok(functions.build_instructions(Some(code.to_string())))
+}
+
+// Compile IR to bytecode
+fn compile_to_bytecode(package: &IRPackage) -> Result<VMInstructionPackage, String> {
+    let mut translator = IRTranslator::new(package);
+    match translator.translate() {
+        Ok(_) => Ok(translator.get_result()),
+        Err(e) => Err(format!("IR translation failed: {:?}", e)),
+    }
 }
 
 // Execute compiled code
-fn execute_ir(package: VMInstructionPackage, source_code: Option<String>) -> Result<(), VMError> {
+fn execute_ir(package: VMInstructionPackage) -> Result<(), VMError> {
     let mut coroutine_pool = VMCoroutinePool::new(true);
     let mut gc_system = GCSystem::new(None);
 
@@ -109,7 +133,7 @@ fn execute_ir(package: VMInstructionPackage, source_code: Option<String>) -> Res
     lambda_result.drop_ref();
 
     main_lambda.clone_ref();
-    let _coro_id = coroutine_pool.new_coroutine(&mut main_lambda, source_code, &mut gc_system)?;
+    let _coro_id = coroutine_pool.new_coroutine(&mut main_lambda, &mut gc_system)?;
 
     let result = coroutine_pool.run_until_finished(&mut gc_system);
     if let Err(e) = result {
@@ -140,13 +164,12 @@ fn execute_ir(package: VMInstructionPackage, source_code: Option<String>) -> Res
 
 fn execute_ir_repl(
     package: VMInstructionPackage,
-    source_code: Option<String>,
     gc_system: &mut GCSystem,
     input_arguments: &mut GCRef,
 ) -> Result<GCRef, VMError> {
     let mut coroutine_pool = VMCoroutinePool::new(false);
 
-    let mut key = gc_system.new_object(VMString::new(&"Out"));
+    let mut key = gc_system.new_object(VMString::new("Out"));
     let mut named: GCRef = gc_system.new_object(VMNamed::new(&mut key, input_arguments));
     let mut default_args_tuple = gc_system.new_object(VMTuple::new(&mut vec![&mut named]));
     let mut lambda_instructions = gc_system.new_object(VMInstructions::new(&package));
@@ -171,7 +194,7 @@ fn execute_ir_repl(
     wrapped.clone_ref();
 
     main_lambda.drop_ref();
-    let _coro_id = coroutine_pool.new_coroutine(&mut wrapped, source_code, gc_system)?;
+    let _coro_id = coroutine_pool.new_coroutine(&mut wrapped, gc_system)?;
 
     coroutine_pool.run_until_finished(gc_system)?;
     gc_system.collect();
@@ -179,81 +202,118 @@ fn execute_ir_repl(
     Ok(wrapped)
 }
 
+// Implement bytecode file saving and loading for VMInstructionPackage
+impl VMInstructionPackage {
+    pub fn write_to_file(&self, path: &str) -> Result<(), std::io::Error> {
+        let serialized = bincode::serialize(self).map_err(|e| {
+            std::io::Error::new(
+                std::io::ErrorKind::Other, 
+                format!("Serialization error: {}", e)
+            )
+        })?;
+        
+        fs::write(path, serialized)
+    }
+
+    pub fn read_from_file(path: &str) -> Result<Self, std::io::Error> {
+        let bytes = fs::read(path)?;
+        bincode::deserialize(&bytes).map_err(|e| {
+            std::io::Error::new(
+                std::io::ErrorKind::Other, 
+                format!("Deserialization error: {}", e)
+            )
+        })
+    }
+}
+
 fn run_file(path: &PathBuf) -> Result<(), String> {
     let extension = path.extension().and_then(|e| e.to_str()).unwrap_or("");
 
-    if extension == "xir" {
-        // Execute IR file
-        match IRPackage::read_from_file(path.to_str().unwrap()) {
-            Ok(package) => {
-                let mut translator = IRTranslator::new(&package);
-                let translate_result = translator.translate();
-                let result = if translate_result.is_ok() {
-                    translator.get_result()
-                } else {
-                    return Err(format!(
-                        "IR translation failed. {:?}",
-                        translate_result.err().unwrap()
-                    ));
-                };
-
-                match execute_ir(result, None) {
-                    Ok(_) => Ok(()),
-                    Err(e) => Err(format!("Execution error: {}", e.to_string())
-                        .bright_red()
-                        .to_string()),
-                }
-            }
-            Err(e) => Err(format!("Error reading IR file: {}", e)
-                .bright_red()
-                .to_string()),
-        }
-    } else {
-        // Assume it's a source file, compile and execute
-        match fs::read_to_string(path) {
-            Ok(code) => match build_code(&code) {
+    match extension {
+        "xir" => {
+            // Execute IR file
+            match IRPackage::read_from_file(path.to_str().unwrap()) {
                 Ok(package) => {
                     let mut translator = IRTranslator::new(&package);
                     let translate_result = translator.translate();
                     let result = if translate_result.is_ok() {
                         translator.get_result()
                     } else {
-                        return Err(format!(
-                            "IR translation failed. {:?}",
-                            translate_result.err().unwrap()
-                        ));
+                        return Err(format!("IR translation failed: {:?}", translate_result.err().unwrap())
+                            .bright_red()
+                            .to_string());
                     };
-                    match execute_ir(result, Some(code)) {
+
+                    match execute_ir(result) {
                         Ok(_) => Ok(()),
                         Err(e) => Err(format!("Execution error: {}", e.to_string())
                             .bright_red()
                             .to_string()),
                     }
                 }
-                Err(e) => Err(format!("Compilation error: {}", e).bright_red().to_string()),
-            },
-            Err(e) => Err(format!("File reading error: {}", e)
-                .bright_red()
-                .to_string()),
+                Err(e) => Err(format!("Error reading IR file: {}", e)
+                    .bright_red()
+                    .to_string()),
+            }
+        },
+        "xbc" => {
+            // Execute bytecode file directly
+            match VMInstructionPackage::read_from_file(path.to_str().unwrap()) {
+                Ok(bytecode) => {
+                    match execute_ir(bytecode) {
+                        Ok(_) => Ok(()),
+                        Err(e) => Err(format!("Execution error: {}", e.to_string())
+                            .bright_red()
+                            .to_string()),
+                    }
+                }
+                Err(e) => Err(format!("Error reading bytecode file: {}", e)
+                    .bright_red()
+                    .to_string()),
+            }
+        },
+        _ => {
+            // Assume it's a source file, compile and execute
+            match fs::read_to_string(path) {
+                Ok(code) => match build_code(&code) {
+                    Ok(package) => {
+                        let mut translator = IRTranslator::new(&package);
+                        let translate_result = translator.translate();
+                        let result = if translate_result.is_ok() {
+                            translator.get_result()
+                        } else {
+                            return Err(format!("IR translation failed: {:?}", translate_result.err().unwrap())
+                                .bright_red()
+                                .to_string());
+                        };
+                        match execute_ir(result) {
+                            Ok(_) => Ok(()),
+                            Err(e) => Err(format!("Execution error: {}", e.to_string())
+                                .bright_red()
+                                .to_string()),
+                        }
+                    }
+                    Err(e) => Err(format!("Compilation error: {}", e).bright_red().to_string()),
+                },
+                Err(e) => Err(format!("File reading error: {}", e)
+                    .bright_red()
+                    .to_string()),
+            }
         }
     }
 }
 
-fn compile_file(input: &PathBuf, output: Option<PathBuf>) -> Result<(), String> {
-    // Read source code
-    let code = match fs::read_to_string(input) {
-        Ok(content) => content,
-        Err(e) => {
-            return Err(format!("Error reading source file: {}", e)
-                .bright_red()
-                .to_string())
-        }
+fn ir_to_bytecode_file(input: &PathBuf, output: Option<PathBuf>) -> Result<(), String> {
+    // Read IR file
+    let package = match IRPackage::read_from_file(input.to_str().unwrap()) {
+        Ok(p) => p,
+        Err(e) => return Err(format!("Error reading IR file: {}", e).bright_red().to_string()),
     };
 
-    // Compile source code
-    let package = match build_code(&code) {
-        Ok(p) => p,
-        Err(e) => return Err(format!("Compilation error: {}", e).bright_red().to_string()),
+    // Translate IR to bytecode
+    let bytecode = match compile_to_bytecode(&package) {
+        Ok(b) => b,
+        Err(e) => return Err(format!("Translation error: {}", e).bright_red().to_string()),
     };
 
     // Determine output path
@@ -261,7 +321,7 @@ fn compile_file(input: &PathBuf, output: Option<PathBuf>) -> Result<(), String> 
         Some(path) => path,
         None => {
             let mut path = input.clone();
-            path.set_extension("xir");
+            path.set_extension("xbc");
             path
         }
     };
@@ -277,18 +337,115 @@ fn compile_file(input: &PathBuf, output: Option<PathBuf>) -> Result<(), String> 
         }
     }
 
-    // Write compiled IR to file
-    match package.write_to_file(output_path.to_str().unwrap()) {
+    // Write bytecode to file
+    match bytecode.write_to_file(output_path.to_str().unwrap()) {
         Ok(_) => {
             println!(
-                "Successfully saved compiled IR to: {}",
+                "Successfully saved bytecode to: {}",
                 output_path.display()
             );
             Ok(())
         }
-        Err(e) => Err(format!("Error saving IR to file: {}", e)
+        Err(e) => Err(format!("Error saving bytecode to file: {}", e)
             .bright_red()
             .to_string()),
+    }
+}
+
+fn compile_file(input: &PathBuf, output: Option<PathBuf>, bytecode: bool) -> Result<(), String> {
+    // Read source code
+    let code = match fs::read_to_string(input) {
+        Ok(content) => content,
+        Err(e) => {
+            return Err(format!("Error reading source file: {}", e)
+                .bright_red()
+                .to_string())
+        }
+    };
+
+    // Compile source code to IR
+    let ir_package = match build_code(&code) {
+        Ok(p) => p,
+        Err(e) => return Err(format!("Compilation error: {}", e).bright_red().to_string()),
+    };
+
+    if bytecode {
+        // Compile directly to bytecode
+        let bytecode = match compile_to_bytecode(&ir_package) {
+            Ok(b) => b,
+            Err(e) => return Err(format!("Bytecode generation error: {}", e).bright_red().to_string()),
+        };
+
+        // Determine output path
+        let output_path = match output {
+            Some(path) => path,
+            None => {
+                let mut path = input.clone();
+                path.set_extension("xbc");
+                path
+            }
+        };
+
+        // Create directories if needed
+        if let Some(parent) = output_path.parent() {
+            if !parent.exists() {
+                if let Err(e) = fs::create_dir_all(parent) {
+                    return Err(format!("Error creating output directory: {}", e)
+                        .bright_red()
+                        .to_string());
+                }
+            }
+        }
+
+        // Write bytecode to file
+        match bytecode.write_to_file(output_path.to_str().unwrap()) {
+            Ok(_) => {
+                println!(
+                    "Successfully saved bytecode to: {}",
+                    output_path.display()
+                );
+                Ok(())
+            }
+            Err(e) => Err(format!("Error saving bytecode to file: {}", e)
+                .bright_red()
+                .to_string()),
+        }
+    } else {
+        // Just compile to IR (original functionality)
+        // Determine output path
+        let output_path = match output {
+            Some(path) => path,
+            None => {
+                let mut path = input.clone();
+                path.set_extension("xir");
+                path
+            }
+        };
+
+        // Create directories if needed
+        if let Some(parent) = output_path.parent() {
+            if !parent.exists() {
+                if let Err(e) = fs::create_dir_all(parent) {
+                    return Err(format!("Error creating output directory: {}", e)
+                        .bright_red()
+                        .to_string());
+                }
+            }
+        }
+
+        // Write compiled IR to file
+        match ir_package.write_to_file(output_path.to_str().unwrap()) {
+            Ok(_) => {
+                println!(
+                    "Successfully saved compiled IR to: {}",
+                    output_path.display()
+                );
+                Ok(())
+            }
+            Err(e) => Err(format!("Error saving IR to file: {}", e)
+                .bright_red()
+                .to_string()),
+        }
     }
 }
 
@@ -618,7 +775,6 @@ fn run_repl() -> Result<(), String> {
                             let result = translator.get_result();
                             match execute_ir_repl(
                                 result,
-                                Some(input_buffer.to_string()),
                                 &mut gc_system,
                                 &mut input_arguments,
                             ) {
@@ -762,14 +918,20 @@ fn main() {
     let cli = Cli::parse();
 
     match cli.command {
-        Commands::Compile { input, output } => {
-            if let Err(e) = compile_file(&input, output) {
+        Commands::Compile { input, output, bytecode } => {
+            if let Err(e) = compile_file(&input, output, bytecode) {
                 eprintln!("{}", e);
                 std::process::exit(1);
             }
         }
         Commands::Run { input } => {
             if let Err(e) = run_file(&input) {
+                eprintln!("{}", e);
+                std::process::exit(1);
+            }
+        }
+        Commands::Translate { input, output } => {
+            if let Err(e) = ir_to_bytecode_file(&input, output) {
                 eprintln!("{}", e);
                 std::process::exit(1);
             }

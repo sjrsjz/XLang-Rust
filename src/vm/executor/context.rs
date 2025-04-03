@@ -173,7 +173,7 @@ impl Context {
         }
 
         // 6. 截断栈（但不删除最后一个元素）
-        if stack.len() == 0 {
+        if stack.is_empty() {
             return Err(ContextError::ContextError("Empty stack".to_string()));
         }
         if stack_pointer >= stack.len(){

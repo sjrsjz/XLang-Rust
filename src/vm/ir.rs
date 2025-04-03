@@ -92,6 +92,7 @@ pub enum IR{
 pub struct IRPackage {
     pub instructions: Vec<(DebugInfo, IR)>,
     pub function_ips: HashMap<String, usize>,
+    pub source: Option<String>,
 }
 impl IRPackage {
     pub fn read_from_file(file_path: &str) -> Result<IRPackage, String> {
@@ -176,13 +177,13 @@ impl Functions {
         self.function_instructions.insert(function_name, instructions);
     }
 
-    pub fn build_instructions(&mut self) -> IRPackage {
+    pub fn build_instructions(&mut self, source: Option<String>) -> IRPackage {
         let mut func_ips = HashMap::new();
         let mut instructions = Vec::new();
         for (func_name, func_instructions) in self.function_instructions.iter() {
             func_ips.insert(func_name.clone(), instructions.len());
             instructions.extend(func_instructions.clone());
         }
-        IRPackage{instructions, function_ips:func_ips}
+        IRPackage{instructions, function_ips:func_ips, source}
     }
 }
