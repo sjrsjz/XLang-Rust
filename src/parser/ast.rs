@@ -383,23 +383,23 @@ pub enum ASTNodeType {
     String(String),              // String
     Boolean(String),             // Boolean
     Number(String),              // Number (Integer, Float)
-    Base64(String),            // Base64
+    Base64(String),              // Base64
     Variable(String),            // Variable
     Let(String),                 // x := expression
     Body,                        // {...}
-    Boundary,                  // boundary {...}
+    Boundary,                    // boundary {...}
     Assign,                      // x = expression
-    LambdaDef(bool),                   // tuple -> body or tuple -> dyn expression
+    LambdaDef(bool),             // tuple -> body or tuple -> dyn expression
     Expressions,                 // expression1; expression2; ...
     LambdaCall,                  // x (tuple)
     Operation(ASTNodeOperation), // x + y, x - y, x * y, x / y ...
     Tuple,                       // x, y, z, ...
-    AssumeTuple,               // ...value
+    AssumeTuple,                 // ...value
     KeyValue,                    // x: y
     IndexOf,                     // x[y]
     GetAttr,                     // x.y
     Return,                      // return expression
-    Raise,                      // raise expression
+    Raise,                       // raise expression
     If,    // if expression truecondition || if expression truecondition else falsecondition
     While, // while expression body
     Modifier(ASTNodeModifier), // modifier expression
@@ -810,7 +810,7 @@ fn match_all<'t>(
 
     node_matcher.add_matcher(Box::new(
         |tokens, current| -> Result<(Option<ASTNode<'t>>, usize), ParserError<'t>> {
-            match_named_to_null(tokens, current)
+            match_quick_named_to(tokens, current)
         },
     ));
 
@@ -896,7 +896,10 @@ fn match_return_yield_raise<'t>(
     if current >= tokens.len() {
         return Ok((None, 0));
     }
-    if !is_identifier(&tokens[current], "return") && !is_identifier(&tokens[current], "yield") && !is_identifier(&tokens[current], "raise") {
+    if !is_identifier(&tokens[current], "return")
+        && !is_identifier(&tokens[current], "yield")
+        && !is_identifier(&tokens[current], "raise")
+    {
         return Ok((None, 0));
     }
     let right_tokens = tokens[current + 1..].to_vec();
@@ -916,7 +919,7 @@ fn match_return_yield_raise<'t>(
         "return" => ASTNodeType::Return,
         "yield" => ASTNodeType::Yield,
         "raise" => ASTNodeType::Raise,
-        _ => unreachable!(),        
+        _ => unreachable!(),
     };
     Ok((
         Some(ASTNode::new(
@@ -1008,31 +1011,24 @@ fn match_let<'t>(
     let left = left.unwrap();
 
     match left.node_type {
-        ASTNodeType::Variable(name) => {
-            Ok((
-                Some(ASTNode::new(
-                    ASTNodeType::Let(name),
-                    Some(&tokens[current][0]),
-                    Some(vec![right]),
-                )),
-                right_offset + 2,
-            ))
-        },
-        ASTNodeType::String(name) => {
-            Ok((
-                Some(ASTNode::new(
-                    ASTNodeType::Let(name),
-                    Some(&tokens[current][0]),
-                    Some(vec![right]),
-                )),
-                right_offset + 2,
-            ))
-        }
-        _ => {
-            Err(ParserError::InvalidVariableName(&tokens[current][0]))
-        }
+        ASTNodeType::Variable(name) => Ok((
+            Some(ASTNode::new(
+                ASTNodeType::Let(name),
+                Some(&tokens[current][0]),
+                Some(vec![right]),
+            )),
+            right_offset + 2,
+        )),
+        ASTNodeType::String(name) => Ok((
+            Some(ASTNode::new(
+                ASTNodeType::Let(name),
+                Some(&tokens[current][0]),
+                Some(vec![right]),
+            )),
+            right_offset + 2,
+        )),
+        _ => Err(ParserError::InvalidVariableName(&tokens[current][0])),
     }
-
 }
 
 fn match_assign<'t>(
@@ -2065,11 +2061,7 @@ fn match_lambda_def<'t>(
         );
     }
     let is_dyn = current + 2 < tokens.len() && is_identifier(&tokens[current + 2], "dyn");
-    let offset = if is_dyn {
-        3
-    } else {
-        2
-    };
+    let offset = if is_dyn { 3 } else { 2 };
     let (right, right_offset) = match_all(tokens, current + offset)?;
     if right.is_none() {
         return Ok((None, 0));
@@ -2096,7 +2088,7 @@ fn match_modifier<'t>(
     if tokens[current].len() == 1
         && vec![
             "deepcopy", "copy", "ref", "deref", "keyof", "valueof", "selfof", "assert", "import",
-            "wrap", "typeof", "await", "wipe", "aliasof", "bind", "boundary"
+            "wrap", "typeof", "await", "wipe", "aliasof", "bind", "boundary",
         ]
         .contains(&tokens[current][0].token)
     {
@@ -2147,7 +2139,7 @@ fn match_modifier<'t>(
     Ok((None, 0))
 }
 
-fn match_named_to_null<'t>(
+fn match_quick_named_to<'t>(
     tokens: &Vec<GatheredTokens<'t>>,
     current: usize,
 ) -> Result<(Option<ASTNode<'t>>, usize), ParserError<'t>> {
@@ -2179,6 +2171,33 @@ fn match_named_to_null<'t>(
             )),
             node_offset + 1,
         ));
+    } else if is_symbol(&tokens[tokens.len() - 1], "!") {
+        let left_tokens = tokens[..tokens.len() - 1].to_vec();
+        let (node, node_offset) = match_all(&left_tokens, 0)?;
+        if node.is_none() {
+            return Ok((None, 0));
+        }
+        if node_offset != left_tokens.len() {
+            return Err(ParserError::NotFullyMatched(
+                left_tokens.first().unwrap().first().unwrap(),
+                left_tokens.last().unwrap().last().unwrap(),
+            ));
+        }
+        let node = node.unwrap();
+        let ASTNodeType::Variable(name) = node.node_type else {
+            return Ok((None, 0));
+        };
+        return Ok((
+            Some(ASTNode::new(
+                ASTNodeType::NamedTo,
+                Some(&tokens[current][0]),
+                Some(vec![
+                    ASTNode::new(ASTNodeType::String(name.clone()), node.token, None),
+                    ASTNode::new(ASTNodeType::Variable(name), node.token, None),
+                ]),
+            )),
+            node_offset + 1,
+        ));
     }
     Ok((None, 0))
 }
@@ -2190,9 +2209,9 @@ fn match_assume_tuple<'t>(
     if current + 1 >= tokens.len() {
         return Ok((None, 0));
     }
-    if !is_symbol(&tokens[current], "..."){
+    if !is_symbol(&tokens[current], "...") {
         return Ok((None, 0));
-    } 
+    }
     let left_tokens = &tokens[current + 1..].to_vec();
     let (node, node_offset) = match_all(left_tokens, 0)?;
     if node.is_none() {
@@ -2447,7 +2466,9 @@ fn match_member_access_and_call<'t>(
             let args_node = args_node.unwrap();
 
             // 如果不是元组类型，将其包装为元组
-            let args = if args_node.node_type != ASTNodeType::Tuple && args_node.node_type != ASTNodeType::AssumeTuple {
+            let args = if args_node.node_type != ASTNodeType::Tuple
+                && args_node.node_type != ASTNodeType::AssumeTuple
+            {
                 ASTNode::new(
                     ASTNodeType::Tuple,
                     Some(&tokens[access_pos][0]),

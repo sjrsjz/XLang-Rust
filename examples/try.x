@@ -1,7 +1,7 @@
 try := (f?) -> bind {
     'result': wrap null,
     value => () -> return valueof self.result,
-    catch => (err_handler?, f => f) -> {
+    catch => (err_handler?, f!) -> {
         result := boundary f(...(keyof f));
         if ("Err" in aliasof result) {
             err_handler(result);
@@ -19,7 +19,7 @@ try := (f?) -> bind {
 x := 0;
 
 result := try(
-    (x => x) -> {
+    (x!) -> {
         if (x == 0) {
             raise Err::"Error occurred";
         };

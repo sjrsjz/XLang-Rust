@@ -19,7 +19,7 @@ while (iter(0, 10, idx := 0)) {
 iter := (container?, wrapper?) -> if (container == null or wrapper == null) {
     return () -> false;
 } else {
-    return (container => container, wrapper => wrapper, n => 0) -> {
+    return (container!, wrapper!, n => 0) -> {
         if (n >= len(container)) {
             return false;
         };
