@@ -176,6 +176,9 @@ impl Context {
         if stack.len() == 0 {
             return Err(ContextError::ContextError("Empty stack".to_string()));
         }
+        if stack_pointer >= stack.len(){
+            return Err(ContextError::ContextError("Stack pointer out of bounds".to_string()));
+        }
         stack[stack_pointer] = stack[stack.len() - 1].clone();
         stack.truncate(stack_pointer + 1);
 

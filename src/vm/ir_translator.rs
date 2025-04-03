@@ -26,7 +26,6 @@ pub struct IRTranslator {
 
 impl IRTranslator {
     pub fn new(ir_package: &IRPackage) -> Self {
-        println!("IR: {:?}", ir_package);
         IRTranslator {
             ir_package: ir_package.clone(),
             function_ips: HashMap::default(),
@@ -444,7 +443,7 @@ impl IRTranslator {
                     );
                     self.code.push(0u32);
                     self.code.push(0u32);
-                    redirect_table.push((self.code.len() - 1, self.code.len() - 3, (idx as isize + ir_offset) as usize, true));
+                    redirect_table.push((self.code.len(), self.code.len() - 2, (idx as isize + ir_offset + 1) as usize, true));
                 }
                 IR::PopFrame => {
                     self.code.push(
@@ -491,7 +490,7 @@ impl IRTranslator {
                     );
                     self.code.push(0u32);
                     self.code.push(0u32);
-                    redirect_table.push((self.code.len() - 1, self.code.len() - 3, (idx as isize + offset) as usize, true));
+                    redirect_table.push((self.code.len(), self.code.len() - 2, (idx as isize + offset + 1) as usize, true));
                 }
                 IR::JumpIfFalseOffset(offset) => {
                     self.code.push(
@@ -505,7 +504,7 @@ impl IRTranslator {
                     );
                     self.code.push(0u32);
                     self.code.push(0u32);
-                    redirect_table.push((self.code.len() - 1, self.code.len() - 3, (idx as isize + offset) as usize, true));
+                    redirect_table.push((self.code.len(), self.code.len() - 2, (idx as isize + offset + 1) as usize, true));
                 }
                 IR::ResetStack => {
                     self.code.push(

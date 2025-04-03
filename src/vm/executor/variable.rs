@@ -7,10 +7,8 @@ use colored::Colorize;
  * - 任何new对象的行为都需要使用gc_system，并且会产生一个native_gcref_object_count，虚拟机必须在某处drop_ref直到为0
  *
  */
-use std::{collections::HashMap, fmt::Debug};
-
-use crate::vm::{instruction_set::VMInstructionPackage, ir::IR};
-
+use std::fmt::Debug;
+use crate::vm::instruction_set::VMInstructionPackage;
 use super::super::gc::gc::{GCObject, GCRef, GCSystem, GCTraceable};
 
 #[derive(Debug, Clone)]

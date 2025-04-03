@@ -1,5 +1,7 @@
 use std::ops::BitOr;
 
+use super::instruction_set::VMInstruction;
+
 #[derive(Debug)]
 pub struct Opcode32 {
     opcode: u32,
@@ -96,6 +98,16 @@ pub struct ProcessedOpcode {
     pub operand1: OpcodeArgument,
     pub operand2: OpcodeArgument,
     pub operand3: OpcodeArgument,
+}
+
+impl ProcessedOpcode {
+    pub fn to_string(&self) -> String {
+        let mut result = format!("Instruction: {:?}, ", VMInstruction::from_opcode(self.instruction));
+        result += &format!("Operand1: {:?}, ", self.operand1);
+        result += &format!("Operand2: {:?}, ", self.operand2);
+        result += &format!("Operand3: {:?}", self.operand3);
+        result
+    }    
 }
 
 #[derive(Debug)]

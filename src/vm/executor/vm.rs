@@ -2,9 +2,7 @@ use rustc_hash::FxHashMap as HashMap;
 
 use crate::vm::instruction_set::VMInstruction;
 use crate::vm::ir::DebugInfo;
-use crate::vm::ir::IR;
 use crate::vm::opcode::Instruction32;
-use crate::vm::opcode::Opcode32;
 use crate::vm::opcode::ProcessedOpcode;
 
 use super::super::gc::gc::*;
@@ -90,7 +88,7 @@ impl VMError {
 #[derive(Debug)]
 // 协程池
 pub struct VMCoroutinePool {
-    executors: Vec<(IRExecutor, isize)>, // executor, id
+    executors: Vec<(VMExecutor, isize)>, // executor, id
     gen_id: isize,
     enable_dump: bool,
 }
@@ -128,7 +126,7 @@ impl VMCoroutinePool {
                 "lambda_object must be a VMLambda".to_string(),
             ));
         }
-        let mut executor = IRExecutor::new(&lambda_object.clone_ref(), original_code);
+        let mut executor = VMExecutor::new(&lambda_object.clone_ref(), original_code);
 
         // 检查是否已有执行器使用该 lambda
         for (executor, _) in &self.executors {
@@ -152,7 +150,7 @@ impl VMCoroutinePool {
         Ok(id)
     }
 
-    pub fn get_coroutine(&self, id: isize) -> Option<&IRExecutor> {
+    pub fn get_coroutine(&self, id: isize) -> Option<&VMExecutor> {
         for (executor, executor_id) in &self.executors {
             if *executor_id == id {
                 return Some(executor);
@@ -272,13 +270,13 @@ pub struct SpawnedCoroutine {
 }
 
 type InstructionHandler = fn(
-    &mut IRExecutor,
+    &mut VMExecutor,
     &ProcessedOpcode,
     &mut GCSystem,
 ) -> Result<Option<Vec<SpawnedCoroutine>>, VMError>;
 
 #[derive(Debug)]
-pub struct IRExecutor {
+pub struct VMExecutor {
     context: Context,
     stack: Vec<VMStackObject>,
     ip: isize,
@@ -591,10 +589,10 @@ mod native_functions {
     }
 }
 
-impl IRExecutor {
+impl VMExecutor {
     pub fn new(entry_lambda: &GCRef, original_code: Option<String>) -> Self {
         let mut instruction_table: Vec<InstructionHandler> = vec![
-        |_, _, _| Ok(None); // 默认处理函数 - 返回无效指令错误
+        |_, opcode, _| Err(VMError::InvalidInstruction(opcode.clone())); // 默认处理函数 - 返回无效指令错误
         256 // 数组大小，确保能容纳所有可能的操作码
     ];
 
@@ -666,6 +664,7 @@ impl IRExecutor {
         instruction_table[VMInstruction::AsyncCall as usize] = vm_instructions::async_call_lambda;
         instruction_table[VMInstruction::Return as usize] = vm_instructions::return_value;
         instruction_table[VMInstruction::Raise as usize] = vm_instructions::raise;
+        instruction_table[VMInstruction::Jump as usize] = vm_instructions::jump;
         instruction_table[VMInstruction::JumpIfFalse as usize] = vm_instructions::jump_if_false;
 
         // 帧操作
@@ -692,7 +691,7 @@ impl IRExecutor {
         instruction_table[VMInstruction::WipeAlias as usize] = vm_instructions::wipe_alias;
         instruction_table[VMInstruction::AliasOf as usize] = vm_instructions::alias_of;
 
-        IRExecutor {
+        VMExecutor {
             context: Context::new(),
             stack: Vec::new(),
             ip: 0,
@@ -933,24 +932,19 @@ impl IRExecutor {
 }
 
 mod vm_instructions {
-
     use std::fs::File;
     use std::io::Read;
-
-    use serde::de::value;
-
     use crate::vm::executor::context::ContextFrameType;
     use crate::vm::executor::variable::*;
     use crate::vm::executor::vm::VMError;
     use crate::vm::gc::gc::GCSystem;
-    use crate::vm::ir::IROperation;
     use crate::vm::opcode::{OpcodeArgument, ProcessedOpcode};
-    use crate::IRExecutor;
+    use crate::VMExecutor;
 
     use super::SpawnedCoroutine;
 
     pub fn load_int(
-        vm: &mut IRExecutor,
+        vm: &mut VMExecutor,
         opcode: &ProcessedOpcode,
         gc_system: &mut GCSystem,
     ) -> Result<Option<Vec<SpawnedCoroutine>>, VMError> {
@@ -963,7 +957,7 @@ mod vm_instructions {
         }
     }
     pub fn load_float(
-        vm: &mut IRExecutor,
+        vm: &mut VMExecutor,
         opcode: &ProcessedOpcode,
         gc_system: &mut GCSystem,
     ) -> Result<Option<Vec<SpawnedCoroutine>>, VMError> {
@@ -976,7 +970,7 @@ mod vm_instructions {
         }
     }
     pub fn load_string(
-        vm: &mut IRExecutor,
+        vm: &mut VMExecutor,
         opcode: &ProcessedOpcode,
         gc_system: &mut GCSystem,
     ) -> Result<Option<Vec<SpawnedCoroutine>>, VMError> {
@@ -996,7 +990,7 @@ mod vm_instructions {
         }
     }
     pub fn load_bool(
-        vm: &mut IRExecutor,
+        vm: &mut VMExecutor,
         opcode: &ProcessedOpcode,
         gc_system: &mut GCSystem,
     ) -> Result<Option<Vec<SpawnedCoroutine>>, VMError> {
@@ -1009,8 +1003,8 @@ mod vm_instructions {
         }
     }
     pub fn load_null(
-        vm: &mut IRExecutor,
-        opcode: &ProcessedOpcode,
+        vm: &mut VMExecutor,
+        _opcode: &ProcessedOpcode,
         gc_system: &mut GCSystem,
     ) -> Result<Option<Vec<SpawnedCoroutine>>, VMError> {
         let obj = gc_system.new_object(VMNull::new());
@@ -1018,7 +1012,7 @@ mod vm_instructions {
         Ok(None)
     }
     pub fn load_bytes(
-        vm: &mut IRExecutor,
+        vm: &mut VMExecutor,
         opcode: &ProcessedOpcode,
         gc_system: &mut GCSystem,
     ) -> Result<Option<Vec<SpawnedCoroutine>>, VMError> {
@@ -1038,7 +1032,7 @@ mod vm_instructions {
         }
     }
     pub fn load_lambda(
-        vm: &mut IRExecutor,
+        vm: &mut VMExecutor,
         opcode: &ProcessedOpcode,
         gc_system: &mut GCSystem,
     ) -> Result<Option<Vec<SpawnedCoroutine>>, VMError> {
@@ -1086,16 +1080,16 @@ mod vm_instructions {
         }
     }
     pub fn fork_instruction(
-        vm: &mut IRExecutor,
-        opcode: &ProcessedOpcode,
-        gc_system: &mut GCSystem,
+        vm: &mut VMExecutor,
+        _opcode: &ProcessedOpcode,
+        _gc_system: &mut GCSystem,
     ) -> Result<Option<Vec<SpawnedCoroutine>>, VMError> {
         let forked = vm.lambda_instructions.last_mut().unwrap().clone_ref();
         vm.push_vmobject(forked)?;
         Ok(None)
     }
     pub fn build_tuple(
-        vm: &mut IRExecutor,
+        vm: &mut VMExecutor,
         opcode: &ProcessedOpcode,
         gc_system: &mut GCSystem,
     ) -> Result<Option<Vec<SpawnedCoroutine>>, VMError> {
@@ -1117,8 +1111,8 @@ mod vm_instructions {
         }
     }
     pub fn bind_self(
-        vm: &mut IRExecutor,
-        opcode: &ProcessedOpcode,
+        vm: &mut VMExecutor,
+        _opcode: &ProcessedOpcode,
         gc_system: &mut GCSystem,
     ) -> Result<Option<Vec<SpawnedCoroutine>>, VMError> {
         let obj = &mut vm.pop_object_and_check()?;
@@ -1136,8 +1130,8 @@ mod vm_instructions {
     }
 
     pub fn build_keyval(
-        vm: &mut IRExecutor,
-        opcode: &ProcessedOpcode,
+        vm: &mut VMExecutor,
+        _opcode: &ProcessedOpcode,
         gc_system: &mut GCSystem,
     ) -> Result<Option<Vec<SpawnedCoroutine>>, VMError> {
         let value = &mut vm.pop_object_and_check()?;
@@ -1149,8 +1143,8 @@ mod vm_instructions {
         Ok(None)
     }
     pub fn build_named(
-        vm: &mut IRExecutor,
-        opcode: &ProcessedOpcode,
+        vm: &mut VMExecutor,
+        _opcode: &ProcessedOpcode,
         gc_system: &mut GCSystem,
     ) -> Result<Option<Vec<SpawnedCoroutine>>, VMError> {
         let value = &mut vm.pop_object_and_check()?;
@@ -1163,8 +1157,8 @@ mod vm_instructions {
     }
     // 将原有的 binary_op 函数拆分为单独的函数
     pub fn binary_add(
-        vm: &mut IRExecutor,
-        opcode: &ProcessedOpcode,
+        vm: &mut VMExecutor,
+        _opcode: &ProcessedOpcode,
         gc_system: &mut GCSystem,
     ) -> Result<Option<Vec<SpawnedCoroutine>>, VMError> {
         let mut right = vm.pop_object_and_check()?;
@@ -1180,8 +1174,8 @@ mod vm_instructions {
     }
 
     pub fn binary_subtract(
-        vm: &mut IRExecutor,
-        opcode: &ProcessedOpcode,
+        vm: &mut VMExecutor,
+        _opcode: &ProcessedOpcode,
         gc_system: &mut GCSystem,
     ) -> Result<Option<Vec<SpawnedCoroutine>>, VMError> {
         let mut right = vm.pop_object_and_check()?;
@@ -1197,8 +1191,8 @@ mod vm_instructions {
     }
 
     pub fn binary_multiply(
-        vm: &mut IRExecutor,
-        opcode: &ProcessedOpcode,
+        vm: &mut VMExecutor,
+        _opcode: &ProcessedOpcode,
         gc_system: &mut GCSystem,
     ) -> Result<Option<Vec<SpawnedCoroutine>>, VMError> {
         let mut right = vm.pop_object_and_check()?;
@@ -1214,8 +1208,8 @@ mod vm_instructions {
     }
 
     pub fn binary_divide(
-        vm: &mut IRExecutor,
-        opcode: &ProcessedOpcode,
+        vm: &mut VMExecutor,
+        _opcode: &ProcessedOpcode,
         gc_system: &mut GCSystem,
     ) -> Result<Option<Vec<SpawnedCoroutine>>, VMError> {
         let mut right = vm.pop_object_and_check()?;
@@ -1231,8 +1225,8 @@ mod vm_instructions {
     }
 
     pub fn binary_modulus(
-        vm: &mut IRExecutor,
-        opcode: &ProcessedOpcode,
+        vm: &mut VMExecutor,
+        _opcode: &ProcessedOpcode,
         gc_system: &mut GCSystem,
     ) -> Result<Option<Vec<SpawnedCoroutine>>, VMError> {
         let mut right = vm.pop_object_and_check()?;
@@ -1248,8 +1242,8 @@ mod vm_instructions {
     }
 
     pub fn binary_power(
-        vm: &mut IRExecutor,
-        opcode: &ProcessedOpcode,
+        vm: &mut VMExecutor,
+        _opcode: &ProcessedOpcode,
         gc_system: &mut GCSystem,
     ) -> Result<Option<Vec<SpawnedCoroutine>>, VMError> {
         let mut right = vm.pop_object_and_check()?;
@@ -1265,8 +1259,8 @@ mod vm_instructions {
     }
 
     pub fn binary_bitwise_and(
-        vm: &mut IRExecutor,
-        opcode: &ProcessedOpcode,
+        vm: &mut VMExecutor,
+        _opcode: &ProcessedOpcode,
         gc_system: &mut GCSystem,
     ) -> Result<Option<Vec<SpawnedCoroutine>>, VMError> {
         let mut right = vm.pop_object_and_check()?;
@@ -1282,8 +1276,8 @@ mod vm_instructions {
     }
 
     pub fn binary_bitwise_or(
-        vm: &mut IRExecutor,
-        opcode: &ProcessedOpcode,
+        vm: &mut VMExecutor,
+        _opcode: &ProcessedOpcode,
         gc_system: &mut GCSystem,
     ) -> Result<Option<Vec<SpawnedCoroutine>>, VMError> {
         let mut right = vm.pop_object_and_check()?;
@@ -1299,8 +1293,8 @@ mod vm_instructions {
     }
 
     pub fn binary_bitwise_xor(
-        vm: &mut IRExecutor,
-        opcode: &ProcessedOpcode,
+        vm: &mut VMExecutor,
+        _opcode: &ProcessedOpcode,
         gc_system: &mut GCSystem,
     ) -> Result<Option<Vec<SpawnedCoroutine>>, VMError> {
         let mut right = vm.pop_object_and_check()?;
@@ -1316,8 +1310,8 @@ mod vm_instructions {
     }
 
     pub fn binary_shift_left(
-        vm: &mut IRExecutor,
-        opcode: &ProcessedOpcode,
+        vm: &mut VMExecutor,
+        _opcode: &ProcessedOpcode,
         gc_system: &mut GCSystem,
     ) -> Result<Option<Vec<SpawnedCoroutine>>, VMError> {
         let mut right = vm.pop_object_and_check()?;
@@ -1333,8 +1327,8 @@ mod vm_instructions {
     }
 
     pub fn binary_shift_right(
-        vm: &mut IRExecutor,
-        opcode: &ProcessedOpcode,
+        vm: &mut VMExecutor,
+        _opcode: &ProcessedOpcode,
         gc_system: &mut GCSystem,
     ) -> Result<Option<Vec<SpawnedCoroutine>>, VMError> {
         let mut right = vm.pop_object_and_check()?;
@@ -1350,8 +1344,8 @@ mod vm_instructions {
     }
 
     pub fn binary_equal(
-        vm: &mut IRExecutor,
-        opcode: &ProcessedOpcode,
+        vm: &mut VMExecutor,
+        _opcode: &ProcessedOpcode,
         gc_system: &mut GCSystem,
     ) -> Result<Option<Vec<SpawnedCoroutine>>, VMError> {
         let mut right = vm.pop_object_and_check()?;
@@ -1366,8 +1360,8 @@ mod vm_instructions {
     }
 
     pub fn binary_not_equal(
-        vm: &mut IRExecutor,
-        opcode: &ProcessedOpcode,
+        vm: &mut VMExecutor,
+        _opcode: &ProcessedOpcode,
         gc_system: &mut GCSystem,
     ) -> Result<Option<Vec<SpawnedCoroutine>>, VMError> {
         let mut right = vm.pop_object_and_check()?;
@@ -1382,8 +1376,8 @@ mod vm_instructions {
     }
 
     pub fn binary_greater(
-        vm: &mut IRExecutor,
-        opcode: &ProcessedOpcode,
+        vm: &mut VMExecutor,
+        _opcode: &ProcessedOpcode,
         gc_system: &mut GCSystem,
     ) -> Result<Option<Vec<SpawnedCoroutine>>, VMError> {
         let mut right = vm.pop_object_and_check()?;
@@ -1400,8 +1394,8 @@ mod vm_instructions {
     }
 
     pub fn binary_less(
-        vm: &mut IRExecutor,
-        opcode: &ProcessedOpcode,
+        vm: &mut VMExecutor,
+        _opcode: &ProcessedOpcode,
         gc_system: &mut GCSystem,
     ) -> Result<Option<Vec<SpawnedCoroutine>>, VMError> {
         let mut right = vm.pop_object_and_check()?;
@@ -1417,8 +1411,8 @@ mod vm_instructions {
     }
 
     pub fn binary_greater_equal(
-        vm: &mut IRExecutor,
-        opcode: &ProcessedOpcode,
+        vm: &mut VMExecutor,
+        _opcode: &ProcessedOpcode,
         gc_system: &mut GCSystem,
     ) -> Result<Option<Vec<SpawnedCoroutine>>, VMError> {
         let mut right = vm.pop_object_and_check()?;
@@ -1434,8 +1428,8 @@ mod vm_instructions {
     }
 
     pub fn binary_less_equal(
-        vm: &mut IRExecutor,
-        opcode: &ProcessedOpcode,
+        vm: &mut VMExecutor,
+        _opcode: &ProcessedOpcode,
         gc_system: &mut GCSystem,
     ) -> Result<Option<Vec<SpawnedCoroutine>>, VMError> {
         let mut right = vm.pop_object_and_check()?;
@@ -1452,8 +1446,8 @@ mod vm_instructions {
     }
 
     pub fn binary_and(
-        vm: &mut IRExecutor,
-        opcode: &ProcessedOpcode,
+        vm: &mut VMExecutor,
+        _opcode: &ProcessedOpcode,
         gc_system: &mut GCSystem,
     ) -> Result<Option<Vec<SpawnedCoroutine>>, VMError> {
         let mut right = vm.pop_object_and_check()?;
@@ -1469,8 +1463,8 @@ mod vm_instructions {
     }
 
     pub fn binary_or(
-        vm: &mut IRExecutor,
-        opcode: &ProcessedOpcode,
+        vm: &mut VMExecutor,
+        _opcode: &ProcessedOpcode,
         gc_system: &mut GCSystem,
     ) -> Result<Option<Vec<SpawnedCoroutine>>, VMError> {
         let mut right = vm.pop_object_and_check()?;
@@ -1485,8 +1479,8 @@ mod vm_instructions {
         Ok(None)
     }
     pub fn unary_not(
-        vm: &mut IRExecutor,
-        opcode: &ProcessedOpcode,
+        vm: &mut VMExecutor,
+        _opcode: &ProcessedOpcode,
         gc_system: &mut GCSystem,
     ) -> Result<Option<Vec<SpawnedCoroutine>>, VMError> {
         let mut ref_obj = vm.pop_object_and_check()?;
@@ -1500,8 +1494,8 @@ mod vm_instructions {
     }
 
     pub fn unary_minus(
-        vm: &mut IRExecutor,
-        opcode: &ProcessedOpcode,
+        vm: &mut VMExecutor,
+        _opcode: &ProcessedOpcode,
         gc_system: &mut GCSystem,
     ) -> Result<Option<Vec<SpawnedCoroutine>>, VMError> {
         let mut ref_obj = vm.pop_object_and_check()?;
@@ -1524,8 +1518,8 @@ mod vm_instructions {
     }
 
     pub fn unary_plus(
-        vm: &mut IRExecutor,
-        opcode: &ProcessedOpcode,
+        vm: &mut VMExecutor,
+        _opcode: &ProcessedOpcode,
         gc_system: &mut GCSystem,
     ) -> Result<Option<Vec<SpawnedCoroutine>>, VMError> {
         let mut ref_obj = vm.pop_object_and_check()?;
@@ -1548,8 +1542,8 @@ mod vm_instructions {
     }
 
     pub fn unary_bitwise_not(
-        vm: &mut IRExecutor,
-        opcode: &ProcessedOpcode,
+        vm: &mut VMExecutor,
+        _opcode: &ProcessedOpcode,
         gc_system: &mut GCSystem,
     ) -> Result<Option<Vec<SpawnedCoroutine>>, VMError> {
         let mut ref_obj = vm.pop_object_and_check()?;
@@ -1562,7 +1556,7 @@ mod vm_instructions {
         Ok(None)
     }
     pub fn let_var(
-        vm: &mut IRExecutor,
+        vm: &mut VMExecutor,
         opcode: &ProcessedOpcode,
         gc_system: &mut GCSystem,
     ) -> Result<Option<Vec<SpawnedCoroutine>>, VMError> {
@@ -1587,9 +1581,9 @@ mod vm_instructions {
     }
 
     pub fn get_var(
-        vm: &mut IRExecutor,
+        vm: &mut VMExecutor,
         opcode: &ProcessedOpcode,
-        gc_system: &mut GCSystem,
+        _gc_system: &mut GCSystem,
     ) -> Result<Option<Vec<SpawnedCoroutine>>, VMError> {
         if let OpcodeArgument::Int64(name_idx) = opcode.operand1 {
             let name = &vm
@@ -1608,9 +1602,9 @@ mod vm_instructions {
     }
 
     pub fn set_var(
-        vm: &mut IRExecutor,
-        opcode: &ProcessedOpcode,
-        gc_system: &mut GCSystem,
+        vm: &mut VMExecutor,
+        _opcode: &ProcessedOpcode,
+        _gc_system: &mut GCSystem,
     ) -> Result<Option<Vec<SpawnedCoroutine>>, VMError> {
         let value = &mut vm.pop_object_and_check()?;
         let reference = &mut vm.pop_object_and_check()?;
@@ -1622,9 +1616,9 @@ mod vm_instructions {
     }
 
     pub fn return_value(
-        vm: &mut IRExecutor,
-        opcode: &ProcessedOpcode,
-        gc_system: &mut GCSystem,
+        vm: &mut VMExecutor,
+        _opcode: &ProcessedOpcode,
+        _gc_system: &mut GCSystem,
     ) -> Result<Option<Vec<SpawnedCoroutine>>, VMError> {
         vm.context
             .pop_frame_until_function(&mut vm.stack, &mut vm.lambda_instructions)
@@ -1650,9 +1644,9 @@ mod vm_instructions {
         Ok(None)
     }
     pub fn raise(
-        vm: &mut IRExecutor,
-        opcode: &ProcessedOpcode,
-        gc_system: &mut GCSystem,
+        vm: &mut VMExecutor,
+        _opcode: &ProcessedOpcode,
+        _gc_system: &mut GCSystem,
     ) -> Result<Option<Vec<SpawnedCoroutine>>, VMError> {
         vm.context
             .pop_frame_until_boundary(&mut vm.stack, &mut vm.lambda_instructions)
@@ -1677,9 +1671,9 @@ mod vm_instructions {
     }
 
     pub fn emit(
-        vm: &mut IRExecutor,
-        opcode: &ProcessedOpcode,
-        gc_system: &mut GCSystem,
+        vm: &mut VMExecutor,
+        _opcode: &ProcessedOpcode,
+        _gc_system: &mut GCSystem,
     ) -> Result<Option<Vec<SpawnedCoroutine>>, VMError> {
         if vm.stack.len() < *vm.context.stack_pointers.last().unwrap() {
             return Err(VMError::EmptyStack);
@@ -1691,8 +1685,8 @@ mod vm_instructions {
         Ok(None)
     }
     pub fn is_finished(
-        vm: &mut IRExecutor,
-        opcode: &ProcessedOpcode,
+        vm: &mut VMExecutor,
+        _opcode: &ProcessedOpcode,
         gc_system: &mut GCSystem,
     ) -> Result<Option<Vec<SpawnedCoroutine>>, VMError> {
         if vm.stack.len() < *vm.context.stack_pointers.last().unwrap() {
@@ -1712,18 +1706,18 @@ mod vm_instructions {
         Ok(None)
     }
     pub fn new_frame(
-        vm: &mut IRExecutor,
-        opcode: &ProcessedOpcode,
-        gc_system: &mut GCSystem,
+        vm: &mut VMExecutor,
+        _opcode: &ProcessedOpcode,
+        _gc_system: &mut GCSystem,
     ) -> Result<Option<Vec<SpawnedCoroutine>>, VMError> {
         vm.context
             .new_frame(&mut vm.stack, ContextFrameType::NormalFrame, 0, false);
         Ok(None)
     }
     pub fn new_boundary_frame(
-        vm: &mut IRExecutor,
+        vm: &mut VMExecutor,
         opcode: &ProcessedOpcode,
-        gc_system: &mut GCSystem,
+        _gc_system: &mut GCSystem,
     ) -> Result<Option<Vec<SpawnedCoroutine>>, VMError> {
         let OpcodeArgument::Int64(offset) = opcode.operand1 else {
             return Err(VMError::InvalidInstruction(opcode.clone()));
@@ -1738,9 +1732,9 @@ mod vm_instructions {
         Ok(None)
     }
     pub fn pop_frame(
-        vm: &mut IRExecutor,
-        opcode: &ProcessedOpcode,
-        gc_system: &mut GCSystem,
+        vm: &mut VMExecutor,
+        _opcode: &ProcessedOpcode,
+        _gc_system: &mut GCSystem,
     ) -> Result<Option<Vec<SpawnedCoroutine>>, VMError> {
         vm.context
             .pop_frame_except_top(&mut vm.stack, &mut vm.lambda_instructions)
@@ -1748,9 +1742,9 @@ mod vm_instructions {
         Ok(None)
     }
     pub fn pop_boundary_frame(
-        vm: &mut IRExecutor,
-        opcode: &ProcessedOpcode,
-        gc_system: &mut GCSystem,
+        vm: &mut VMExecutor,
+        _opcode: &ProcessedOpcode,
+        _gc_system: &mut GCSystem,
     ) -> Result<Option<Vec<SpawnedCoroutine>>, VMError> {
         vm.context
             .pop_frame_except_top(&mut vm.stack, &mut vm.lambda_instructions)
@@ -1773,9 +1767,9 @@ mod vm_instructions {
         Ok(None)
     }
     pub fn discard_top(
-        vm: &mut IRExecutor,
-        opcode: &ProcessedOpcode,
-        gc_system: &mut GCSystem,
+        vm: &mut VMExecutor,
+        _opcode: &ProcessedOpcode,
+        _gc_system: &mut GCSystem,
     ) -> Result<Option<Vec<SpawnedCoroutine>>, VMError> {
         let obj = vm.pop_object()?;
         let mut obj = match obj {
@@ -1785,10 +1779,21 @@ mod vm_instructions {
         obj.drop_ref();
         Ok(None)
     }
-    pub fn jump_if_false(
-        vm: &mut IRExecutor,
+    pub fn jump(
+        vm: &mut VMExecutor,
         opcode: &ProcessedOpcode,
-        gc_system: &mut GCSystem,
+        _gc_system: &mut GCSystem,
+    ) -> Result<Option<Vec<SpawnedCoroutine>>, VMError> {
+        let OpcodeArgument::Int64(offset) = opcode.operand1 else {
+            return Err(VMError::InvalidInstruction(opcode.clone()));
+        };
+        vm.ip += offset as isize;
+        Ok(None)
+    }
+    pub fn jump_if_false(
+        vm: &mut VMExecutor,
+        opcode: &ProcessedOpcode,
+        _gc_system: &mut GCSystem,
     ) -> Result<Option<Vec<SpawnedCoroutine>>, VMError> {
         let OpcodeArgument::Int64(offset) = opcode.operand1 else {
             return Err(VMError::InvalidInstruction(opcode.clone()));
@@ -1807,9 +1812,9 @@ mod vm_instructions {
         Ok(None)
     }
     pub fn reset_stack(
-        vm: &mut IRExecutor,
-        opcode: &ProcessedOpcode,
-        gc_system: &mut GCSystem,
+        vm: &mut VMExecutor,
+        _opcode: &ProcessedOpcode,
+        _gc_system: &mut GCSystem,
     ) -> Result<Option<Vec<SpawnedCoroutine>>, VMError> {
         for i in *vm.context.stack_pointers.last().unwrap()..vm.stack.len() {
             let obj = vm.stack[i].clone();
@@ -1822,9 +1827,9 @@ mod vm_instructions {
         Ok(None)
     }
     pub fn get_attr(
-        vm: &mut IRExecutor,
-        opcode: &ProcessedOpcode,
-        gc_system: &mut GCSystem,
+        vm: &mut VMExecutor,
+        _opcode: &ProcessedOpcode,
+        _gc_system: &mut GCSystem,
     ) -> Result<Option<Vec<SpawnedCoroutine>>, VMError> {
         let mut attr = vm.pop_object_and_check()?;
         let obj = &mut vm.pop_object_and_check()?;
@@ -1836,8 +1841,8 @@ mod vm_instructions {
         Ok(None)
     }
     pub fn index_of(
-        vm: &mut IRExecutor,
-        opcode: &ProcessedOpcode,
+        vm: &mut VMExecutor,
+        _opcode: &ProcessedOpcode,
         gc_system: &mut GCSystem,
     ) -> Result<Option<Vec<SpawnedCoroutine>>, VMError> {
         let mut index = vm.pop_object_and_check()?;
@@ -1850,9 +1855,9 @@ mod vm_instructions {
         Ok(None)
     }
     pub fn key_of(
-        vm: &mut IRExecutor,
-        opcode: &ProcessedOpcode,
-        gc_system: &mut GCSystem,
+        vm: &mut VMExecutor,
+        _opcode: &ProcessedOpcode,
+        _gc_system: &mut GCSystem,
     ) -> Result<Option<Vec<SpawnedCoroutine>>, VMError> {
         let obj = &mut vm.pop_object_and_check()?;
         let result = try_key_of_as_vmobject(obj).map_err(VMError::VMVariableError)?;
@@ -1861,9 +1866,9 @@ mod vm_instructions {
         Ok(None)
     }
     pub fn value_of(
-        vm: &mut IRExecutor,
-        opcode: &ProcessedOpcode,
-        gc_system: &mut GCSystem,
+        vm: &mut VMExecutor,
+        _opcode: &ProcessedOpcode,
+        _gc_system: &mut GCSystem,
     ) -> Result<Option<Vec<SpawnedCoroutine>>, VMError> {
         let obj = &mut vm.pop_object_and_check()?;
         let result = try_value_of_as_vmobject(obj).map_err(VMError::VMVariableError)?;
@@ -1872,8 +1877,8 @@ mod vm_instructions {
         Ok(None)
     }
     pub fn assert(
-        vm: &mut IRExecutor,
-        opcode: &ProcessedOpcode,
+        vm: &mut VMExecutor,
+        _opcode: &ProcessedOpcode,
         gc_system: &mut GCSystem,
     ) -> Result<Option<Vec<SpawnedCoroutine>>, VMError> {
         let mut obj = vm.pop_object_and_check()?;
@@ -1891,8 +1896,8 @@ mod vm_instructions {
         Ok(None)
     }
     pub fn self_of(
-        vm: &mut IRExecutor,
-        opcode: &ProcessedOpcode,
+        vm: &mut VMExecutor,
+        _opcode: &ProcessedOpcode,
         gc_system: &mut GCSystem,
     ) -> Result<Option<Vec<SpawnedCoroutine>>, VMError> {
         let mut obj = vm.pop_object_and_check()?;
@@ -1915,8 +1920,8 @@ mod vm_instructions {
         Ok(None)
     }
     pub fn deepcopy(
-        vm: &mut IRExecutor,
-        opcode: &ProcessedOpcode,
+        vm: &mut VMExecutor,
+        _opcode: &ProcessedOpcode,
         gc_system: &mut GCSystem,
     ) -> Result<Option<Vec<SpawnedCoroutine>>, VMError> {
         let obj = &mut vm.pop_object_and_check()?;
@@ -1931,8 +1936,8 @@ mod vm_instructions {
         Ok(None)
     }
     pub fn copy(
-        vm: &mut IRExecutor,
-        opcode: &ProcessedOpcode,
+        vm: &mut VMExecutor,
+        _opcode: &ProcessedOpcode,
         gc_system: &mut GCSystem,
     ) -> Result<Option<Vec<SpawnedCoroutine>>, VMError> {
         let obj = &mut vm.pop_object_and_check()?;
@@ -1947,8 +1952,8 @@ mod vm_instructions {
         Ok(None)
     }
     pub fn call_lambda(
-        vm: &mut IRExecutor,
-        opcode: &ProcessedOpcode,
+        vm: &mut VMExecutor,
+        _opcode: &ProcessedOpcode,
         gc_system: &mut GCSystem,
     ) -> Result<Option<Vec<SpawnedCoroutine>>, VMError> {
         let arg_tuple = &mut vm.pop_object_and_check()?;
@@ -1991,16 +1996,16 @@ mod vm_instructions {
             .vm_instructions_package
             .get_table();
         let ip = *func_ips.get(&signature).unwrap() as isize;
-        vm.ip = ip - 1;
+        vm.ip = ip;
 
         arg_tuple.drop_ref();
         lambda.drop_ref();
         Ok(None)
     }
     pub fn async_call_lambda(
-        vm: &mut IRExecutor,
-        opcode: &ProcessedOpcode,
-        gc_system: &mut GCSystem,
+        vm: &mut VMExecutor,
+        _opcode: &ProcessedOpcode,
+        _gc_system: &mut GCSystem,
     ) -> Result<Option<Vec<SpawnedCoroutine>>, VMError> {
         let arg_tuple = &mut vm.pop_object_and_check()?;
         let lambda = &mut vm.pop_object_and_check()?;
@@ -2038,8 +2043,8 @@ mod vm_instructions {
         Ok(Some(spawned_coroutines))
     }
     pub fn wrap(
-        vm: &mut IRExecutor,
-        opcode: &ProcessedOpcode,
+        vm: &mut VMExecutor,
+        _opcode: &ProcessedOpcode,
         gc_system: &mut GCSystem,
     ) -> Result<Option<Vec<SpawnedCoroutine>>, VMError> {
         let obj = &mut vm.pop_object_and_check()?;
@@ -2051,8 +2056,8 @@ mod vm_instructions {
     }
 
     pub fn is_in(
-        vm: &mut IRExecutor,
-        opcode: &ProcessedOpcode,
+        vm: &mut VMExecutor,
+        _opcode: &ProcessedOpcode,
         gc_system: &mut GCSystem,
     ) -> Result<Option<Vec<SpawnedCoroutine>>, VMError> {
         let mut container = vm.pop_object_and_check()?;
@@ -2070,8 +2075,8 @@ mod vm_instructions {
     }
 
     pub fn build_range(
-        vm: &mut IRExecutor,
-        opcode: &ProcessedOpcode,
+        vm: &mut VMExecutor,
+        _opcode: &ProcessedOpcode,
         gc_system: &mut GCSystem,
     ) -> Result<Option<Vec<SpawnedCoroutine>>, VMError> {
         let mut end = vm.pop_object_and_check()?;
@@ -2099,8 +2104,8 @@ mod vm_instructions {
         Ok(None)
     }
     pub fn type_of(
-        vm: &mut IRExecutor,
-        opcode: &ProcessedOpcode,
+        vm: &mut VMExecutor,
+        _opcode: &ProcessedOpcode,
         gc_system: &mut GCSystem,
     ) -> Result<Option<Vec<SpawnedCoroutine>>, VMError> {
         let mut ref_obj = vm.pop_object_and_check()?;
@@ -2158,8 +2163,8 @@ mod vm_instructions {
         Ok(None)
     }
     pub fn import(
-        vm: &mut IRExecutor,
-        opcode: &ProcessedOpcode,
+        vm: &mut VMExecutor,
+        _opcode: &ProcessedOpcode,
         gc_system: &mut GCSystem,
     ) -> Result<Option<Vec<SpawnedCoroutine>>, VMError> {
         let mut path_arg = vm.pop_object_and_check()?;
@@ -2213,7 +2218,7 @@ mod vm_instructions {
         Ok(None)
     }
     pub fn alias(
-        vm: &mut IRExecutor,
+        vm: &mut VMExecutor,
         opcode: &ProcessedOpcode,
         gc_system: &mut GCSystem,
     ) -> Result<Option<Vec<SpawnedCoroutine>>, VMError> {
@@ -2237,8 +2242,8 @@ mod vm_instructions {
         Ok(None)
     }
     pub fn wipe_alias(
-        vm: &mut IRExecutor,
-        opcode: &ProcessedOpcode,
+        vm: &mut VMExecutor,
+        _opcode: &ProcessedOpcode,
         gc_system: &mut GCSystem,
     ) -> Result<Option<Vec<SpawnedCoroutine>>, VMError> {
         let obj = &mut vm.pop_object_and_check()?;
@@ -2250,8 +2255,8 @@ mod vm_instructions {
         Ok(None)
     }
     pub fn alias_of(
-        vm: &mut IRExecutor,
-        opcode: &ProcessedOpcode,
+        vm: &mut VMExecutor,
+        _opcode: &ProcessedOpcode,
         gc_system: &mut GCSystem,
     ) -> Result<Option<Vec<SpawnedCoroutine>>, VMError> {
         let mut obj = vm.pop_object_and_check()?;
@@ -2271,7 +2276,7 @@ mod vm_instructions {
     }
 }
 
-impl IRExecutor {
+impl VMExecutor {
     pub fn enter_lambda(
         &mut self,
         lambda_object: &mut GCRef,
@@ -2375,7 +2380,7 @@ impl IRExecutor {
             .unwrap() as isize;
 
         //create builtin functions
-        IRExecutor::inject_builtin_functions(&mut self.context, gc_system)?;
+        VMExecutor::inject_builtin_functions(&mut self.context, gc_system)?;
         Ok(())
     }
 
@@ -2403,7 +2408,6 @@ impl IRExecutor {
                 let mut ip = self.ip as usize;
                 let mut instruction_32 = Instruction32::new(code, &mut ip);
 
-                println!("# ip -> {}", self.ip); // debug
                 let decoded = instruction_32.get_processed_opcode();
                 if decoded.is_none() {
                     return Err(VMError::AssertFailed);
@@ -2427,7 +2431,7 @@ impl IRExecutor {
                 // self.context.debug_print_all_vars();
                 // gc_system.collect(); // debug
                 // self.debug_output_stack();
-                println!("{}: {:?}", self.ip, decoded); // debug
+                // println!("{}: {}", self.ip, decoded.to_string()); // debug
                 spawned_coroutines = self.instruction_table
                     .get(decoded.instruction as usize)
                     .unwrap()(
@@ -2456,7 +2460,7 @@ impl IRExecutor {
     }
 }
 
-impl IRExecutor {
+impl VMExecutor {
     fn push_vmobject(&mut self, obj: GCRef) -> Result<(), VMError> {
         self.stack.push(VMStackObject::VMObject(obj.clone()));
         Ok(())
