@@ -421,12 +421,10 @@ pub enum ASTNodeOperation {
     Divide,       // /
     Modulus,      // %
     Power,        // **
-    BitwiseAnd,   // &
-    BitwiseOr,    // |
-    BitwiseXor,   // ^
     ShiftLeft,    // <<
     ShiftRight,   // >>
     And,          // and
+    Xor,         // xor
     Or,           // or
     Not,          // not
     Equal,        // ==
@@ -437,7 +435,6 @@ pub enum ASTNodeOperation {
     LessEqual,    // <=
     LeftShift,    // << (left shift)
     RightShift,   // >> (right shift)
-    BitwiseNot,   // ~ (bitwise NOT)
 }
 
 #[derive(Debug, PartialEq, Eq, Clone)]
@@ -732,6 +729,12 @@ fn match_all<'t>(
 
     node_matcher.add_matcher(Box::new(
         |tokens, current| -> Result<(Option<ASTNode<'t>>, usize), ParserError<'t>> {
+            match_xor(tokens, current)
+        },
+    ));
+
+    node_matcher.add_matcher(Box::new(
+        |tokens, current| -> Result<(Option<ASTNode<'t>>, usize), ParserError<'t>> {
             match_not(tokens, current)
         },
     ));
@@ -751,24 +754,6 @@ fn match_all<'t>(
     node_matcher.add_matcher(Box::new(
         |tokens, current| -> Result<(Option<ASTNode<'t>>, usize), ParserError<'t>> {
             match_operation_mul_div_mod(tokens, current)
-        },
-    ));
-
-    node_matcher.add_matcher(Box::new(
-        |tokens, current| -> Result<(Option<ASTNode<'t>>, usize), ParserError<'t>> {
-            match_bitwise_or(tokens, current)
-        },
-    ));
-
-    node_matcher.add_matcher(Box::new(
-        |tokens, current| -> Result<(Option<ASTNode<'t>>, usize), ParserError<'t>> {
-            match_bitwise_and(tokens, current)
-        },
-    ));
-
-    node_matcher.add_matcher(Box::new(
-        |tokens, current| -> Result<(Option<ASTNode<'t>>, usize), ParserError<'t>> {
-            match_bitwise_xor(tokens, current)
         },
     ));
 
@@ -1454,6 +1439,62 @@ fn match_and<'t>(
     ));
 }
 
+fn match_xor<'t>(
+    tokens: &Vec<GatheredTokens<'t>>,
+    current: usize,
+) -> Result<(Option<ASTNode<'t>>, usize), ParserError<'t>> {
+    let mut offset: usize = tokens.len() - current - 1;
+    let mut operator = Option::<&str>::None;
+    let mut operator_pos: usize = 0;
+    while offset > 0 {
+        let pos = current + offset;
+        if is_identifier(&tokens[pos], "xor") {
+            operator = Some("xor");
+            operator_pos = pos;
+            break;
+        }
+        offset -= 1;
+    }
+    if operator.is_none() {
+        return Ok((None, 0));
+    }
+
+    let left_tokens = &tokens[current..operator_pos].to_vec();
+    let right_tokens = &tokens[operator_pos + 1..].to_vec();
+
+    let (left, left_offset) = match_all(left_tokens, 0)?;
+    if left.is_none() {
+        return Ok((None, 0));
+    }
+    let left = left.unwrap();
+    if left_offset != left_tokens.len() {
+        return Err(ParserError::NotFullyMatched(
+            left_tokens.first().unwrap().first().unwrap(),
+            left_tokens.last().unwrap().last().unwrap(),
+        ));
+    }
+    let (right, right_offset) = match_all(right_tokens, 0)?;
+    if right.is_none() {
+        return Ok((None, 0));
+    }
+    let right = right.unwrap();
+    if right_offset != right_tokens.len() {
+        return Err(ParserError::NotFullyMatched(
+            right_tokens.first().unwrap().first().unwrap(),
+            right_tokens.last().unwrap().last().unwrap(),
+        ));
+    }
+    return Ok((
+        Some(ASTNode::new(
+            ASTNodeType::Operation(ASTNodeOperation::Xor),
+            Some(&tokens[current][0]),
+            Some(vec![left, right]),
+        )),
+        tokens.len() - current, // return full length of the tokens
+    ));
+}
+
+
 fn match_not<'t>(
     tokens: &Vec<GatheredTokens<'t>>,
     current: usize,
@@ -1720,170 +1761,6 @@ fn match_operation_mul_div_mod<'t>(
     ));
 }
 
-fn match_bitwise_or<'t>(
-    tokens: &Vec<GatheredTokens<'t>>,
-    current: usize,
-) -> Result<(Option<ASTNode<'t>>, usize), ParserError<'t>> {
-    let mut offset: usize = tokens.len() - current - 1;
-    let mut operator = Option::<&str>::None;
-    let mut operator_pos: usize = 0;
-    while offset > 0 {
-        let pos = current + offset;
-        if is_symbol(&tokens[pos], "|") {
-            operator = Some("|");
-            operator_pos = pos;
-            break;
-        }
-        offset -= 1;
-    }
-    if operator.is_none() {
-        return Ok((None, 0));
-    }
-
-    let left_tokens = &tokens[current..operator_pos].to_vec();
-    let right_tokens = &tokens[operator_pos + 1..].to_vec();
-
-    let (left, left_offset) = match_all(left_tokens, 0)?;
-    if left.is_none() {
-        return Ok((None, 0));
-    }
-    let left = left.unwrap();
-    if left_offset != left_tokens.len() {
-        return Err(ParserError::NotFullyMatched(
-            left_tokens.first().unwrap().first().unwrap(),
-            left_tokens.last().unwrap().last().unwrap(),
-        ));
-    }
-    let (right, right_offset) = match_all(right_tokens, 0)?;
-    if right.is_none() {
-        return Ok((None, 0));
-    }
-    let right = right.unwrap();
-    if right_offset != right_tokens.len() {
-        return Err(ParserError::NotFullyMatched(
-            right_tokens.first().unwrap().first().unwrap(),
-            right_tokens.last().unwrap().last().unwrap(),
-        ));
-    }
-    return Ok((
-        Some(ASTNode::new(
-            ASTNodeType::Operation(ASTNodeOperation::BitwiseOr),
-            Some(&tokens[current][0]),
-            Some(vec![left, right]),
-        )),
-        tokens.len() - current, // return full length of the tokens
-    ));
-}
-
-fn match_bitwise_and<'t>(
-    tokens: &Vec<GatheredTokens<'t>>,
-    current: usize,
-) -> Result<(Option<ASTNode<'t>>, usize), ParserError<'t>> {
-    let mut offset: usize = tokens.len() - current - 1;
-    let mut operator = Option::<&str>::None;
-    let mut operator_pos: usize = 0;
-    while offset > 0 {
-        let pos = current + offset;
-        if is_symbol(&tokens[pos], "&") {
-            operator = Some("&");
-            operator_pos = pos;
-            break;
-        }
-        offset -= 1;
-    }
-    if operator.is_none() {
-        return Ok((None, 0));
-    }
-
-    let left_tokens = &tokens[current..operator_pos].to_vec();
-    let right_tokens = &tokens[operator_pos + 1..].to_vec();
-
-    let (left, left_offset) = match_all(left_tokens, 0)?;
-    if left.is_none() {
-        return Ok((None, 0));
-    }
-    let left = left.unwrap();
-    if left_offset != left_tokens.len() {
-        return Err(ParserError::NotFullyMatched(
-            left_tokens.first().unwrap().first().unwrap(),
-            left_tokens.last().unwrap().last().unwrap(),
-        ));
-    }
-    let (right, right_offset) = match_all(right_tokens, 0)?;
-    if right.is_none() {
-        return Ok((None, 0));
-    }
-    let right = right.unwrap();
-    if right_offset != right_tokens.len() {
-        return Err(ParserError::NotFullyMatched(
-            right_tokens.first().unwrap().first().unwrap(),
-            right_tokens.last().unwrap().last().unwrap(),
-        ));
-    }
-    return Ok((
-        Some(ASTNode::new(
-            ASTNodeType::Operation(ASTNodeOperation::BitwiseAnd),
-            Some(&tokens[current][0]),
-            Some(vec![left, right]),
-        )),
-        tokens.len() - current, // return full length of the tokens
-    ));
-}
-
-fn match_bitwise_xor<'t>(
-    tokens: &Vec<GatheredTokens<'t>>,
-    current: usize,
-) -> Result<(Option<ASTNode<'t>>, usize), ParserError<'t>> {
-    let mut offset: usize = tokens.len() - current - 1;
-    let mut operator = Option::<&str>::None;
-    let mut operator_pos: usize = 0;
-    while offset > 0 {
-        let pos = current + offset;
-        if is_symbol(&tokens[pos], "^") {
-            operator = Some("^");
-            operator_pos = pos;
-            break;
-        }
-        offset -= 1;
-    }
-    if operator.is_none() {
-        return Ok((None, 0));
-    }
-
-    let left_tokens = &tokens[current..operator_pos].to_vec();
-    let right_tokens = &tokens[operator_pos + 1..].to_vec();
-
-    let (left, left_offset) = match_all(left_tokens, 0)?;
-    if left.is_none() {
-        return Ok((None, 0));
-    }
-    let left = left.unwrap();
-    if left_offset != left_tokens.len() {
-        return Err(ParserError::NotFullyMatched(
-            left_tokens.first().unwrap().first().unwrap(),
-            left_tokens.last().unwrap().last().unwrap(),
-        ));
-    }
-    let (right, right_offset) = match_all(right_tokens, 0)?;
-    if right.is_none() {
-        return Ok((None, 0));
-    }
-    let right = right.unwrap();
-    if right_offset != right_tokens.len() {
-        return Err(ParserError::NotFullyMatched(
-            right_tokens.first().unwrap().first().unwrap(),
-            right_tokens.last().unwrap().last().unwrap(),
-        ));
-    }
-    return Ok((
-        Some(ASTNode::new(
-            ASTNodeType::Operation(ASTNodeOperation::BitwiseXor),
-            Some(&tokens[current][0]),
-            Some(vec![left, right]),
-        )),
-        tokens.len() - current, // return full length of the tokens
-    ));
-}
 fn match_bitwise_shift<'t>(
     tokens: &Vec<GatheredTokens<'t>>,
     current: usize,
@@ -1952,7 +1829,6 @@ fn match_unary<'t>(
     }
     if is_symbol(&tokens[current], "-")
         || is_symbol(&tokens[current], "+")
-        || is_symbol(&tokens[current], "~")
     {
         let (node, node_offset) = match_all(tokens, current + 1)?;
         if node.is_none() {
@@ -1962,7 +1838,6 @@ fn match_unary<'t>(
         let operation = match tokens[current][0].token {
             "-" => ASTNodeOperation::Subtract,
             "+" => ASTNodeOperation::Add,
-            "~" => ASTNodeOperation::BitwiseNot,
             _ => unreachable!(),
         };
         return Ok((

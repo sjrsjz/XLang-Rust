@@ -273,6 +273,12 @@ impl<'t> IRGenerator<'t> {
                             IR::BinaryOp(IROperation::Or),
                         ));
                     }
+                    ASTNodeOperation::Xor => {
+                        instructions.push((
+                            self.generate_debug_info(ast_node),
+                            IR::BinaryOp(IROperation::Xor),
+                        ));
+                    }
                     ASTNodeOperation::Not => {
                         instructions.push((
                             self.generate_debug_info(ast_node),
@@ -315,24 +321,6 @@ impl<'t> IRGenerator<'t> {
                             IR::BinaryOp(IROperation::LessEqual),
                         ));
                     }
-                    ASTNodeOperation::BitwiseAnd => {
-                        instructions.push((
-                            self.generate_debug_info(ast_node),
-                            IR::BinaryOp(IROperation::BitwiseAnd),
-                        ));
-                    }
-                    ASTNodeOperation::BitwiseOr => {
-                        instructions.push((
-                            self.generate_debug_info(ast_node),
-                            IR::BinaryOp(IROperation::BitwiseOr),
-                        ));
-                    }
-                    ASTNodeOperation::BitwiseXor => {
-                        instructions.push((
-                            self.generate_debug_info(ast_node),
-                            IR::BinaryOp(IROperation::BitwiseXor),
-                        ));
-                    }
                     ASTNodeOperation::ShiftLeft => {
                         instructions.push((
                             self.generate_debug_info(ast_node),
@@ -361,12 +349,6 @@ impl<'t> IRGenerator<'t> {
                         instructions.push((
                             self.generate_debug_info(ast_node),
                             IR::BinaryOp(IROperation::ShiftRight),
-                        ));
-                    }
-                    ASTNodeOperation::BitwiseNot => {
-                        instructions.push((
-                            self.generate_debug_info(ast_node),
-                            IR::UnaryOp(IROperation::BitwiseNot),
                         ));
                     }
                 }

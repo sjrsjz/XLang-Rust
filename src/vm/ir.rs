@@ -8,21 +8,18 @@ pub enum IROperation {
     Divide,       // /
     Modulus,      // %
     Power,        // ^
-    BitwiseAnd,   // &
-    BitwiseOr,    // |
-    BitwiseXor,   // ^
+    And,   // and
+    Or,    // or
+    Xor,   // xor
     ShiftLeft,    // <<
     ShiftRight,   // >>
-    And,          // and
-    Or,           // or
-    Not,          // not
     Equal,        // ==
     NotEqual,     // !=
     Greater,      // >
     Less,         // <
     GreaterEqual, // >=
     LessEqual,    // <=
-    BitwiseNot,   // ~
+    Not,   // not
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -40,6 +37,7 @@ pub enum IR{
     LoadBytes(Vec<u8>), // load bytes to stack
     LoadBool(bool), // load bool to stack
     LoadLambda(String, usize), // signature, code position
+    LoadSet,
     ForkInstruction, // "fork" instruction and push the forked instruction gcref to stack
     BuildTuple(usize), // number of elements
     BuildKeyValue, // pop key and value from stack and build key value pair
@@ -79,6 +77,7 @@ pub enum IR{
     RedirectJumpIfFalse(String), 
     RedirectLabel(String),
     RedirectNewBoundaryFrame(String),
+    RedirectNextOrJump(String),
     Alias(String),
     WipeAlias,
     AliasOf,
@@ -86,6 +85,8 @@ pub enum IR{
     Emit,
     AsyncCallLambda,
     IsFinished,
+    NextOrJump(isize),
+    ResetIter
 }
 
 #[derive(Serialize, Deserialize, Debug, Clone)]

@@ -220,13 +220,11 @@ impl IRTranslator {
                         IROperation::Divide => VMInstruction::BinaryDiv,
                         IROperation::Modulus => VMInstruction::BinaryMod,
                         IROperation::Power => VMInstruction::BinaryPow,
-                        IROperation::BitwiseAnd => VMInstruction::BinaryBitAnd,
-                        IROperation::BitwiseOr => VMInstruction::BinaryBitOr,
-                        IROperation::BitwiseXor => VMInstruction::BinaryBitXor,
+                        IROperation::And => VMInstruction::BinaryBitAnd,
+                        IROperation::Or => VMInstruction::BinaryBitOr,
+                        IROperation::Xor => VMInstruction::BinaryBitXor,
                         IROperation::ShiftLeft => VMInstruction::BinaryShl,
                         IROperation::ShiftRight => VMInstruction::BinaryShr,
-                        IROperation::And => VMInstruction::BinaryAnd,
-                        IROperation::Or => VMInstruction::BinaryOr,
                         IROperation::Equal => VMInstruction::BinaryEq,
                         IROperation::NotEqual => VMInstruction::BinaryNe,
                         IROperation::Greater => VMInstruction::BinaryGt,
@@ -251,8 +249,7 @@ impl IRTranslator {
                 }
                 IR::UnaryOp(op) => {
                     let opcode = match op {
-                        IROperation::Not => VMInstruction::UnaryNot,
-                        IROperation::BitwiseNot => VMInstruction::UnaryBitNot,
+                        IROperation::Not => VMInstruction::UnaryBitNot,
                         IROperation::Add => VMInstruction::UnaryAbs,
                         IROperation::Subtract => VMInstruction::UnaryNeg,
                         _ => {

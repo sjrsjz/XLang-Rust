@@ -36,21 +36,18 @@ pub enum VMInstruction {
     BinaryBitXor = 28,   // ^
     BinaryShl = 29,      // <<
     BinaryShr = 30,      // >>
-    BinaryAnd = 31,      // and
-    BinaryOr = 32,       // or
-    BinaryEq = 33,       // ==
-    BinaryNe = 34,       // !=
-    BinaryGt = 35,       // >
-    BinaryLt = 36,       // <
-    BinaryGe = 37,       // >=
-    BinaryLe = 38,       // <=
-    BinaryIn = 39,       // in
+    BinaryEq = 31,       // ==
+    BinaryNe = 32,       // !=
+    BinaryGt = 33,       // >
+    BinaryLt = 34,       // <
+    BinaryGe = 35,       // >=
+    BinaryLe = 36,       // <=
+    BinaryIn = 37,       // in
     
     // 一元操作
-    UnaryNot = 40,       // !
-    UnaryBitNot = 41,    // ~
-    UnaryAbs = 42,       // abs
-    UnaryNeg = 43,       // -    
+    UnaryBitNot = 40,    // ~
+    UnaryAbs = 41,       // abs
+    UnaryNeg = 42,       // -    
     
     // 变量与引用
     StoreVar = 50,       // 存储变量
@@ -133,8 +130,6 @@ impl VMInstruction {
             Self::BinaryBitXor => "BinaryBitXor",
             Self::BinaryShl => "BinaryShl",
             Self::BinaryShr => "BinaryShr",
-            Self::BinaryAnd => "BinaryAnd",
-            Self::BinaryOr => "BinaryOr",
             Self::BinaryEq => "BinaryEq",
             Self::BinaryNe => "BinaryNe",
             Self::BinaryGt => "BinaryGt",
@@ -143,7 +138,6 @@ impl VMInstruction {
             Self::BinaryLe => "BinaryLe",
             Self::BinaryIn => "BinaryIn",
             
-            Self::UnaryNot => "UnaryNot",
             Self::UnaryBitNot => "UnaryBitNot",
             Self::UnaryAbs => "UnaryAbs",
             Self::UnaryNeg => "UnaryNeg",
@@ -222,20 +216,17 @@ impl VMInstruction {
             28 => Some(Self::BinaryBitXor),
             29 => Some(Self::BinaryShl),
             30 => Some(Self::BinaryShr),
-            31 => Some(Self::BinaryAnd),
-            32 => Some(Self::BinaryOr),
-            33 => Some(Self::BinaryEq),
-            34 => Some(Self::BinaryNe),
-            35 => Some(Self::BinaryGt),
-            36 => Some(Self::BinaryLt),
-            37 => Some(Self::BinaryGe),
-            38 => Some(Self::BinaryLe),
-            39 => Some(Self::BinaryIn),
+            31 => Some(Self::BinaryEq),
+            32 => Some(Self::BinaryNe),
+            33 => Some(Self::BinaryGt),
+            34 => Some(Self::BinaryLt),
+            35 => Some(Self::BinaryGe),
+            36 => Some(Self::BinaryLe),
+            37 => Some(Self::BinaryIn),
             
-            40 => Some(Self::UnaryNot),
-            41 => Some(Self::UnaryBitNot),
-            42 => Some(Self::UnaryAbs),
-            43 => Some(Self::UnaryNeg),
+            40 => Some(Self::UnaryBitNot),
+            41 => Some(Self::UnaryAbs),
+            42 => Some(Self::UnaryNeg),
             
             50 => Some(Self::StoreVar),
             51 => Some(Self::LoadVar),
@@ -290,9 +281,9 @@ impl VMInstruction {
             Self::BuildRange | Self::BindSelf | Self::BinaryAdd | Self::BinarySub |
             Self::BinaryMul | Self::BinaryDiv | Self::BinaryMod | Self::BinaryPow |
             Self::BinaryBitAnd | Self::BinaryBitOr | Self::BinaryBitXor | Self::BinaryShl |
-            Self::BinaryShr | Self::BinaryAnd | Self::BinaryOr | Self::BinaryEq |
+            Self::BinaryShr | Self::BinaryEq |
             Self::BinaryNe | Self::BinaryGt | Self::BinaryLt | Self::BinaryGe |
-            Self::BinaryLe | Self::BinaryIn | Self::UnaryNot | Self::UnaryBitNot |
+            Self::BinaryLe | Self::BinaryIn | Self::UnaryBitNot |
             Self::SetValue | Self::WrapObj | Self::GetAttr | Self::IndexOf |
             Self::KeyOf | Self::ValueOf | Self::SelfOf | Self::TypeOf | Self::DeepCopy |
             Self::ShallowCopy | Self::MakeRef | Self::Deref | Self::Call |
@@ -317,9 +308,9 @@ impl VMInstruction {
             Self::BuildRange | Self::BindSelf | Self::BinaryAdd | Self::BinarySub |
             Self::BinaryMul | Self::BinaryDiv | Self::BinaryMod | Self::BinaryPow |
             Self::BinaryBitAnd | Self::BinaryBitOr | Self::BinaryBitXor | Self::BinaryShl |
-            Self::BinaryShr | Self::BinaryAnd | Self::BinaryOr | Self::BinaryEq |
+            Self::BinaryShr | Self::BinaryEq |
             Self::BinaryNe | Self::BinaryGt | Self::BinaryLt | Self::BinaryGe |
-            Self::BinaryLe | Self::BinaryIn | Self::UnaryNot | Self::UnaryBitNot |
+            Self::BinaryLe | Self::BinaryIn | Self::UnaryBitNot |
             Self::SetValue | Self::WrapObj | Self::GetAttr | Self::IndexOf |
             Self::KeyOf | Self::ValueOf | Self::SelfOf | Self::TypeOf | Self::DeepCopy |
             Self::ShallowCopy | Self::MakeRef | Self::Deref | Self::Call |
