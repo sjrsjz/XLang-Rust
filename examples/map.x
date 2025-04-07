@@ -16,3 +16,9 @@ print(mapped);
 
 tokenized := "abdcefg" |> (x?) -> x;
 print(tokenized);
+
+list_map := 0..10 |> (x?) -> x * 2 |> (x?) -> {
+    print(x);
+    x
+};
+print(list_map);

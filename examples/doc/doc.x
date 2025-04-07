@@ -15,12 +15,12 @@ assert(my_int * 2 == 84);
 assert(my_int / 2 == 21.0);
 assert(my_int ** 2 == 1764);
 assert(my_int % 5 == 2);
-assert(my_int & 1 == 0);
-assert(my_int | 1 == 43);
-assert(my_int ^ 1 == 43);
+assert((my_int and 1) == 0);
+assert((my_int or 1) == 43);
+assert((my_int xor 1) == 43);
 assert(my_int << 1 == 84);
 assert(my_int >> 1 == 21);
-assert(~my_int == -43);
+assert(not my_int == -43);
 assert(-my_int == -42);
 
 /* 2. float */
