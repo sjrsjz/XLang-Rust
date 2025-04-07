@@ -441,7 +441,7 @@ impl<'t> IRGenerator<'t> {
             ASTNodeType::Expressions => {
                 let mut instructions = Vec::new();
                 for child in &ast_node.children {
-                    instructions.push((self.generate_debug_info(ast_node), IR::ResetStack));
+                    instructions.push((self.generate_debug_info(child), IR::ResetStack));
                     instructions.extend(self.generate_without_redirect(child)?);
                 }
                 Ok(instructions)
@@ -697,6 +697,32 @@ impl<'t> IRGenerator<'t> {
                         instructions.extend(self.generate_without_redirect(&ast_node.children[0])?);
                         instructions.push((self.generate_debug_info(ast_node), IR::BindSelf));
                     }
+                    ASTNodeModifier::Collect => {
+                        let (label1, _) = self.new_label();
+                        let (label2, _) = self.new_label();
+                        let (label3, _) = self.new_label();
+                        let (label4, _) = self.new_label();
+                        instructions.push((self.generate_debug_info(ast_node), IR::BuildTuple(0)));
+                        instructions.extend(self.generate_without_redirect(&ast_node.children[0])?);
+                        instructions.push((self.generate_debug_info(ast_node), IR::ResetIter));
+                        instructions.push((self.generate_debug_info(ast_node), IR::RedirectLabel(label4.clone())));
+                        instructions.push((self.generate_debug_info(ast_node), IR::RedirectNextOrJump(label1.clone())));
+                        instructions.push((self.generate_debug_info(ast_node), IR::ForkStackObjectRef(1)));
+                        instructions.push((self.generate_debug_info(ast_node), IR::ValueOf));
+                        instructions.push((self.generate_debug_info(ast_node), IR::ForkStackObjectRef(1)));
+                        instructions.push((self.generate_debug_info(ast_node), IR::BuildTuple(1)));
+                        instructions.push((self.generate_debug_info(ast_node), IR::CallLambda));
+                        instructions.push((self.generate_debug_info(ast_node), IR::RedirectJumpIfFalse(label2.clone())));
+                        instructions.push((self.generate_debug_info(ast_node), IR::PushValueIntoTuple(2)));
+                        instructions.push((self.generate_debug_info(ast_node), IR::RedirectJump(label3.clone())));
+                        instructions.push((self.generate_debug_info(ast_node), IR::RedirectLabel(label2.clone())));
+                        instructions.push((self.generate_debug_info(ast_node), IR::Pop));
+                        instructions.push((self.generate_debug_info(ast_node), IR::Pop));
+                        instructions.push((self.generate_debug_info(ast_node), IR::RedirectLabel(label3.clone())));
+                        instructions.push((self.generate_debug_info(ast_node), IR::RedirectJump(label4.clone())));
+                        instructions.push((self.generate_debug_info(ast_node), IR::RedirectLabel(label1.clone())));
+                        instructions.push((self.generate_debug_info(ast_node), IR::Pop));
+                    }
                 }
                 Ok(instructions)
             }
@@ -712,6 +738,19 @@ impl<'t> IRGenerator<'t> {
                 instructions.extend(self.generate_without_redirect(&ast_node.children[0])?);
                 instructions.extend(self.generate_without_redirect(&ast_node.children[1])?);
                 instructions.push((self.generate_debug_info(ast_node), IR::In));
+                let (label_1, _) = self.new_label();
+                let (label_2, _) = self.new_label();
+                instructions.push((self.generate_debug_info(ast_node), IR::RedirectJumpIfFalse(label_1.clone())));
+                instructions.push((self.generate_debug_info(ast_node), IR::ValueOf));
+                instructions.push((self.generate_debug_info(ast_node), IR::Swap(0, 1)));
+                instructions.push((self.generate_debug_info(ast_node), IR::BuildTuple(1)));
+                instructions.push((self.generate_debug_info(ast_node), IR::CallLambda));
+                instructions.push((self.generate_debug_info(ast_node), IR::RedirectJump(label_2.clone())));
+                instructions.push((self.generate_debug_info(ast_node), IR::RedirectLabel(label_1)));
+                instructions.push((self.generate_debug_info(ast_node), IR::Pop));
+                instructions.push((self.generate_debug_info(ast_node), IR::Pop));
+                instructions.push((self.generate_debug_info(ast_node), IR::LoadBool(false)));
+                instructions.push((self.generate_debug_info(ast_node), IR::RedirectLabel(label_2)));
                 Ok(instructions)
             }
             ASTNodeType::Alias(alias) => {
@@ -749,6 +788,13 @@ impl<'t> IRGenerator<'t> {
             ASTNodeType::AssumeTuple => {
                 let mut instructions = Vec::new();
                 instructions.extend(self.generate_without_redirect(&ast_node.children[0])?);
+                Ok(instructions)
+            }
+            ASTNodeType::Set => {
+                let mut instructions = Vec::new();
+                instructions.extend(self.generate_without_redirect(&ast_node.children[0])?);
+                instructions.extend(self.generate_without_redirect(&ast_node.children[1])?);
+                instructions.push((self.generate_debug_info(ast_node), IR::BuildSet));
                 Ok(instructions)
             }
         }
@@ -801,6 +847,14 @@ impl<'t> IRGenerator<'t> {
                     if let Some(&target_pos) = label_map.get(label) {
                         let offset = target_pos as isize - i as isize - 1;
                         reduced_irs[i] = (debug_info.clone(), IR::NewBoundaryFrame(offset));
+                    } else {
+                        return Err(IRGeneratorError::InvalidLabel);
+                    }
+                }
+                (debug_info, IR::RedirectNextOrJump(label)) => {
+                    if let Some(&target_pos) = label_map.get(label) {
+                        let offset = target_pos as isize - i as isize - 1;
+                        reduced_irs[i] = (debug_info.clone(), IR::NextOrJump(offset));
                     } else {
                         return Err(IRGeneratorError::InvalidLabel);
                     }

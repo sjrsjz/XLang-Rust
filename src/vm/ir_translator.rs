@@ -660,8 +660,85 @@ impl IRTranslator {
                         .get_opcode(),
                     );
                 }
+                IR::NextOrJump(ir_offset) => {
+                    self.code.push(
+                        Opcode32::build_opcode(
+                            VMInstruction::NextOrJump as u8,
+                            OperandFlag::Valid | OperandFlag::ArgSize64,
+                            0,
+                            0,
+                        )
+                        .get_opcode(),
+                    );
+                    self.code.push(0u32);
+                    self.code.push(0u32);
+                    redirect_table.push((self.code.len(), self.code.len() - 2, (idx as isize + ir_offset + 1) as usize, true));
+                }
+                IR::BuildSet => {
+                    self.code.push(
+                        Opcode32::build_opcode(
+                            VMInstruction::BuildSet as u8,
+                            0,
+                            0,
+                            0,
+                        )
+                        .get_opcode(),
+                    );
+                }
+                IR::Swap(a, b) => {
+                    self.code.push(
+                        Opcode32::build_opcode(
+                            VMInstruction::Swap as u8,
+                            OperandFlag::Valid | OperandFlag::ArgSize64,
+                            OperandFlag::Valid | OperandFlag::ArgSize64,
+                            0,
+                        )
+                        .get_opcode(),
+                    );
+                    self.code.push(Opcode32::lower32(a as u64));
+                    self.code.push(Opcode32::upper32(a as u64));
+                    self.code.push(Opcode32::lower32(b as u64));
+                    self.code.push(Opcode32::upper32(b as u64));
+                }
+                IR::ResetIter => {
+                    self.code.push(
+                        Opcode32::build_opcode(
+                            VMInstruction::ResetIter as u8,
+                            0,
+                            0,
+                            0,
+                        )
+                        .get_opcode(),
+                    );
+                }
+                IR::ForkStackObjectRef(offset) => {
+                    self.code.push(
+                        Opcode32::build_opcode(
+                            VMInstruction::ForkStackObjectRef as u8,
+                            OperandFlag::Valid | OperandFlag::ArgSize64,
+                            0,
+                            0,
+                        )
+                        .get_opcode(),
+                    );
+                    self.code.push(Opcode32::lower32(offset as u64));
+                    self.code.push(Opcode32::upper32(offset as u64));
+                }
+                IR::PushValueIntoTuple(offset) => {
+                    self.code.push(
+                        Opcode32::build_opcode(
+                            VMInstruction::PushValueIntoTuple as u8,
+                            OperandFlag::Valid | OperandFlag::ArgSize64,
+                            0,
+                            0,
+                        )
+                        .get_opcode(),
+                    );
+                    self.code.push(Opcode32::lower32(offset as u64));
+                    self.code.push(Opcode32::upper32(offset as u64));
+                }
                 _ => {
-                    return Err(IRTranslatorError::InvalidInstruction(ir.clone()));
+                    return Err(IRTranslatorError::InvalidInstruction(ir));
                 }
             }
         }

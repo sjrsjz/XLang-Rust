@@ -37,12 +37,12 @@ pub enum IR{
     LoadBytes(Vec<u8>), // load bytes to stack
     LoadBool(bool), // load bool to stack
     LoadLambda(String, usize), // signature, code position
-    LoadSet,
     ForkInstruction, // "fork" instruction and push the forked instruction gcref to stack
     BuildTuple(usize), // number of elements
     BuildKeyValue, // pop key and value from stack and build key value pair
     BuildNamed, // pop key and value from stack and build named argument
     BuildRange, // pop start and end from stack and build range
+    BuildSet,
     BindSelf, // bind lambda's self to tuple
     BinaryOp(IROperation), // pop two values from stack and perform binary operation
     UnaryOp(IROperation), // pop one value from stack and perform unary operation
@@ -86,7 +86,10 @@ pub enum IR{
     AsyncCallLambda,
     IsFinished,
     NextOrJump(isize),
-    ResetIter
+    ResetIter,
+    Swap(usize, usize), // swap two values in stack
+    ForkStackObjectRef(usize), // fork stack object
+    PushValueIntoTuple(usize), // push value into tuple on stack
 }
 
 #[derive(Serialize, Deserialize, Debug, Clone)]

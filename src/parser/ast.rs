@@ -411,6 +411,7 @@ pub enum ASTNodeType {
     Yield,
     AsyncLambdaCall,
     Alias(String), // Type::Value
+    Set, // collection | filter
 }
 
 #[derive(Debug, PartialEq, Eq, Clone)]
@@ -454,6 +455,7 @@ pub enum ASTNodeModifier {
     Wipe,
     AliasOf,
     BindSelf,
+    Collect,
 }
 
 #[derive(Debug)]
@@ -676,6 +678,12 @@ fn match_all<'t>(
     node_matcher.add_matcher(Box::new(
         |tokens, current| -> Result<(Option<ASTNode<'t>>, usize), ParserError<'t>> {
             match_assign(tokens, current)
+        },
+    ));
+
+    node_matcher.add_matcher(Box::new(
+        |tokens, current| -> Result<(Option<ASTNode<'t>>, usize), ParserError<'t>> {
+            match_set_def(tokens, current)
         },
     ));
 
@@ -1905,6 +1913,51 @@ fn match_power<'t>(
     ));
 }
 
+fn match_set_def<'t>(
+    tokens: &Vec<GatheredTokens<'t>>,
+    current: usize,
+) -> Result<(Option<ASTNode<'t>>, usize), ParserError<'t>> {
+    if current + 2 >= tokens.len() {
+        return Ok((None, 0));
+    }
+    if !is_symbol(&tokens[current + 1], "|") {
+        // set expression
+        return Ok((None, 0));
+    }
+    let left_tokens = gather(tokens[current])?;
+    let (left, left_offset) = match_all(&left_tokens, 0)?;
+    if left.is_none() {
+        return Ok((None, 0));
+    }
+    let left = left.unwrap();
+    if left_offset != left_tokens.len() {
+        return Err(ParserError::NotFullyMatched(
+            left_tokens.first().unwrap().first().unwrap(),
+            left_tokens.last().unwrap().last().unwrap(),
+        ));
+    }
+    let right_tokens = tokens[current + 2..].to_vec();
+    let (right, right_offset) = match_all(&right_tokens, 0)?;
+    if right.is_none() {
+        return Ok((None, 0));
+    }
+    let right = right.unwrap();
+    if right_offset != right_tokens.len() {
+        return Err(ParserError::NotFullyMatched(
+            right_tokens.first().unwrap().first().unwrap(),
+            right_tokens.last().unwrap().last().unwrap(),
+        ));
+    }
+    return Ok((
+        Some(ASTNode::new(
+            ASTNodeType::Set,
+            Some(&tokens[current][0]),
+            Some(vec![left, right]),
+        )),
+        right_offset + 2,
+    ));
+}
+
 fn match_lambda_def<'t>(
     tokens: &Vec<GatheredTokens<'t>>,
     current: usize,
@@ -1963,7 +2016,7 @@ fn match_modifier<'t>(
     if tokens[current].len() == 1
         && vec![
             "deepcopy", "copy", "ref", "deref", "keyof", "valueof", "selfof", "assert", "import",
-            "wrap", "typeof", "await", "wipe", "aliasof", "bind", "boundary",
+            "wrap", "typeof", "await", "wipe", "aliasof", "bind", "boundary", "collect"
         ]
         .contains(&tokens[current][0].token)
     {
@@ -2000,6 +2053,7 @@ fn match_modifier<'t>(
             "wipe" => ASTNodeModifier::Wipe,
             "aliasof" => ASTNodeModifier::AliasOf,
             "bind" => ASTNodeModifier::BindSelf,
+            "collect" => ASTNodeModifier::Collect,
             _ => return Ok((None, 0)),
         };
         return Ok((

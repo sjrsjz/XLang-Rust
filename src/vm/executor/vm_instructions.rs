@@ -1099,8 +1099,8 @@ pub mod vm_instructions {
         _opcode: &ProcessedOpcode,
         gc_system: &mut GCSystem,
     ) -> Result<Option<Vec<SpawnedCoroutine>>, VMError> {
-        let mut container = vm.pop_object_and_check()?;
-        let mut obj = vm.pop_object_and_check()?;
+        let container = vm.get_object_and_check(0)?;
+        let obj = vm.get_object_and_check(1)?;
         let result = try_contains_as_vmobject(&container, &obj).map_err(|_| {
             VMError::VMVariableError(VMVariableError::TypeError(
                 container.clone(),
@@ -1108,8 +1108,6 @@ pub mod vm_instructions {
             ))
         })?;
         vm.push_vmobject(gc_system.new_object(VMBoolean::new(result)))?;
-        container.drop_ref();
-        obj.drop_ref();
         Ok(None)
     }
 
@@ -1308,6 +1306,193 @@ pub mod vm_instructions {
         }
         vm.push_vmobject(result)?;
         obj.drop_ref();
+        Ok(None)
+    }
+
+    pub fn swap(
+        vm: &mut VMExecutor,
+        opcode: &ProcessedOpcode,
+        _gc_system: &mut GCSystem,
+    ) -> Result<Option<Vec<SpawnedCoroutine>>, VMError> {
+        let OpcodeArgument::Int64(offset_1) = opcode.operand1 else {
+            return Err(VMError::InvalidInstruction(opcode.clone()));
+        };
+        let OpcodeArgument::Int64(offset_2) = opcode.operand2 else {
+            return Err(VMError::InvalidInstruction(opcode.clone()));
+        };
+
+        if offset_1 < 0 || offset_2 < 0 {
+            return Err(VMError::InvalidInstruction(opcode.clone()));
+        }
+        if offset_1 as usize >= vm.stack.len() || offset_2 as usize >= vm.stack.len() {
+            return Err(VMError::InvalidInstruction(opcode.clone()));
+        }
+        let rev_offset_1 = vm.stack.len() - offset_1 as usize - 1;
+        let rev_offset_2 = vm.stack.len() - offset_2 as usize - 1;
+        let obj_1 = vm.stack[rev_offset_1 as usize].clone();
+        let obj_2 = vm.stack[rev_offset_2 as usize].clone();
+        // swap
+        vm.stack[rev_offset_1 as usize] = obj_2.clone();
+        vm.stack[rev_offset_2 as usize] = obj_1.clone();
+        Ok(None)
+    }
+
+    pub fn build_set(
+        vm: &mut VMExecutor,
+        _opcode: &ProcessedOpcode,
+        gc_system: &mut GCSystem,
+    ) -> Result<Option<Vec<SpawnedCoroutine>>, VMError> {
+        let mut filter = vm.pop_object_and_check()?;
+        if !filter.isinstance::<VMLambda>() {
+            return Err(VMError::InvalidArgument(
+                filter.clone(),
+                "BuildSet: Filter requires VMLambda".to_string(),
+            ));
+        }
+
+        let mut collection = vm.pop_object_and_check()?;
+        if !collection.isinstance::<VMTuple>() &&
+            !collection.isinstance::<VMString>() &&
+            !collection.isinstance::<VMBytes>() &&
+            !collection.isinstance::<VMRange>()
+        {
+            return Err(VMError::InvalidArgument(
+                collection.clone(),
+                "BuildSet: Not a collection".to_string(),
+            ));
+        }
+
+        vm.push_vmobject(gc_system.new_object(VMSet::new(&mut collection, &mut filter)))?;
+        collection.drop_ref();
+        filter.drop_ref();
+        Ok(None)
+    }
+
+    pub fn fork_stack_object_ref(
+        vm: &mut VMExecutor,
+        opcode: &ProcessedOpcode,
+        _gc_system: &mut GCSystem,
+    ) -> Result<Option<Vec<SpawnedCoroutine>>, VMError> {
+        let OpcodeArgument::Int64(offset) = opcode.operand1 else {
+            return Err(VMError::InvalidInstruction(opcode.clone()));
+        };
+        let mut obj = vm.get_object_and_check(offset as usize)?;
+        vm.stack.push(
+            VMStackObject::VMObject(obj.clone_ref()),
+        );
+        Ok(None)
+    }
+
+    pub fn push_value_into_tuple(
+        vm: &mut VMExecutor,
+        opcode: &ProcessedOpcode,
+        _gc_system: &mut GCSystem,
+    ) -> Result<Option<Vec<SpawnedCoroutine>>, VMError> {
+        let OpcodeArgument::Int64(offset) = opcode.operand1 else {
+            return Err(VMError::InvalidInstruction(opcode.clone()));
+        };
+        let mut tuple = vm.get_object_and_check(offset as usize)?;
+        let mut obj = vm.pop_object_and_check()?;
+
+        if !tuple.isinstance::<VMTuple>() {
+            return Err(VMError::InvalidArgument(
+                tuple.clone(),
+                "PushValueIntoTuple: Not a tuple".to_string(),
+            ));
+        }
+        let tuple_value = tuple.as_type::<VMTuple>();
+        tuple_value.append(&mut obj).map_err(|e| {
+            VMError::VMVariableError(e)
+        })?;        
+        obj.drop_ref();
+        tuple.drop_ref();
+        Ok(None)
+    }
+    pub fn reset_iter(
+        vm: &mut VMExecutor,
+        _opcode: &ProcessedOpcode,
+        _gc_system: &mut GCSystem,
+    ) -> Result<Option<Vec<SpawnedCoroutine>>, VMError> {
+        let mut obj = vm.get_object_and_check(0)?;
+        if obj.isinstance::<VMTuple>() {
+            let tuple = obj.as_type::<VMTuple>();
+            tuple.reset();
+        } else if obj.isinstance::<VMString>() {
+            let string = obj.as_type::<VMString>();
+            string.reset();
+        } else if obj.isinstance::<VMBytes>() {
+            let bytes = obj.as_type::<VMBytes>();
+            bytes.reset();
+        } else if obj.isinstance::<VMRange>() {
+            let range = obj.as_type::<VMRange>();
+            range.reset();
+        } else if obj.isinstance::<VMSet>() {
+            let set = obj.as_type::<VMSet>();
+            set.reset();
+        } else {
+            return Err(VMError::InvalidArgument(
+                obj.clone(),
+                "ResetIter: Not a iterable".to_string(),
+            ));
+        }
+        Ok(None)
+    }
+    pub fn next_or_jump(
+        vm: &mut VMExecutor,
+        opcode: &ProcessedOpcode,
+        gc_system: &mut GCSystem,
+    ) -> Result<Option<Vec<SpawnedCoroutine>>, VMError> {
+        let OpcodeArgument::Int64(offset) = opcode.operand1 else {
+            return Err(VMError::InvalidInstruction(opcode.clone()));
+        };
+        let mut obj = vm.get_object_and_check(0)?;
+        if obj.isinstance::<VMTuple>() {
+            let tuple = obj.as_type::<VMTuple>();
+            let result = tuple.next(gc_system);
+            if result.is_none() {
+                vm.ip += offset as isize;
+            } else {
+                vm.push_vmobject(result.unwrap())?;
+            }
+        } else if obj.isinstance::<VMString>() {
+            let tuple = obj.as_type::<VMString>();
+            let result = tuple.next(gc_system);
+            if result.is_none() {
+                vm.ip += offset as isize;
+            } else {
+                vm.push_vmobject(result.unwrap())?;
+            }
+        } else if obj.isinstance::<VMBytes>() {
+            let tuple = obj.as_type::<VMBytes>();
+            let result = tuple.next(gc_system);
+            if result.is_none() {
+                vm.ip += offset as isize;
+            } else {
+                vm.push_vmobject(result.unwrap())?;
+            }
+        } else if obj.isinstance::<VMRange>() {
+            let tuple = obj.as_type::<VMRange>();
+            let result = tuple.next(gc_system);
+            if result.is_none() {
+                vm.ip += offset as isize;
+            } else {
+                vm.push_vmobject(result.unwrap())?;
+            }
+        } else if obj.isinstance::<VMSet>() {
+            let tuple = obj.as_type::<VMSet>();
+            let result = tuple.next(gc_system);
+            if result.is_none() {
+                vm.ip += offset as isize;
+            } else {
+                vm.push_vmobject(result.unwrap())?;
+            }
+        } else {
+            return Err(VMError::InvalidArgument(
+                obj.clone(),
+                "NextOrJump: Not a iterable".to_string(),
+            ));
+        }
+
         Ok(None)
     }
 }

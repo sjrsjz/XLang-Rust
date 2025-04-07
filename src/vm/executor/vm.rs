@@ -306,7 +306,7 @@ impl VMExecutor {
         instruction_table[VMInstruction::BuildKeyValue as usize] = vm_instructions::build_keyval;
         instruction_table[VMInstruction::BuildNamed as usize] = vm_instructions::build_named;
         instruction_table[VMInstruction::BuildRange as usize] = vm_instructions::build_range;
-
+        instruction_table[VMInstruction::BuildSet as usize] = vm_instructions::build_set;
         // 二元操作符
         instruction_table[VMInstruction::BinaryAdd as usize] = vm_instructions::binary_add;
         instruction_table[VMInstruction::BinarySub as usize] = vm_instructions::binary_subtract;
@@ -347,6 +347,13 @@ impl VMExecutor {
         instruction_table[VMInstruction::TypeOf as usize] = vm_instructions::type_of;
         instruction_table[VMInstruction::DeepCopy as usize] = vm_instructions::deepcopy;
         instruction_table[VMInstruction::ShallowCopy as usize] = vm_instructions::copy;
+        instruction_table[VMInstruction::Swap as usize] = vm_instructions::swap;
+        instruction_table[VMInstruction::ForkStackObjectRef as usize] =
+            vm_instructions::fork_stack_object_ref;
+        instruction_table[VMInstruction::PushValueIntoTuple as usize] =
+            vm_instructions::push_value_into_tuple;
+        instruction_table[VMInstruction::ResetIter as usize] = vm_instructions::reset_iter;
+        instruction_table[VMInstruction::NextOrJump as usize] = vm_instructions::next_or_jump;
 
         // 控制流
         instruction_table[VMInstruction::Call as usize] = vm_instructions::call_lambda;
@@ -405,6 +412,17 @@ impl VMExecutor {
         Err(VMError::NotVMObject(obj))
     }
 
+    pub fn get_object_and_check(&self, index: usize) -> Result<GCRef, VMError> {
+        if index >= self.stack.len() {
+            return Err(VMError::EmptyStack);
+        }
+        let obj = &self.stack[self.stack.len() - 1 - index];
+        if let VMStackObject::VMObject(obj) = obj {
+            return Ok(obj.clone());
+        }
+        Err(VMError::NotVMObject(obj.clone()))
+    }
+
     pub fn push_vmobject(&mut self, obj: GCRef) -> Result<(), VMError> {
         self.stack.push(VMStackObject::VMObject(obj.clone()));
         Ok(())
@@ -442,9 +460,8 @@ impl VMExecutor {
             return Err(VMError::TryEnterNotLambda(lambda_object.clone()));
         }
 
-        let VMLambdaBody::VMInstruction(lambda_body) = &lambda_object
-            .as_const_type::<VMLambda>()
-            .lambda_body
+        let VMLambdaBody::VMInstruction(lambda_body) =
+            &lambda_object.as_const_type::<VMLambda>().lambda_body
         else {
             return Err(VMError::InvalidArgument(
                 lambda_object.clone(),
@@ -452,8 +469,7 @@ impl VMExecutor {
             ));
         };
         let use_new_instructions = self.lambda_instructions.is_empty()
-            || *lambda_body
-                != *self.lambda_instructions.last().unwrap();
+            || *lambda_body != *self.lambda_instructions.last().unwrap();
 
         self.stack.push(VMStackObject::LastIP(
             lambda_object.clone_ref(),
@@ -463,9 +479,7 @@ impl VMExecutor {
 
         let lambda = lambda_object.as_type::<VMLambda>();
 
-        let VMLambdaBody::VMInstruction(lambda_body) = &mut lambda
-            .lambda_body
-        else {
+        let VMLambdaBody::VMInstruction(lambda_body) = &mut lambda.lambda_body else {
             return Err(VMError::InvalidArgument(
                 lambda_object.clone(),
                 "Only lambda defined by VMInstruction can be entered".to_string(),
@@ -474,8 +488,7 @@ impl VMExecutor {
         let code_position = lambda.code_position;
 
         if use_new_instructions {
-            self.lambda_instructions
-                .push(lambda_body.clone_ref());
+            self.lambda_instructions.push(lambda_body.clone_ref());
         }
 
         self.context.new_frame(
@@ -577,8 +590,9 @@ impl VMExecutor {
                 .unwrap()
                 .as_const_type::<VMInstructions>();
             if self.ip < vm_instruction.vm_instructions_package.get_code().len() as isize {
-                let code: &Vec<u32> = vm_instruction.vm_instructions_package.get_code();
                 let mut ip = self.ip as usize;
+                let curr_ip = self.ip;
+                let code: &Vec<u32> = vm_instruction.vm_instructions_package.get_code();
                 let mut instruction_32 = Instruction32::new(code, &mut ip);
 
                 let decoded = instruction_32.get_processed_opcode();
@@ -586,29 +600,25 @@ impl VMExecutor {
                     return Err(VMError::AssertFailed);
                 }
                 let decoded = decoded.unwrap();
-
                 self.ip = ip as isize;
                 // if let IR::DebugInfo(_) = instruction {} else{
                 //     println!("{}: {:?}", self.ip, instruction); // debug
                 // }
 
                 // println!("");
-                // if self.debug_info.is_some() {
-                //     let debug_info = self.debug_info.as_ref().unwrap();
-                //     println!(
-                //         "{}: {}",
-                //         self.ip,
-                //         self.repr_current_code(Some(debug_info.code_position))
-                //     ); // debug
-                // }
                 // self.context.debug_print_all_vars();
                 // gc_system.collect(); // debug
                 // self.debug_output_stack();
-                // println!("{}: {}", self.ip, decoded.to_string()); // debug
-                spawned_coroutines = self
+                println!("{}: {}", self.ip, decoded.to_string()); // debug
+                let spawned_coroutine = self
                     .instruction_table
                     .get(decoded.instruction as usize)
-                    .unwrap()(self, &decoded, gc_system)?;
+                    .unwrap()(self, &decoded, gc_system);
+                if spawned_coroutine.is_err() {
+                    self.ip = curr_ip;
+                    return Err(spawned_coroutine.err().unwrap());
+                }
+                spawned_coroutines = spawned_coroutine.unwrap();
 
                 //self.debug_output_stack(); // debug
                 //println!("");
@@ -630,12 +640,7 @@ impl VMExecutor {
     }
 }
 
-
-
-
-
 impl VMExecutor {
-    
     pub fn repr_current_code(&self, context_lines: Option<usize>) -> String {
         use colored::*;
         use unicode_segmentation::UnicodeSegmentation;
@@ -786,5 +791,4 @@ impl VMExecutor {
 
         result
     }
-
 }

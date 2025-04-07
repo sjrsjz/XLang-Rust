@@ -72,7 +72,7 @@ A := boundary {
     in
 };
 
-is_err := (v?) -> "Err" in aliasof v;
+is_err := (v?) -> "Err" in {aliasof v | () -> true};
 
 if (is_err(A)){
     print("ERROR:", A)

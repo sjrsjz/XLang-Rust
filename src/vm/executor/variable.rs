@@ -23,7 +23,7 @@ pub enum VMVariableError {
     ValueError2Param(GCRef, GCRef, String),
     ValueError(GCRef, String),
     KeyNotFound(GCRef, GCRef),   // 键未找到
-    ValueNotFound(GCRef, GCRef), // 值未找到
+    UnableToValueOf(GCRef), // 值未找到
     IndexNotFound(GCRef, GCRef), // 索引未找到
     CopyError(GCRef, String),
     AssignError(GCRef, String),
@@ -56,10 +56,9 @@ impl VMVariableError {
                 try_repr_vmobject(key.clone(), None).unwrap_or(format!("{:?}", key)),
                 try_repr_vmobject(gc_ref.clone(), None).unwrap_or(format!("{:?}", gc_ref))
             ),
-            VMVariableError::ValueNotFound(value, gc_ref) => format!(
-                "ValueNotFound: {} in {}",
+            VMVariableError::UnableToValueOf(value) => format!(
+                "UnableToValueOf: {}",
                 try_repr_vmobject(value.clone(), None).unwrap_or(format!("{:?}", value)),
-                try_repr_vmobject(gc_ref.clone(), None).unwrap_or(format!("{:?}", gc_ref))
             ),
             VMVariableError::IndexNotFound(index, gc_ref) => format!(
                 "IndexNotFound: {} in {}",
@@ -106,6 +105,9 @@ pub fn try_contains_as_vmobject(value: &GCRef, other: &GCRef) -> Result<bool, VM
     } else if value.isinstance::<VMRange>() {
         let range = value.as_const_type::<VMRange>();
         return range.contains(other);
+    } else if value.isinstance::<VMSet>() {
+        let set = value.as_const_type::<VMSet>();
+        return set.contains(other);
     }
     Err(VMVariableError::TypeError(
         value.clone(),
@@ -204,6 +206,14 @@ pub fn try_repr_vmobject(
                 .encode(&bytes.value)
                 .chars()
                 .collect::<String>()
+        ));
+    } else if value.isinstance::<VMSet>() {
+        let set = value.as_const_type::<VMSet>();
+        let collection_repr = try_repr_vmobject(set.collection.clone(), new_ref_path.clone())?;
+        let filter_repr = try_repr_vmobject(set.filter.clone(), new_ref_path.clone())?;
+        return Ok(format!(
+            "{{{} | {}}}",
+            collection_repr, filter_repr
         ));
     }
     Err(VMVariableError::TypeError(
@@ -570,7 +580,7 @@ pub fn try_value_of_as_vmobject(value: &mut GCRef) -> Result<&mut GCRef, VMVaria
         let wrapper = value.as_type::<VMSet>();
         return Ok(wrapper.get_value());
     }
-    Err(VMVariableError::ValueNotFound(value.clone(), value.clone()))
+    Err(VMVariableError::UnableToValueOf(value.clone()))
 }
 
 #[macro_export]
@@ -3392,4 +3402,43 @@ impl VMSet {
             false
         }
     }
+    fn contains(&self, other: &GCRef) -> Result<bool, VMVariableError> {
+        try_contains_as_vmobject(&self.collection, other)
+    }
+}
+impl VMIterable for VMSet {
+    fn next(&mut self, gc_system: &mut GCSystem) -> Option<GCRef> {
+        if self.collection.isinstance::<VMTuple>() {
+            self.collection
+                .as_type::<VMTuple>()
+                .next(gc_system)
+        } else if self.collection.isinstance::<VMString>() {
+            self.collection
+                .as_type::<VMString>()
+                .next(gc_system)
+        } else if self.collection.isinstance::<VMBytes>() {
+            self.collection
+                .as_type::<VMBytes>()
+                .next(gc_system)
+        } else if self.collection.isinstance::<VMRange>() {
+            self.collection
+                .as_type::<VMRange>()
+                .next(gc_system)
+        } else {
+            None
+        }
+    }
+
+    fn reset(&mut self) {
+        if self.collection.isinstance::<VMTuple>() {
+            self.collection.as_type::<VMTuple>().reset();
+        } else if self.collection.isinstance::<VMString>() {
+            self.collection.as_type::<VMString>().reset();
+        } else if self.collection.isinstance::<VMBytes>() {
+            self.collection.as_type::<VMBytes>().reset();
+        } else if self.collection.isinstance::<VMRange>() {
+            self.collection.as_type::<VMRange>().reset();
+        }
+    }
+    
 }
