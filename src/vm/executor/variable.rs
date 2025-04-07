@@ -2270,10 +2270,10 @@ impl VMTuple {
         }
     }
 
-    pub fn append(&mut self, value: &mut GCRef) -> Result<GCRef, VMVariableError> {
+    pub fn append(&mut self, value: &mut GCRef) -> Result<(), VMVariableError> {
         self.values.push(value.clone());
         self.traceable.add_reference(self.values.last().unwrap());
-        Ok(GCRef::wrap(self))
+        Ok(())
     }
 }
 

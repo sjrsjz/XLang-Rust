@@ -1351,6 +1351,12 @@ pub mod vm_instructions {
         }
 
         let mut collection = vm.pop_object_and_check()?;
+        if collection.isinstance::<VMSet>() {
+            return Err(VMError::InvalidArgument(
+                collection.clone(),
+                "BuildSet: Due to the limitation of the current implementation, the collection cannot be a VMSet. You should build a VMTuple before creating a VMSet".to_string(),
+            ));
+        }
         if !collection.isinstance::<VMTuple>() &&
             !collection.isinstance::<VMString>() &&
             !collection.isinstance::<VMBytes>() &&
@@ -1405,7 +1411,6 @@ pub mod vm_instructions {
             VMError::VMVariableError(e)
         })?;        
         obj.drop_ref();
-        tuple.drop_ref();
         Ok(None)
     }
     pub fn reset_iter(

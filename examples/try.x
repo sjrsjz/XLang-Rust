@@ -3,7 +3,7 @@ try := (f?) -> bind {
     value => () -> return valueof self.result,
     catch => (err_handler?, f!) -> {
         result := boundary f(...(keyof f));
-        if ("Err" in aliasof result) {
+        if ("Err" in ((aliasof result) | (v?) -> true)) {
             err_handler(result);
         } else {
             self.result = result;

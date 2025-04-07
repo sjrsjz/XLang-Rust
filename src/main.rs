@@ -139,8 +139,9 @@ fn execute_ir(package: VMInstructionPackage) -> Result<(), VMError> {
     lambda_result.drop_ref();
 
     main_lambda.clone_ref();
-    let _coro_id = coroutine_pool.new_coroutine(&mut main_lambda, &mut gc_system)?;
 
+
+    let _coro_id = coroutine_pool.new_coroutine(&mut main_lambda, &mut gc_system)?;
     let result = coroutine_pool.run_until_finished(&mut gc_system);
     if let Err(e) = result {
         eprintln!(

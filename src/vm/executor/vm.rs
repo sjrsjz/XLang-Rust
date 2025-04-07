@@ -609,7 +609,7 @@ impl VMExecutor {
                 // self.context.debug_print_all_vars();
                 // gc_system.collect(); // debug
                 // self.debug_output_stack();
-                println!("{}: {}", self.ip, decoded.to_string()); // debug
+                // println!("{}: {}", self.ip, decoded.to_string()); // debug
                 let spawned_coroutine = self
                     .instruction_table
                     .get(decoded.instruction as usize)

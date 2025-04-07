@@ -1,7 +1,7 @@
 promise := (f?, then => (result?) -> {}, catch => (err?) -> {}) -> {
     wrapper := (f => f, then => then, catch => catch) -> {
         result := boundary f();
-        if ("Err" in aliasof result) {
+        if ("Err" in ((aliasof result) | () -> true)) {
             return boundary catch(result);
         } else {
             return boundary then(result);

@@ -44,6 +44,8 @@ pub mod native_functions {
                 &mut result
             )),
         );
+        params.drop_ref();
+        result.drop_ref();
 
         let mut params = gc_system.new_object(VMTuple::new(&mut vec![]));
         let mut result = gc_system.new_object(VMNull::new());
@@ -58,6 +60,8 @@ pub mod native_functions {
                 &mut result
             )),
         );
+        params.drop_ref();
+        result.drop_ref();
 
         let mut params = gc_system.new_object(VMTuple::new(&mut vec![]));
         let mut result = gc_system.new_object(VMNull::new());
@@ -72,6 +76,8 @@ pub mod native_functions {
                 &mut result
             )),
         );
+        params.drop_ref();
+        result.drop_ref();
         
         let mut params = gc_system.new_object(VMTuple::new(&mut vec![]));
         let mut result = gc_system.new_object(VMNull::new());
@@ -86,6 +92,8 @@ pub mod native_functions {
                 &mut result
             )),
         );
+        params.drop_ref();
+        result.drop_ref();
 
         let mut params = gc_system.new_object(VMTuple::new(&mut vec![]));
         let mut result = gc_system.new_object(VMNull::new());
@@ -100,6 +108,8 @@ pub mod native_functions {
                 &mut result
             )),
         );
+        params.drop_ref();
+        result.drop_ref();
 
         let mut params = gc_system.new_object(VMTuple::new(&mut vec![]));
         let mut result = gc_system.new_object(VMNull::new());
@@ -114,6 +124,8 @@ pub mod native_functions {
                 &mut result
             )),
         );
+        params.drop_ref();
+        result.drop_ref();
 
         let mut params = gc_system.new_object(VMTuple::new(&mut vec![]));
         let mut result = gc_system.new_object(VMNull::new());
@@ -128,6 +140,8 @@ pub mod native_functions {
                 &mut result
             )),
         );
+        params.drop_ref();
+        result.drop_ref();
 
         let mut params = gc_system.new_object(VMTuple::new(&mut vec![]));
         let mut result = gc_system.new_object(VMNull::new());
@@ -142,6 +156,8 @@ pub mod native_functions {
                 &mut result
             )),
         );
+        params.drop_ref();
+        result.drop_ref();
 
 
         for (name, func) in built_in_functions.iter_mut() {

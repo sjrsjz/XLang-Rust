@@ -412,6 +412,7 @@ pub enum ASTNodeType {
     AsyncLambdaCall,
     Alias(String), // Type::Value
     Set, // collection | filter
+    Map, // collection |> map
 }
 
 #[derive(Debug, PartialEq, Eq, Clone)]
@@ -678,6 +679,12 @@ fn match_all<'t>(
     node_matcher.add_matcher(Box::new(
         |tokens, current| -> Result<(Option<ASTNode<'t>>, usize), ParserError<'t>> {
             match_assign(tokens, current)
+        },
+    ));
+
+    node_matcher.add_matcher(Box::new(
+        |tokens, current| -> Result<(Option<ASTNode<'t>>, usize), ParserError<'t>> {
+            match_map(tokens, current)
         },
     ));
 
@@ -1912,23 +1919,41 @@ fn match_power<'t>(
         tokens.len() - current, // return full length of the tokens
     ));
 }
-
-fn match_set_def<'t>(
+fn match_map<'t>(
     tokens: &Vec<GatheredTokens<'t>>,
     current: usize,
 ) -> Result<(Option<ASTNode<'t>>, usize), ParserError<'t>> {
-    if current + 2 >= tokens.len() {
+    if current >= tokens.len() {
         return Ok((None, 0));
     }
-    if !is_symbol(&tokens[current + 1], "|") {
-        // set expression
+    
+    // 从右向左查找 |> 操作符
+    let mut offset: usize = tokens.len() - current - 1;
+    let mut operator_pos: usize = 0;
+    let mut found = false;
+    
+    while offset > 0 {
+        let pos = current + offset;
+        if is_symbol(&tokens[pos], "|>") {
+            operator_pos = pos;
+            found = true;
+            break;
+        }
+        offset -= 1;
+    }
+    
+    if !found {
         return Ok((None, 0));
     }
-    let left_tokens = gather(tokens[current])?;
-    let (left, left_offset) = match_all(&left_tokens, 0)?;
+    
+    // 解析左侧表达式（集合）
+    let left_tokens = &tokens[current..operator_pos].to_vec();
+    let (left, left_offset) = match_all(left_tokens, 0)?;
+    
     if left.is_none() {
         return Ok((None, 0));
     }
+    
     let left = left.unwrap();
     if left_offset != left_tokens.len() {
         return Err(ParserError::NotFullyMatched(
@@ -1936,11 +1961,15 @@ fn match_set_def<'t>(
             left_tokens.last().unwrap().last().unwrap(),
         ));
     }
-    let right_tokens = tokens[current + 2..].to_vec();
-    let (right, right_offset) = match_all(&right_tokens, 0)?;
+    
+    // 解析右侧表达式（映射函数）
+    let right_tokens = &tokens[operator_pos + 1..].to_vec();
+    let (right, right_offset) = match_all(right_tokens, 0)?;
+    
     if right.is_none() {
         return Ok((None, 0));
     }
+    
     let right = right.unwrap();
     if right_offset != right_tokens.len() {
         return Err(ParserError::NotFullyMatched(
@@ -1948,13 +1977,82 @@ fn match_set_def<'t>(
             right_tokens.last().unwrap().last().unwrap(),
         ));
     }
+    
+    return Ok((
+        Some(ASTNode::new(
+            ASTNodeType::Map,
+            Some(&tokens[current][0]),
+            Some(vec![left, right]),
+        )),
+        tokens.len() - current, // 返回整个匹配长度
+    ));
+}
+fn match_set_def<'t>(
+    tokens: &Vec<GatheredTokens<'t>>,
+    current: usize,
+) -> Result<(Option<ASTNode<'t>>, usize), ParserError<'t>> {
+    if current >= tokens.len() {
+        return Ok((None, 0));
+    }
+    
+    // 从右向左查找 | 操作符
+    let mut offset: usize = tokens.len() - current - 1;
+    let mut operator_pos: usize = 0;
+    let mut found = false;
+    
+    while offset > 0 {
+        let pos = current + offset;
+        if is_symbol(&tokens[pos], "|") {
+            operator_pos = pos;
+            found = true;
+            break;
+        }
+        offset -= 1;
+    }
+    
+    if !found {
+        return Ok((None, 0));
+    }
+    
+    // 解析左侧表达式（集合）
+    let left_tokens = &tokens[current..operator_pos].to_vec();
+    let (left, left_offset) = match_all(left_tokens, 0)?;
+    
+    if left.is_none() {
+        return Ok((None, 0));
+    }
+    
+    let left = left.unwrap();
+    if left_offset != left_tokens.len() {
+        return Err(ParserError::NotFullyMatched(
+            left_tokens.first().unwrap().first().unwrap(),
+            left_tokens.last().unwrap().last().unwrap(),
+        ));
+    }
+    
+    // 解析右侧表达式（过滤条件）
+    let right_tokens = &tokens[operator_pos + 1..].to_vec();
+    let (right, right_offset) = match_all(right_tokens, 0)?;
+    
+    if right.is_none() {
+        return Ok((None, 0));
+    }
+    
+    let right = right.unwrap();
+    if right_offset != right_tokens.len() {
+        return Err(ParserError::NotFullyMatched(
+            right_tokens.first().unwrap().first().unwrap(),
+            right_tokens.last().unwrap().last().unwrap(),
+        ));
+    }
+    
     return Ok((
         Some(ASTNode::new(
             ASTNodeType::Set,
             Some(&tokens[current][0]),
             Some(vec![left, right]),
         )),
-        right_offset + 2,
+        tokens.len() - current, // 返回整个匹配长度
     ));
 }
 
