@@ -9,7 +9,7 @@ use colored::Colorize;
  * - 任何new对象的行为都需要使用gc_system，并且会产生一个native_gcref_object_count，虚拟机必须在某处drop_ref直到为0
  *
  */
-use std::fmt::Debug;
+use std::{fmt::Debug, sync::Arc};
 
 #[derive(Debug, Clone)]
 pub enum VMStackObject {
@@ -2767,6 +2767,83 @@ impl VMObject for VMLambda {
         self.get_traceable().add_reference(&mut new_result);
 
         Ok(value)
+    }
+
+    fn alias_const(&self) -> &Vec<String> {
+        &self.alias
+    }
+
+    fn alias(&mut self) -> &mut Vec<String> {
+        &mut self.alias
+    }
+}
+
+/**
+ * VMCLambdaInstruction
+ * 代表一个C动态库，VMLamda会调用它（通过signature确定Lambda的入口）
+ */
+#[derive(Debug)]
+pub struct VMCLambdaInstruction {
+    lib_handle: Option<Arc<Box<libloading::Library>>>,
+    traceable: GCTraceable,
+    alias: Vec<String>,
+}
+impl VMCLambdaInstruction {
+    pub fn new(lib_handle: Option<Arc<Box<libloading::Library>>>) -> Self {
+        VMCLambdaInstruction {
+            lib_handle,
+            traceable: GCTraceable::new::<VMCLambdaInstruction>(None),
+            alias: Vec::new(),
+        }
+    }
+
+    pub fn new_with_alias(lib_handle: Option<Arc<Box<libloading::Library>>>, alias: &Vec<String>) -> Self {
+        VMCLambdaInstruction {
+            lib_handle,
+            traceable: GCTraceable::new::<VMCLambdaInstruction>(None),
+            alias: alias.clone(),
+        }
+    }
+}
+impl GCObject for VMCLambdaInstruction {
+    fn free(&mut self) {
+        // 不需要额外的释放操作
+        if let Some(handle) = self.lib_handle.take() {
+            // 释放动态库
+            drop(handle);
+        }
+    }
+
+    fn get_traceable(&mut self) -> &mut GCTraceable {
+        &mut self.traceable
+    }
+
+    fn get_const_traceable(&self) -> &GCTraceable {
+        &self.traceable
+    }
+}
+
+impl VMObject for VMCLambdaInstruction {
+    fn deepcopy(&mut self, gc_system: &mut GCSystem) -> Result<GCRef, VMVariableError> {
+        Ok(gc_system.new_object(VMCLambdaInstruction::new_with_alias(
+            self.lib_handle.clone(),
+            &self.alias,
+        )))
+    }
+
+    fn copy(&mut self, gc_system: &mut GCSystem) -> Result<GCRef, VMVariableError> {
+        Ok(gc_system.new_object(VMCLambdaInstruction::new_with_alias(
+            self.lib_handle.clone(),
+            &self.alias,
+        )))
+    }
+
+    fn assign<'t>(&mut self, value: &'t mut GCRef) -> Result<&'t mut GCRef, VMVariableError> {
+        Err(VMVariableError::ValueError2Param(
+            GCRef::wrap(self),
+            value.clone(),
+            "Cannot assign a value to VMCLambdaInstruction".to_string(),
+        ))
     }
 
     fn alias_const(&self) -> &Vec<String> {
