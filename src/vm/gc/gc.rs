@@ -42,6 +42,7 @@ impl GCRef {
         GCRef { reference }
     }
 
+
     pub fn get_reference(&self) -> *mut dyn GCObject {
         self.reference
     }

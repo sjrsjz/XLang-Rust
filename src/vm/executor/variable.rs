@@ -1,4 +1,7 @@
-use super::super::gc::gc::{GCObject, GCRef, GCSystem, GCTraceable};
+use super::{
+    super::gc::gc::{GCObject, GCRef, GCSystem, GCTraceable},
+    ffi::vm_clambda_loading::{self, CLambda},
+};
 use crate::vm::instruction_set::VMInstructionPackage;
 use base64::{self, Engine};
 use colored::Colorize;
@@ -9,7 +12,7 @@ use colored::Colorize;
  * - 任何new对象的行为都需要使用gc_system，并且会产生一个native_gcref_object_count，虚拟机必须在某处drop_ref直到为0
  *
  */
-use std::{fmt::Debug, sync::Arc};
+use std::fmt::Debug;
 
 #[derive(Debug, Clone)]
 pub enum VMStackObject {
@@ -23,7 +26,7 @@ pub enum VMVariableError {
     ValueError2Param(GCRef, GCRef, String),
     ValueError(GCRef, String),
     KeyNotFound(GCRef, GCRef),   // 键未找到
-    UnableToValueOf(GCRef), // 值未找到
+    UnableToValueOf(GCRef),      // 值未找到
     IndexNotFound(GCRef, GCRef), // 索引未找到
     CopyError(GCRef, String),
     AssignError(GCRef, String),
@@ -211,9 +214,12 @@ pub fn try_repr_vmobject(
         let set = value.as_const_type::<VMSet>();
         let collection_repr = try_repr_vmobject(set.collection.clone(), new_ref_path.clone())?;
         let filter_repr = try_repr_vmobject(set.filter.clone(), new_ref_path.clone())?;
+        return Ok(format!("{{{} | {}}}", collection_repr, filter_repr));
+    } else if value.isinstance::<VMCLambdaInstruction>() {
+        let clambda = value.as_const_type::<VMCLambdaInstruction>();
         return Ok(format!(
-            "{{{} | {}}}",
-            collection_repr, filter_repr
+            "CLambda({:?})",
+            clambda.clambda
         ));
     }
     Err(VMVariableError::TypeError(
@@ -598,7 +604,7 @@ pub fn try_deepcopy_as_vmobject(
     value: &mut GCRef,
     gc_system: &mut GCSystem,
 ) -> Result<GCRef, VMVariableError> {
-    try_deepcopy_as_type!(value, gc_system; VMInt, VMString, VMFloat, VMBoolean, VMNull, VMKeyVal, VMTuple, VMNamed, VMLambda, VMInstructions, VMWrapper, VMRange, VMBytes, VMSet);
+    try_deepcopy_as_type!(value, gc_system; VMInt, VMString, VMFloat, VMBoolean, VMNull, VMKeyVal, VMTuple, VMNamed, VMLambda, VMInstructions, VMWrapper, VMRange, VMBytes, VMSet, VMCLambdaInstruction);
     Err(VMVariableError::CopyError(
         value.clone(),
         "Cannot deepcopy a value of non-copyable type".to_string(),
@@ -620,7 +626,7 @@ pub fn try_copy_as_vmobject(
     value: &mut GCRef,
     gc_system: &mut GCSystem,
 ) -> Result<GCRef, VMVariableError> {
-    try_copy_as_type!(value, gc_system; VMInt, VMString, VMFloat, VMBoolean, VMNull, VMKeyVal, VMTuple, VMNamed, VMLambda, VMInstructions, VMWrapper, VMRange, VMBytes, VMSet);
+    try_copy_as_type!(value, gc_system; VMInt, VMString, VMFloat, VMBoolean, VMNull, VMKeyVal, VMTuple, VMNamed, VMLambda, VMInstructions, VMWrapper, VMRange, VMBytes, VMSet, VMCLambdaInstruction);
     Err(VMVariableError::CopyError(
         value.clone(),
         "Cannot copy a value of non-copyable type".to_string(),
@@ -642,7 +648,7 @@ pub fn try_assign_as_vmobject<'t>(
     value: &mut GCRef,
     other: &'t mut GCRef,
 ) -> Result<&'t mut GCRef, VMVariableError> {
-    try_assign_as_type!(value, other; VMInt, VMString, VMFloat, VMBoolean, VMNull, VMKeyVal, VMTuple, VMNamed, VMLambda, VMInstructions, VMWrapper, VMRange, VMBytes, VMSet);
+    try_assign_as_type!(value, other; VMInt, VMString, VMFloat, VMBoolean, VMNull, VMKeyVal, VMTuple, VMNamed, VMLambda, VMInstructions, VMWrapper, VMRange, VMBytes, VMSet, VMCLambdaInstruction);
     Err(VMVariableError::AssignError(
         value.clone(),
         "Cannot assign a value of non-assignable type".to_string(),
@@ -661,7 +667,7 @@ macro_rules! try_const_alias_as_type {
 }
 
 pub fn try_const_alias_as_vmobject(value: &GCRef) -> Result<&Vec<String>, VMVariableError> {
-    try_const_alias_as_type!(value; VMInt, VMString, VMFloat, VMBoolean, VMNull, VMKeyVal, VMTuple, VMNamed, VMLambda, VMInstructions, VMWrapper, VMRange, VMBytes, VMSet);
+    try_const_alias_as_type!(value; VMInt, VMString, VMFloat, VMBoolean, VMNull, VMKeyVal, VMTuple, VMNamed, VMLambda, VMInstructions, VMWrapper, VMRange, VMBytes, VMSet, VMCLambdaInstruction);
     Err(VMVariableError::ReferenceError(
         value.clone(),
         "Cannot get reference of a non-referenceable type".to_string(),
@@ -680,7 +686,7 @@ macro_rules! try_alias_as_type {
 }
 
 pub fn try_alias_as_vmobject(value: &mut GCRef) -> Result<&mut Vec<String>, VMVariableError> {
-    try_alias_as_type!(value; VMInt, VMString, VMFloat, VMBoolean, VMNull, VMKeyVal, VMTuple, VMNamed, VMLambda, VMInstructions, VMWrapper, VMRange, VMBytes, VMSet);
+    try_alias_as_type!(value; VMInt, VMString, VMFloat, VMBoolean, VMNull, VMKeyVal, VMTuple, VMNamed, VMLambda, VMInstructions, VMWrapper, VMRange, VMBytes, VMSet, VMCLambdaInstruction);
     Err(VMVariableError::ReferenceError(
         value.clone(),
         "Cannot get reference of a non-referenceable type".to_string(),
@@ -2149,7 +2155,11 @@ impl VMTuple {
         // 分离命名参数和普通值
         let mut key_values = Vec::new();
         let mut normal_values = Vec::new();
-        let mut assigned = self.values.iter().map(|v| !v.isinstance::<VMNamed>()).collect::<Vec<bool>>();
+        let mut assigned = self
+            .values
+            .iter()
+            .map(|v| !v.isinstance::<VMNamed>())
+            .collect::<Vec<bool>>();
 
         for item in &mut other_tuple.values {
             if item.isinstance::<VMNamed>() {
@@ -2193,8 +2203,7 @@ impl VMTuple {
         let mut normal_index = 0;
         for value in normal_values {
             // 寻找一个未赋值的位置
-            while normal_index < assigned.len() && assigned[normal_index]
-            {
+            while normal_index < assigned.len() && assigned[normal_index] {
                 normal_index += 1;
             }
 
@@ -2291,7 +2300,6 @@ impl VMIterable for VMTuple {
     fn reset(&mut self) {
         self.iter_index = 0;
     }
-    
 }
 
 impl GCObject for VMTuple {
@@ -2784,33 +2792,54 @@ impl VMObject for VMLambda {
  */
 #[derive(Debug)]
 pub struct VMCLambdaInstruction {
-    lib_handle: Option<Arc<Box<libloading::Library>>>,
+    clambda: CLambda,
     traceable: GCTraceable,
     alias: Vec<String>,
 }
 impl VMCLambdaInstruction {
-    pub fn new(lib_handle: Option<Arc<Box<libloading::Library>>>) -> Self {
+    pub fn new(clambda: CLambda) -> Self {
         VMCLambdaInstruction {
-            lib_handle,
+            clambda,
             traceable: GCTraceable::new::<VMCLambdaInstruction>(None),
             alias: Vec::new(),
         }
     }
 
-    pub fn new_with_alias(lib_handle: Option<Arc<Box<libloading::Library>>>, alias: &Vec<String>) -> Self {
+    pub fn new_with_alias(clambda: CLambda, alias: &Vec<String>) -> Self {
         VMCLambdaInstruction {
-            lib_handle,
+            clambda,
             traceable: GCTraceable::new::<VMCLambdaInstruction>(None),
             alias: alias.clone(),
+        }
+    }
+
+    pub fn get_clambda(&mut self) -> &mut CLambda {
+        &mut self.clambda
+    }
+
+    pub fn call(
+        &mut self,
+        signature: &String,
+        args: &mut GCRef,
+        gc_system: &mut GCSystem,
+    ) -> Result<GCRef, VMVariableError> {
+        unsafe {
+            let result =
+                vm_clambda_loading::call_clambda(&self.clambda, signature, args, gc_system);
+            result.map_err(|e| {
+                VMVariableError::ValueError(
+                    GCRef::wrap(self),
+                    format!("Failed to call clambda: {}", e),
+                )
+            })
         }
     }
 }
 impl GCObject for VMCLambdaInstruction {
     fn free(&mut self) {
         // 不需要额外的释放操作
-        if let Some(handle) = self.lib_handle.take() {
-            // 释放动态库
-            drop(handle);
+        unsafe {
+            vm_clambda_loading::destroy_clambda(&mut self.clambda);
         }
     }
 
@@ -2826,14 +2855,14 @@ impl GCObject for VMCLambdaInstruction {
 impl VMObject for VMCLambdaInstruction {
     fn deepcopy(&mut self, gc_system: &mut GCSystem) -> Result<GCRef, VMVariableError> {
         Ok(gc_system.new_object(VMCLambdaInstruction::new_with_alias(
-            self.lib_handle.clone(),
+            self.clambda.clone(),
             &self.alias,
         )))
     }
 
     fn copy(&mut self, gc_system: &mut GCSystem) -> Result<GCRef, VMVariableError> {
         Ok(gc_system.new_object(VMCLambdaInstruction::new_with_alias(
-            self.lib_handle.clone(),
+            self.clambda.clone(),
             &self.alias,
         )))
     }
@@ -2972,9 +3001,7 @@ impl VMIterable for VMRange {
     fn reset(&mut self) {
         self.iter_index = 0;
     }
-    
 }
-
 
 impl GCObject for VMRange {
     fn free(&mut self) {
@@ -3164,7 +3191,6 @@ impl VMIterable for VMBytes {
     fn reset(&mut self) {
         self.iter_index = 0;
     }
-    
 }
 
 impl GCObject for VMBytes {
@@ -3486,21 +3512,13 @@ impl VMSet {
 impl VMIterable for VMSet {
     fn next(&mut self, gc_system: &mut GCSystem) -> Option<GCRef> {
         if self.collection.isinstance::<VMTuple>() {
-            self.collection
-                .as_type::<VMTuple>()
-                .next(gc_system)
+            self.collection.as_type::<VMTuple>().next(gc_system)
         } else if self.collection.isinstance::<VMString>() {
-            self.collection
-                .as_type::<VMString>()
-                .next(gc_system)
+            self.collection.as_type::<VMString>().next(gc_system)
         } else if self.collection.isinstance::<VMBytes>() {
-            self.collection
-                .as_type::<VMBytes>()
-                .next(gc_system)
+            self.collection.as_type::<VMBytes>().next(gc_system)
         } else if self.collection.isinstance::<VMRange>() {
-            self.collection
-                .as_type::<VMRange>()
-                .next(gc_system)
+            self.collection.as_type::<VMRange>().next(gc_system)
         } else {
             None
         }
@@ -3517,5 +3535,4 @@ impl VMIterable for VMSet {
             self.collection.as_type::<VMRange>().reset();
         }
     }
-    
 }

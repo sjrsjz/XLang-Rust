@@ -1,4 +1,3 @@
-
 pub mod vm_instructions {
     use crate::vm::executor::context::ContextFrameType;
     use crate::vm::executor::variable::*;
@@ -107,10 +106,12 @@ pub mod vm_instructions {
         if let OpcodeArgument::String(sign_idx) = opcode.operand1 {
             if let OpcodeArgument::Int64(code_position) = opcode.operand2 {
                 let instruction = &mut vm.pop_object_and_check()?;
-                if !instruction.isinstance::<VMInstructions>() {
+                if !instruction.isinstance::<VMInstructions>()
+                    && !instruction.isinstance::<VMCLambdaInstruction>()
+                {
                     return Err(VMError::InvalidArgument(
                         instruction.clone(),
-                        "LoadLambda requires a VMInstructions".to_string(),
+                        "LoadLambda requires a VMInstructions or VMCLambdaInstruction".to_string(),
                     ));
                 }
                 let default_args_tuple = &mut vm.pop_object_and_check()?;
@@ -334,8 +335,8 @@ pub mod vm_instructions {
         let mut right = vm.pop_object_and_check()?;
         let mut left = vm.pop_object_and_check()?;
 
-        let obj = try_and_as_vmobject(&left, &right, gc_system)
-            .map_err(VMError::VMVariableError)?;
+        let obj =
+            try_and_as_vmobject(&left, &right, gc_system).map_err(VMError::VMVariableError)?;
 
         vm.push_vmobject(obj)?;
         left.drop_ref();
@@ -351,8 +352,7 @@ pub mod vm_instructions {
         let mut right = vm.pop_object_and_check()?;
         let mut left = vm.pop_object_and_check()?;
 
-        let obj = try_or_as_vmobject(&left, &right, gc_system)
-            .map_err(VMError::VMVariableError)?;
+        let obj = try_or_as_vmobject(&left, &right, gc_system).map_err(VMError::VMVariableError)?;
 
         vm.push_vmobject(obj)?;
         left.drop_ref();
@@ -368,8 +368,8 @@ pub mod vm_instructions {
         let mut right = vm.pop_object_and_check()?;
         let mut left = vm.pop_object_and_check()?;
 
-        let obj = try_xor_as_vmobject(&left, &right, gc_system)
-            .map_err(VMError::VMVariableError)?;
+        let obj =
+            try_xor_as_vmobject(&left, &right, gc_system).map_err(VMError::VMVariableError)?;
 
         vm.push_vmobject(obj)?;
         left.drop_ref();
@@ -568,8 +568,7 @@ pub mod vm_instructions {
     ) -> Result<Option<Vec<SpawnedCoroutine>>, VMError> {
         let mut ref_obj = vm.pop_object_and_check()?;
 
-        let obj =
-            try_not_as_vmobject(&ref_obj, gc_system).map_err(VMError::VMVariableError)?;
+        let obj = try_not_as_vmobject(&ref_obj, gc_system).map_err(VMError::VMVariableError)?;
 
         vm.push_vmobject(obj)?;
         ref_obj.drop_ref();
@@ -1007,8 +1006,21 @@ pub mod vm_instructions {
             return Err(VMError::VMVariableError(result.unwrap_err()));
         }
 
+        let clambda_signature = lambda_obj.alias_const().first().unwrap_or(&lambda_obj.signature).clone();
         match lambda_obj.lambda_body {
-            VMLambdaBody::VMInstruction(_) => {
+            VMLambdaBody::VMInstruction(ref mut body) => {
+                if body.isinstance::<VMCLambdaInstruction>() {
+                    let clambda = body.as_type::<VMCLambdaInstruction>();
+                    let mut result = clambda
+                        .call(&clambda_signature, &mut lambda_obj.default_args_tuple, gc_system)
+                        .map_err(|e| VMError::VMVariableError(e))?;
+                    lambda_obj.set_result(&mut result);
+                    vm.push_vmobject(result)?;
+                    arg_tuple.drop_ref();
+                    lambda.drop_ref();
+                    return Ok(None);
+                }
+
                 vm.enter_lambda(lambda, gc_system)?;
 
                 let func_ips = &vm
@@ -1062,7 +1074,13 @@ pub mod vm_instructions {
         }
 
         match lambda_obj.lambda_body {
-            VMLambdaBody::VMInstruction(_) => {
+            VMLambdaBody::VMInstruction(ref mut body) => {
+                if body.isinstance::<VMCLambdaInstruction>() {
+                    return Err(VMError::InvalidArgument(
+                        arg_tuple.clone(),
+                        "Async call not supported for VMCLambdaInstruction".to_string(),
+                    ));
+                }
                 let spawned_coroutines = vec![SpawnedCoroutine {
                     lambda_ref: lambda.clone_ref(),
                 }];
@@ -1073,12 +1091,10 @@ pub mod vm_instructions {
 
                 Ok(Some(spawned_coroutines))
             }
-            VMLambdaBody::VMNativeFunction(_) => {
-                Err(VMError::InvalidArgument(
-                    arg_tuple.clone(),
-                    "Native function cannot be async".to_string(),
-                ))
-            }
+            VMLambdaBody::VMNativeFunction(_) => Err(VMError::InvalidArgument(
+                arg_tuple.clone(),
+                "Native function cannot be async".to_string(),
+            )),
         }
     }
     pub fn wrap(
@@ -1357,10 +1373,10 @@ pub mod vm_instructions {
                 "BuildSet: Due to the limitation of the current implementation, the collection cannot be a VMSet. You should build a VMTuple before creating a VMSet".to_string(),
             ));
         }
-        if !collection.isinstance::<VMTuple>() &&
-            !collection.isinstance::<VMString>() &&
-            !collection.isinstance::<VMBytes>() &&
-            !collection.isinstance::<VMRange>()
+        if !collection.isinstance::<VMTuple>()
+            && !collection.isinstance::<VMString>()
+            && !collection.isinstance::<VMBytes>()
+            && !collection.isinstance::<VMRange>()
         {
             return Err(VMError::InvalidArgument(
                 collection.clone(),
@@ -1383,9 +1399,7 @@ pub mod vm_instructions {
             return Err(VMError::InvalidInstruction(opcode.clone()));
         };
         let mut obj = vm.get_object_and_check(offset as usize)?;
-        vm.stack.push(
-            VMStackObject::VMObject(obj.clone_ref()),
-        );
+        vm.stack.push(VMStackObject::VMObject(obj.clone_ref()));
         Ok(None)
     }
 
@@ -1407,9 +1421,9 @@ pub mod vm_instructions {
             ));
         }
         let tuple_value = tuple.as_type::<VMTuple>();
-        tuple_value.append(&mut obj).map_err(|e| {
-            VMError::VMVariableError(e)
-        })?;        
+        tuple_value
+            .append(&mut obj)
+            .map_err(|e| VMError::VMVariableError(e))?;
         obj.drop_ref();
         Ok(None)
     }

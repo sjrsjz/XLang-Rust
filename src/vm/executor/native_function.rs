@@ -1,12 +1,15 @@
-
 pub mod native_functions {
     use std::io::Write;
 
     use crate::vm::{
-        executor::{context::Context, variable::{
-            try_repr_vmobject, VMBoolean, VMBytes, VMFloat, VMInt, VMNull, VMString, VMTuple,
-            VMVariableError,
-        }},
+        executor::{
+            context::Context,
+            ffi::vm_clambda_loading,
+            variable::{
+                try_repr_vmobject, VMBoolean, VMBytes, VMCLambdaInstruction, VMFloat, VMInt,
+                VMNull, VMString, VMTuple, VMVariableError,
+            },
+        },
         gc::gc::{GCRef, GCSystem},
     };
 
@@ -24,7 +27,6 @@ pub mod native_functions {
         Ok(())
     }
 
-
     pub fn inject_builtin_functions(
         context: &mut Context,
         gc_system: &mut GCSystem,
@@ -41,7 +43,7 @@ pub mod native_functions {
                 &mut params,
                 None,
                 &mut VMLambdaBody::VMNativeFunction(self::print),
-                &mut result
+                &mut result,
             )),
         );
         params.drop_ref();
@@ -57,7 +59,7 @@ pub mod native_functions {
                 &mut params,
                 None,
                 &mut VMLambdaBody::VMNativeFunction(self::len),
-                &mut result
+                &mut result,
             )),
         );
         params.drop_ref();
@@ -73,12 +75,12 @@ pub mod native_functions {
                 &mut params,
                 None,
                 &mut VMLambdaBody::VMNativeFunction(self::to_int),
-                &mut result
+                &mut result,
             )),
         );
         params.drop_ref();
         result.drop_ref();
-        
+
         let mut params = gc_system.new_object(VMTuple::new(&mut vec![]));
         let mut result = gc_system.new_object(VMNull::new());
         built_in_functions.insert(
@@ -89,7 +91,7 @@ pub mod native_functions {
                 &mut params,
                 None,
                 &mut VMLambdaBody::VMNativeFunction(self::to_float),
-                &mut result
+                &mut result,
             )),
         );
         params.drop_ref();
@@ -105,7 +107,7 @@ pub mod native_functions {
                 &mut params,
                 None,
                 &mut VMLambdaBody::VMNativeFunction(self::to_string),
-                &mut result
+                &mut result,
             )),
         );
         params.drop_ref();
@@ -121,7 +123,7 @@ pub mod native_functions {
                 &mut params,
                 None,
                 &mut VMLambdaBody::VMNativeFunction(self::to_bool),
-                &mut result
+                &mut result,
             )),
         );
         params.drop_ref();
@@ -137,7 +139,7 @@ pub mod native_functions {
                 &mut params,
                 None,
                 &mut VMLambdaBody::VMNativeFunction(self::to_bytes),
-                &mut result
+                &mut result,
             )),
         );
         params.drop_ref();
@@ -153,12 +155,27 @@ pub mod native_functions {
                 &mut params,
                 None,
                 &mut VMLambdaBody::VMNativeFunction(self::input),
-                &mut result
+                &mut result,
             )),
         );
         params.drop_ref();
         result.drop_ref();
 
+        let mut params = gc_system.new_object(VMTuple::new(&mut vec![]));
+        let mut result = gc_system.new_object(VMNull::new());
+        built_in_functions.insert(
+            "load_clambda".to_string(),
+            gc_system.new_object(VMLambda::new(
+                0,
+                "<builtins>::load_clambda".to_string(),
+                &mut params,
+                None,
+                &mut VMLambdaBody::VMNativeFunction(self::load_clambda),
+                &mut result,
+            )),
+        );
+        params.drop_ref();
+        result.drop_ref();
 
         for (name, func) in built_in_functions.iter_mut() {
             let result = context.let_var(name, func, gc_system);
@@ -169,7 +186,6 @@ pub mod native_functions {
         }
         Ok(())
     }
-
 
     pub fn print(tuple: GCRef, gc_system: &mut GCSystem) -> Result<GCRef, VMVariableError> {
         check_if_tuple(tuple.clone())?;
@@ -448,6 +464,39 @@ pub mod native_functions {
         Err(VMVariableError::TypeError(
             tuple.clone(),
             "input function's input should be a string".to_string(),
+        ))
+    }
+
+    pub fn load_clambda(tuple: GCRef, gc_system: &mut GCSystem) -> Result<GCRef, VMVariableError> {
+        check_if_tuple(tuple.clone())?;
+        let tuple_obj = tuple.as_const_type::<VMTuple>();
+        if tuple_obj.values.len() != 1 {
+            return Err(VMVariableError::TypeError(
+                tuple.clone(),
+                "load_clambda function's input should be one element".to_string(),
+            ));
+        }
+        if tuple_obj.values[0].isinstance::<VMString>() {
+            let data = tuple_obj.values[0]
+                .as_const_type::<VMString>()
+                .to_string()?;
+            let mut clambda = unsafe {
+                vm_clambda_loading::load_clambda(&data).map_err(|e| {
+                    VMVariableError::ValueError(
+                        tuple.clone(),
+                        format!("Failed to load clambda: {}", e),
+                    )
+                })?
+            };
+            unsafe {
+                vm_clambda_loading::init_clambda(&mut clambda);
+            }
+            let vm_clambda = gc_system.new_object(VMCLambdaInstruction::new(clambda));
+            return Ok(vm_clambda);
+        }
+        Err(VMVariableError::TypeError(
+            tuple.clone(),
+            "load_clambda function's input should be a string".to_string(),
         ))
     }
 }
