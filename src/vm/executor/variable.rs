@@ -2695,11 +2695,7 @@ impl VMObject for VMLambda {
 
         let mut new_result: GCRef = try_deepcopy_as_vmobject(&mut self.result, gc_system)?;
         let mut new_lambda_body = match self.lambda_body {
-            VMLambdaBody::VMInstruction(ref mut instructions) => VMLambdaBody::VMInstruction(
-                instructions
-                    .as_type::<VMInstructions>()
-                    .deepcopy(gc_system)?,
-            ),
+            VMLambdaBody::VMInstruction(ref mut instructions) => VMLambdaBody::VMInstruction(try_deepcopy_as_vmobject(instructions, gc_system)?),
             VMLambdaBody::VMNativeFunction(_) => self.lambda_body.clone(),
         };
 
@@ -2729,7 +2725,7 @@ impl VMObject for VMLambda {
             .as_type::<VMTuple>()
             .copy(gc_system)?;
 
-        let mut new_result = self.result.as_type::<VMNull>().copy(gc_system)?;
+        let mut new_result = try_copy_as_vmobject(&mut self.result, gc_system)?;
 
         Ok(gc_system.new_object(VMLambda::new_with_alias(
             self.code_position,
