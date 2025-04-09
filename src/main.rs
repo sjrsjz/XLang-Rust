@@ -1,5 +1,6 @@
 mod parser;
-pub mod vm;
+mod lsp;
+mod vm;
 use colored::Colorize;
 use rustyline::highlight::CmdKind;
 use vm::executor::variable::VMInstructions;
@@ -78,6 +79,13 @@ enum Commands {
 
     /// Interactive interpreter mode
     Repl {},
+
+    /// LSP server mode
+    Lsp {
+        /// LSP server port
+        #[arg(short, long, default_value_t = 2087)]
+        port: u16,
+    },
 }
 
 // Compile code and generate intermediate representation
@@ -1014,6 +1022,14 @@ fn main() {
         Commands::Repl {} => {
             if let Err(e) = run_repl() {
                 eprintln!("REPL error: {}", e);
+                std::process::exit(1);
+            }
+        }
+        Commands::Lsp { port } => {
+            // 启动 LSP 服务器
+            let result = lsp::start_lsp_server(port);
+            if let Err(e) = result {
+                eprintln!("LSP server error: {}", e);
                 std::process::exit(1);
             }
         }
