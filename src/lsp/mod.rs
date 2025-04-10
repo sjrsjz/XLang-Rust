@@ -6,12 +6,10 @@ mod diagnostics;
 mod handlers;
 
 use std::net::{TcpListener, TcpStream};
-use std::io::{self, BufReader, BufWriter};
-use std::thread;
+use std::io::{BufReader, BufWriter};
 use std::sync::{Arc, Mutex};
-use log::{info, error, warn, debug};
+use log::{info, error};
 
-pub use server::LspServer;
 
 /// 启动LSP服务器
 pub fn start_lsp_server(port: u16) -> Result<(), String> {
