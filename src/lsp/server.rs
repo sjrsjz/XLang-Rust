@@ -365,8 +365,6 @@ pub fn run_lsp_server<R: BufRead, W: Write>(
         let message =
             String::from_utf8(buffer).map_err(|e| format!("Invalid UTF-8 in message: {}", e))?;
 
-        debug!("Received: {}", message);
-
         // 解析消息类型并处理
         if message.contains("\"id\":") {
             // 请求
@@ -414,7 +412,6 @@ pub fn run_lsp_server<R: BufRead, W: Write>(
 
 /// 处理LSP请求
 fn handle_request(server: Arc<Mutex<LspServer>>, request: RequestMessage) -> ResponseMessage {
-    debug!("Request: {} (id: {:?})", request.method, request.id);
 
     let mut response = ResponseMessage {
         jsonrpc: "2.0".to_string(),

@@ -91,23 +91,31 @@ pub mod lexer {
         let chars: Vec<char> = code.chars().collect(); // 预处理，将字符串转换为字符数组
         let tokens = RefCell::new(Vec::<super::Token>::new());
         let curr_pos = RefCell::new(0usize);
+        
+        // 源代码字符串
+        let code_str = RefCell::new(code.to_string());
 
-        // // 辅助函数：获取指定位置的子字符串
-        // let substr = |start: usize, len: usize| -> String {
-        //     if start + len > chars.len() {
-        //         return "".to_string();
-        //     }
-        //     chars[start..start+len].iter().collect()
-        // };
-
-        // // 辅助函数：获取字符的字节索引
-        // let get_byte_index = |char_index: usize| -> usize {
-        //     if char_index == 0 {
-        //         return 0;
-        //     }
-        //     let s: String = chars[0..char_index].iter().collect();
-        //     s.len()
-        // };
+        // 辅助函数：获取字符的字节索引
+        let get_byte_index = |char_index: usize| -> usize {
+            if char_index == 0 {
+                return 0;
+            }
+            
+            let code_ref = code_str.borrow();
+            let s = &code_ref[..];
+            let mut char_count = 0;
+            let mut byte_index = 0;
+            
+            for (idx, _) in s.char_indices() {
+                if char_count == char_index {
+                    byte_index = idx;
+                    break;
+                }
+                char_count += 1;
+            }
+            
+            byte_index
+        };
 
         // Skip whitespace
         let skip_space = || {
@@ -478,13 +486,16 @@ pub mod lexer {
                 break;
             }
 
+            // 获取当前字符位置对应的字节位置
+            let byte_pos = get_byte_index(curr_pos_value);
+
             if let Some((token, origin_token)) = read_number() {
                 let mut tokens = tokens.borrow_mut();
                 tokens.push(super::Token::new(
                     token,
                     super::TokenType::NUMBER,
                     origin_token,
-                    curr_pos_value,
+                    byte_pos,
                 ));
                 continue;
             }
@@ -495,7 +506,7 @@ pub mod lexer {
                     token,
                     super::TokenType::BASE64,
                     origin_token,
-                    curr_pos_value,
+                    byte_pos,
                 ));
                 continue;
             }
@@ -506,7 +517,7 @@ pub mod lexer {
                     token,
                     super::TokenType::STRING,
                     origin_token,
-                    curr_pos_value,
+                    byte_pos,
                 ));
                 continue;
             }
@@ -517,7 +528,7 @@ pub mod lexer {
                     token,
                     super::TokenType::COMMENT,
                     origin_token,
-                    curr_pos_value,
+                    byte_pos,
                 ));
                 continue;
             }
@@ -528,7 +539,7 @@ pub mod lexer {
                     token,
                     super::TokenType::SYMBOL,
                     origin_token,
-                    curr_pos_value,
+                    byte_pos,
                 ));
                 continue;
             }
@@ -539,7 +550,7 @@ pub mod lexer {
                     token,
                     super::TokenType::IDENTIFIER,
                     origin_token,
-                    curr_pos_value,
+                    byte_pos,
                 ));
                 continue;
             } else {
