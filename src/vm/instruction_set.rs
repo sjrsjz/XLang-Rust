@@ -107,7 +107,7 @@ pub enum VMInstruction {
 
 impl VMInstruction {
     /// 获取指令名称
-    pub fn name(&self) -> &'static str {
+    pub fn _name(&self) -> &'static str {
         match self {
             Self::LoadNull => "LoadNull",
             Self::LoadInt32 => "LoadInt32",
@@ -293,7 +293,7 @@ impl VMInstruction {
     }
 
     /// 获取指令是否带有参数
-    pub fn has_arguments(&self) -> bool {
+    pub fn _has_arguments(&self) -> bool {
         match self {
             Self::LoadNull
             | Self::Pop
@@ -377,7 +377,7 @@ impl VMInstruction {
     }
 
     /// 获取指令参数数量
-    pub fn argument_count(&self) -> usize {
+    pub fn _argument_count(&self) -> usize {
         match self {
             // 没有参数的指令
             Self::LoadNull

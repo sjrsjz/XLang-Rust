@@ -32,7 +32,6 @@ pub enum VMVariableError {
     AssignError(GCRef, String),
     ReferenceError(GCRef, String),
     OverflowError(GCRef, GCRef, String),
-    UnstableRef(GCRef, String),
 }
 
 impl VMVariableError {
@@ -89,11 +88,6 @@ impl VMVariableError {
                 try_repr_vmobject(gc_ref.clone(), None).unwrap_or(format!("{:?}", gc_ref)),
                 try_repr_vmobject(other.clone(), None).unwrap_or(format!("{:?}", other)),
             ),
-            VMVariableError::UnstableRef(gc_ref, msg) => format!(
-                "UnstableRef: {}: {}",
-                try_repr_vmobject(gc_ref.clone(), None).unwrap_or(format!("{:?}", gc_ref)),
-                msg
-            ),
         }
     }
 }
@@ -111,6 +105,9 @@ pub fn try_contains_as_vmobject(value: &GCRef, other: &GCRef) -> Result<bool, VM
     } else if value.isinstance::<VMSet>() {
         let set = value.as_const_type::<VMSet>();
         return set.contains(other);
+    } else if value.isinstance::<VMBytes>() {
+        let bytes = value.as_const_type::<VMBytes>();
+        return bytes.contains(other);
     }
     Err(VMVariableError::TypeError(
         value.clone(),
@@ -228,7 +225,7 @@ pub fn try_repr_vmobject(
     ))
 }
 
-pub fn debug_print_repr(value: GCRef) {
+pub fn _debug_print_repr(value: GCRef) {
     match try_repr_vmobject(value.clone(), None) {
         Ok(repr) => println!(
             "Repr:{}| {:?}, {:?} {}",
@@ -2030,14 +2027,6 @@ impl VMTuple {
         }
     }
 
-    pub fn get(&mut self, index: usize) -> Option<GCRef> {
-        if index < self.values.len() {
-            Some(self.values[index].clone())
-        } else {
-            None
-        }
-    }
-
     pub fn len(&self) -> usize {
         self.values.len()
     }
@@ -2488,7 +2477,6 @@ impl VMObject for VMInstructions {
 #[derive(Debug, PartialEq)]
 pub enum VMCoroutineStatus {
     Running,
-    Pending,
     Finished,
     Crashed,
 }
@@ -2497,7 +2485,6 @@ impl VMCoroutineStatus {
     pub fn to_string(&self) -> String {
         match self {
             VMCoroutineStatus::Running => "Running".bright_green().bold().to_string(),
-            VMCoroutineStatus::Pending => "Pending".bright_yellow().bold().to_string(),
             VMCoroutineStatus::Finished => "Finished".bright_yellow().bold().to_string(),
             VMCoroutineStatus::Crashed => "Crashed".bright_red().bold().to_string(),
         }
@@ -2647,17 +2634,10 @@ impl VMLambda {
         &mut self.result
     }
 
-    pub fn get_const_value(&self) -> &GCRef {
-        &self.result
-    }
-
     pub fn get_key(&mut self) -> &mut GCRef {
         &mut self.default_args_tuple
     }
 
-    pub fn get_const_key(&self) -> &GCRef {
-        &self.default_args_tuple
-    }
 }
 
 impl GCObject for VMLambda {
@@ -2809,9 +2789,6 @@ impl VMCLambdaInstruction {
         }
     }
 
-    pub fn get_clambda(&mut self) -> &mut CLambda {
-        &mut self.clambda
-    }
 
     pub fn call(
         &mut self,
@@ -3085,10 +3062,6 @@ impl VMBytes {
         }
     }
 
-    pub fn to_bool(&self) -> Result<bool, VMVariableError> {
-        Ok(!self.value.is_empty())
-    }
-
     pub fn len(&self) -> usize {
         self.value.len()
     }
@@ -3147,7 +3120,7 @@ impl VMBytes {
         ))
     }
 
-    pub fn contains(&self, other: GCRef) -> Result<bool, VMVariableError> {
+    pub fn contains(&self, other: &GCRef) -> Result<bool, VMVariableError> {
         if other.isinstance::<VMBytes>() {
             let other_bytes = other.as_const_type::<VMBytes>();
             // 检查是否包含子序列

@@ -1013,7 +1013,7 @@ pub mod vm_instructions {
                     let clambda = body.as_type::<VMCLambdaInstruction>();
                     let mut result = clambda
                         .call(&clambda_signature, &mut lambda_obj.default_args_tuple, gc_system)
-                        .map_err(|e| VMError::VMVariableError(e))?;
+                        .map_err(VMError::VMVariableError)?;
                     lambda_obj.set_result(&mut result);
                     vm.push_vmobject(result)?;
                     arg_tuple.drop_ref();
@@ -1345,11 +1345,11 @@ pub mod vm_instructions {
         }
         let rev_offset_1 = vm.stack.len() - offset_1 as usize - 1;
         let rev_offset_2 = vm.stack.len() - offset_2 as usize - 1;
-        let obj_1 = vm.stack[rev_offset_1 as usize].clone();
-        let obj_2 = vm.stack[rev_offset_2 as usize].clone();
+        let obj_1 = vm.stack[rev_offset_1].clone();
+        let obj_2 = vm.stack[rev_offset_2].clone();
         // swap
-        vm.stack[rev_offset_1 as usize] = obj_2.clone();
-        vm.stack[rev_offset_2 as usize] = obj_1.clone();
+        vm.stack[rev_offset_1] = obj_2.clone();
+        vm.stack[rev_offset_2] = obj_1.clone();
         Ok(None)
     }
 
@@ -1423,7 +1423,7 @@ pub mod vm_instructions {
         let tuple_value = tuple.as_type::<VMTuple>();
         tuple_value
             .append(&mut obj)
-            .map_err(|e| VMError::VMVariableError(e))?;
+            .map_err(VMError::VMVariableError)?;
         obj.drop_ref();
         Ok(None)
     }

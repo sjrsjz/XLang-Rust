@@ -221,8 +221,7 @@ fn execute_ir_repl(
 impl VMInstructionPackage {
     pub fn write_to_file(&self, path: &str) -> Result<(), std::io::Error> {
         let serialized = bincode::serialize(self).map_err(|e| {
-            std::io::Error::new(
-                std::io::ErrorKind::Other,
+            std::io::Error::other(
                 format!("Serialization error: {}", e),
             )
         })?;
@@ -233,8 +232,7 @@ impl VMInstructionPackage {
     pub fn read_from_file(path: &str) -> Result<Self, std::io::Error> {
         let bytes = fs::read(path)?;
         bincode::deserialize(&bytes).map_err(|e| {
-            std::io::Error::new(
-                std::io::ErrorKind::Other,
+            std::io::Error::other(
                 format!("Deserialization error: {}", e),
             )
         })

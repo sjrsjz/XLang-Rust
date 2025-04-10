@@ -423,8 +423,6 @@ pub enum ASTNodeOperation {
     Divide,       // /
     Modulus,      // %
     Power,        // **
-    ShiftLeft,    // <<
-    ShiftRight,   // >>
     And,          // and
     Xor,         // xor
     Or,           // or
@@ -482,7 +480,7 @@ impl ASTNode<'_> {
         }
     }
 
-    pub fn formatted_print(&self, indent: usize) {
+    pub fn _formatted_print(&self, indent: usize) {
         let indent_str = " ".repeat(indent);
         let output = match &self.node_type {
             node_type @ (ASTNodeType::Variable(v)
@@ -498,7 +496,7 @@ impl ASTNode<'_> {
 
         if !self.children.is_empty() {
             for child in &self.children {
-                child.formatted_print(indent + 2);
+                child._formatted_print(indent + 2);
             }
         }
     }

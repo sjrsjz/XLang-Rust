@@ -58,9 +58,6 @@ impl LabelGenerator {
         (full_label, label)
     }
 
-    pub fn reset(&mut self) {
-        self.label_counter = 0;
-    }
 }
 
 #[derive(Debug)]
@@ -77,7 +74,6 @@ pub enum IRGeneratorError {
     InvalidASTNodeType(ASTNodeType),
     InvalidScope,
     InvalidLabel,
-    InvalidFunctionSignature,
 }
 
 use std::rc::Rc;
@@ -319,18 +315,6 @@ impl<'t> IRGenerator<'t> {
                         instructions.push((
                             self.generate_debug_info(ast_node),
                             IR::BinaryOp(IROperation::LessEqual),
-                        ));
-                    }
-                    ASTNodeOperation::ShiftLeft => {
-                        instructions.push((
-                            self.generate_debug_info(ast_node),
-                            IR::BinaryOp(IROperation::ShiftLeft),
-                        ));
-                    }
-                    ASTNodeOperation::ShiftRight => {
-                        instructions.push((
-                            self.generate_debug_info(ast_node),
-                            IR::BinaryOp(IROperation::ShiftRight),
                         ));
                     }
                     ASTNodeOperation::Power => {

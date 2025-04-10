@@ -8,7 +8,7 @@ pub enum TokenType {
     BASE64,
 }
 impl TokenType {
-    pub fn to_string(&self) -> String {
+    pub fn _to_string(&self) -> String {
         match self {
             TokenType::NUMBER => "NUMBER".to_string(),
             TokenType::STRING => "STRING".to_string(),
@@ -61,13 +61,13 @@ impl<'a> Token<'a> {
         }
     }
 
-    pub fn to_string(&self) -> String {
+    pub fn _to_string(&self) -> String {
         format!(
             "{} <{}, Token: {}, Type: {}>",
             self.origin_token,
             self.position,
             self.token,
-            self.token_type.to_string()
+            self.token_type._to_string()
         )
     }
 }

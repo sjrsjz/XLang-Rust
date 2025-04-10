@@ -2,10 +2,8 @@ use rustc_hash::FxHashMap as HashMap;
 
 use super::super::gc::gc::GCRef;
 use super::super::gc::gc::GCSystem;
-use super::variable::try_assign_as_vmobject;
 use super::variable::try_repr_vmobject;
 use super::variable::VMStackObject;
-use super::variable::VMVariableError;
 
 #[derive(Debug, PartialEq, Eq)]
 pub enum ContextFrameType {
@@ -24,10 +22,6 @@ pub struct Context {
 pub enum ContextError {
     NoFrame(ContextFrameType),
     NoVariable(String),
-    ExistingVariable(String),
-    OfflinedObject(GCRef),
-    InvalidContextVariable(GCRef),
-    VMVariableError(VMVariableError),
     ContextError(String),
 }
 
@@ -43,18 +37,6 @@ impl ContextError {
                 }
             ),
             ContextError::NoVariable(name) => format!("No variable: {}", name),
-            ContextError::ExistingVariable(name) => format!("Existing variable: {}", name),
-            ContextError::OfflinedObject(obj) => format!(
-                "Offlined object: {:?}",
-                try_repr_vmobject(obj.clone(), None).unwrap_or(format!("{:?}", obj))
-            ),
-            ContextError::InvalidContextVariable(obj) => format!(
-                "Invalid context variable: {:?}",
-                try_repr_vmobject(obj.clone(), None).unwrap_or(format!("{:?}", obj))
-            ),
-            ContextError::VMVariableError(err) => {
-                format!("VM variable error: {:?}", err.to_string())
-            }
             ContextError::ContextError(msg) => format!("Context error: {}", msg),
         }
     }
@@ -214,14 +196,6 @@ impl Context {
         Err(ContextError::NoVariable(name.to_string()))
     }
 
-    pub fn set_var(&mut self, name: &str, value: &mut GCRef) -> Result<(), ContextError> {
-        for (vars, _, _, _) in self.frames.iter_mut().rev() {
-            if let Some(var) = vars.get_mut(name) {
-                try_assign_as_vmobject(var, value).map_err(ContextError::VMVariableError)?;
-            }
-        }
-        Err(ContextError::NoVariable(name.to_string()))
-    }
     pub fn format_context(&self, stack: &Vec<VMStackObject>) -> String {
         use colored::*;
 
@@ -376,7 +350,7 @@ impl Context {
 
         output
     }
-    pub fn debug_print_all_vars(&self) {
+    pub fn _debug_print_all_vars(&self) {
         for (vars, _, _, _) in self.frames.iter().rev() {
             println!("=== Frame Variables === {}", vars.len());
             for (name, var) in vars.iter() {

@@ -37,8 +37,8 @@ impl Opcode32 {
         ((bits >> 32) & 0xFFFFFFFF) as u32
     }
     pub fn f32lower32(uint: f32) -> u32 {
-        let bits = uint.to_bits();
-        bits
+        
+        uint.to_bits()
     }
 }
 
@@ -110,7 +110,7 @@ pub struct ProcessedOpcode {
 }
 
 impl ProcessedOpcode {
-    pub fn to_string(&self) -> String {
+    pub fn _to_string(&self) -> String {
         let mut result = format!("Instruction: {:?}, ", VMInstruction::from_opcode(self.instruction));
         result += &format!("Operand1: {:?}, ", self.operand1);
         result += &format!("Operand2: {:?}, ", self.operand2);

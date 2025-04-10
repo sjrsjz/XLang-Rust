@@ -14,8 +14,6 @@ pub type CLambdaBodyFn = unsafe extern "C" fn(
     FFIGCRef, // GCRef
     *mut c_void, // GCSystem
 ) -> FFIGCRef; // GCRef
-/// 定义Lookup函数的类型
-pub type RustLookupFn = unsafe extern "C" fn(*const c_char) -> *mut c_void;
 
 #[repr(C)]
 #[derive(Debug, Clone)]
@@ -152,7 +150,7 @@ pub mod vm_ffi {
         }
         let mut gc_ref = ffi_to_gc_ref(&v);
         let _ = gc_ref.clone_ref();
-        return 1;
+        1
     }
 
     pub unsafe extern "C" fn drop_ref(v: FFIGCRef) -> c_int {
@@ -161,7 +159,7 @@ pub mod vm_ffi {
         }
         let mut gc_ref = ffi_to_gc_ref(&v);
         gc_ref.drop_ref();
-        return 1;
+        1
     }
 
     pub unsafe extern "C" fn get_len(v: FFIGCRef) -> c_longlong {
@@ -194,12 +192,12 @@ pub mod vm_ffi {
 
     pub unsafe extern "C" fn new_vm_int64(v: c_longlong, gc_system: *mut c_void) -> FFIGCRef{
         let gc_system = &mut *(gc_system as *mut GCSystem);
-        return gc_ref_to_ffi(&gc_system.new_object(VMInt::new(v as i64)));
+        gc_ref_to_ffi(&gc_system.new_object(VMInt::new(v)))
     }
 
     pub unsafe extern "C" fn new_vm_float64(v: c_double, gc_system: *mut c_void) -> FFIGCRef {
         let gc_system = &mut *(gc_system as *mut GCSystem);
-        return gc_ref_to_ffi(&gc_system.new_object(VMFloat::new(v)));
+        gc_ref_to_ffi(&gc_system.new_object(VMFloat::new(v)))
     }
 
     pub unsafe extern "C" fn new_vm_string(
@@ -513,7 +511,7 @@ pub mod vm_ffi {
             return FFIGCRef { data: std::ptr::null_mut(), vtable: std::ptr::null_mut() };
         }
         let value_ref = v.unwrap();
-        return gc_ref_to_ffi(&value_ref);
+        gc_ref_to_ffi(value_ref)
     }
 
     pub unsafe extern "C" fn get_vm_key(obj: FFIGCRef) -> FFIGCRef {
@@ -528,7 +526,7 @@ pub mod vm_ffi {
             return FFIGCRef { data: std::ptr::null_mut(), vtable: std::ptr::null_mut() };
         }
         let value_ref = v.unwrap();
-        return gc_ref_to_ffi(&value_ref);
+        gc_ref_to_ffi(value_ref)
     }
 
     pub unsafe extern "C" fn set_vm_value(target: FFIGCRef, value: FFIGCRef) -> c_int {

@@ -1,5 +1,5 @@
 use std::collections::HashMap;
-use std::io::{BufRead, BufReader, Write};
+use std::io::{BufRead, Write};
 use std::sync::{Arc, Mutex};
 
 use log::{debug, error, info, warn};
@@ -8,7 +8,6 @@ use serde_json::Value;
 use crate::parser::lexer;
 
 use super::capabilities::initialize_capabilities;
-use super::diagnostics::validate_document;
 use super::document::TextDocument;
 use super::protocol::*;
 
@@ -187,7 +186,7 @@ impl LspServer {
             );
 
             // 打印文档内容摘要 (调试用)
-            if document.content.len() > 0 {
+            if !document.content.is_empty() {
                 let preview = if document.content.len() > 100 {
                     format!(
                         "{}...(共{}字节)",

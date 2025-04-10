@@ -14,7 +14,6 @@ pub enum VMError {
     TryEnterNotLambda(GCRef),
     EmptyStack,
     ArgumentIsNotTuple(GCRef),
-    UnableToReference(GCRef),
     NotVMObject(VMStackObject),
     ContextError(ContextError),
     VMVariableError(VMVariableError),
@@ -47,11 +46,6 @@ impl VMError {
                 "{}: {}",
                 "ArgumentIsNotTuple".bright_red().bold(),
                 try_repr_vmobject(tuple.clone(), None).unwrap_or(format!("{:?}", tuple))
-            ),
-            VMError::UnableToReference(obj) => format!(
-                "{}: {}",
-                "UnableToReference".bright_red().bold(),
-                try_repr_vmobject(obj.clone(), None).unwrap_or(format!("{:?}", obj))
             ),
             VMError::NotVMObject(obj) => {
                 format!("{}: {:?}", "NotVMObject".bright_red().bold(), obj)
@@ -146,15 +140,6 @@ impl VMCoroutinePool {
 
         lambda_object.drop_ref();
         Ok(id)
-    }
-
-    pub fn get_coroutine(&self, id: isize) -> Option<&VMExecutor> {
-        for (executor, executor_id) in &self.executors {
-            if *executor_id == id {
-                return Some(executor);
-            }
-        }
-        None
     }
 
     pub fn step_all(
@@ -427,7 +412,7 @@ impl VMExecutor {
         self.stack.push(VMStackObject::VMObject(obj.clone()));
         Ok(())
     }
-    pub fn debug_output_stack(&self) {
+    pub fn _debug_output_stack(&self) {
         println!("Stack:");
         for (i, obj) in self.stack.iter().enumerate() {
             match obj {
