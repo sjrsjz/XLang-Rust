@@ -99,50 +99,127 @@ impl LspServer {
 
         // 触发文档验证
         self.validate_document(&uri);
+        info!("Document opened: {}", uri);
     }
 
     /// 处理文档变更通知
     pub fn did_change(&mut self, params: DidChangeTextDocumentParams) {
         let uri = params.text_document.uri.clone();
+        info!("文档变更: {} (版本 {})", uri, params.text_document.version);
 
-        if let Some(document) = self.documents.get_mut(&uri) {
-            for change in params.content_changes {
-                match change {
-                    TextDocumentContentChangeEvent::Full { text } => {
-                        document.update_content(text);
-                    }
-                    TextDocumentContentChangeEvent::Incremental { range, text } => {
-                        document.apply_incremental_change(range, text);
-                    }
+        // 获取或创建文档
+        let document = if let Some(doc) = self.documents.get_mut(&uri) {
+            info!("更新现有文档");
+            doc
+        } else {
+            info!("文档不存在，创建新文档: {}", uri);
+            // 确定初始内容
+            let initial_content = if !params.content_changes.is_empty() {
+                match &params.content_changes[0] {
+                    TextDocumentContentChangeEvent::Full { text } => text.clone(),
+                    TextDocumentContentChangeEvent::Incremental { .. } => String::new(),
+                }
+            } else {
+                String::new()
+            };
+
+            let doc = TextDocument::new(
+                uri.clone(),
+                "xlang".to_string(), // 假设语言为 xlang
+                params.text_document.version,
+                initial_content,
+            );
+
+            self.documents.insert(uri.clone(), doc);
+            self.documents.get_mut(&uri).unwrap()
+        };
+
+        // 应用所有变更
+        for (i, change) in params.content_changes.iter().enumerate() {
+            match change {
+                TextDocumentContentChangeEvent::Full { text } => {
+                    info!("应用全量变更 #{}: 内容长度 {} 字节", i, text.len());
+                    document.update_content(text.clone());
+                }
+                TextDocumentContentChangeEvent::Incremental { range, text } => {
+                    info!(
+                        "应用增量变更 #{}: 范围 [{},{}]-[{},{}], 文本长度 {} 字节",
+                        i,
+                        range.start.line,
+                        range.start.character,
+                        range.end.line,
+                        range.end.character,
+                        text.len()
+                    );
+                    document.apply_incremental_change(range.clone(), text.clone());
                 }
             }
-            document.version = params.text_document.version;
-
-            // 触发文档验证
-            self.validate_document(&uri);
-        } else {
-            warn!("Received change for unopened document: {}", uri);
         }
-    }
 
+        // 更新文档版本
+        let old_version = document.version;
+        document.version = params.text_document.version;
+        info!("文档版本从 {} 更新到 {}", old_version, document.version);
+
+        // 打印当前文档内容 (调试用)
+        debug!(
+            "更新后的文档内容 (前100字符): {}",
+            &document.content.chars().take(100).collect::<String>()
+        );
+    }
     /// 处理文档关闭通知
     pub fn did_close(&mut self, params: DidCloseTextDocumentParams) {
+        info!("Document closed: {}", params.text_document.uri);
         let uri = params.text_document.uri.clone();
         if self.documents.remove(&uri).is_none() {
             warn!("Tried to close non-existent document: {}", uri);
         }
     }
 
-    /// 验证文档并发送诊断消息
+    // 验证文档并发送诊断消息
     fn validate_document(&self, uri: &str) -> Option<Vec<Diagnostic>> {
+        info!("验证文档: {} 开始", uri);
         if let Some(document) = self.documents.get(uri) {
-            let diagnostics = validate_document(document);
+            info!(
+                "找到文档，版本 {}, 内容长度 {} 字节",
+                document.version,
+                document.content.len()
+            );
+
+            // 打印文档内容摘要 (调试用)
+            if document.content.len() > 0 {
+                let preview = if document.content.len() > 100 {
+                    format!(
+                        "{}...(共{}字节)",
+                        &document.content[..100],
+                        document.content.len()
+                    )
+                } else {
+                    document.content.clone()
+                };
+                debug!("文档内容预览: {}", preview);
+            } else {
+                warn!("文档内容为空!");
+            }
+
+            // 生成诊断信息
+            let diagnostics = match std::panic::catch_unwind(|| {
+                super::diagnostics::validate_document(document)
+            }) {
+                Ok(diags) => diags,
+                Err(e) => {
+                    error!("诊断过程中发生崩溃: {:?}", e);
+                    vec![] // 返回空诊断列表
+                }
+            };
+
+            info!("诊断完成: 生成了 {} 个诊断信息", diagnostics.len());
             Some(diagnostics)
         } else {
+            warn!("找不到要验证的文档: {}", uri);
             None
         }
     }
-
     /// 处理自动完成请求
     pub fn completion(
         &self,

@@ -1,3 +1,6 @@
+use log::debug;
+use log::info;
+
 use super::document::TextDocument;
 use super::protocol::*;
 use crate::parser::ast::ast_token_stream;
@@ -7,16 +10,16 @@ use crate::parser::lexer::lexer;
 /// 验证文档并生成诊断信息
 pub fn validate_document(document: &TextDocument) -> Vec<Diagnostic> {
     let mut diagnostics = Vec::new();
-    
+    info!("Lexing document: {}", document.uri);    
     // 进行词法分析
     let tokens = lexer::tokenize(&document.content);
     let filtered_tokens = lexer::reject_comment(tokens);
-    
     // 尝试解析AST
     let gathered = ast_token_stream::from_stream(&filtered_tokens);
     match build_ast(gathered) {
         Ok(_) => {
             // 解析成功，没有错误
+            info!("Document parsed successfully: {}", document.uri);
         },
         Err(parse_error) => {
             // 解析失败，创建诊断信息
@@ -48,6 +51,7 @@ pub fn validate_document(document: &TextDocument) -> Vec<Diagnostic> {
                     related_information: None,
                 });
             }
+            info!("Document parsing failed: {}", document.uri);
         }
     }
     
