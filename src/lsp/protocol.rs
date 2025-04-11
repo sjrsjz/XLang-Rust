@@ -4,6 +4,7 @@ use std::collections::HashMap;
 
 /// LSP 请求消息
 #[derive(Serialize, Deserialize, Debug, Clone)]
+#[serde(rename_all = "camelCase")]
 pub struct RequestMessage {
     pub jsonrpc: String,
     pub id: RequestId,
@@ -14,6 +15,7 @@ pub struct RequestMessage {
 
 /// LSP 通知消息
 #[derive(Serialize, Deserialize, Debug, Clone)]
+#[serde(rename_all = "camelCase")]
 pub struct NotificationMessage {
     pub jsonrpc: String,
     pub method: String,
@@ -23,6 +25,7 @@ pub struct NotificationMessage {
 
 /// LSP 响应消息
 #[derive(Serialize, Deserialize, Debug, Clone)]
+#[serde(rename_all = "camelCase")]
 pub struct ResponseMessage {
     pub jsonrpc: String,
     pub id: RequestId,
@@ -42,6 +45,7 @@ pub enum RequestId {
 
 /// LSP 响应错误
 #[derive(Serialize, Deserialize, Debug, Clone)]
+#[serde(rename_all = "camelCase")]
 pub struct ResponseError {
     pub code: i32,
     pub message: String,
@@ -50,19 +54,20 @@ pub struct ResponseError {
 }
 
 /// LSP 错误代码
-pub mod ErrorCodes {
+pub mod error_codes {
     pub const PARSE_ERROR: i32 = -32700;
     pub const INVALID_REQUEST: i32 = -32600;
     pub const METHOD_NOT_FOUND: i32 = -32601;
     pub const INVALID_PARAMS: i32 = -32602;
-    pub const INTERNAL_ERROR: i32 = -32603;
+    pub const _INTERNAL_ERROR: i32 = -32603;
     // LSP 特定错误代码
-    pub const SERVER_NOT_INITIALIZED: i32 = -32002;
-    pub const UNKNOWN_ERROR_CODE: i32 = -32001;
+    pub const _SERVER_NOT_INITIALIZED: i32 = -32002;
+    pub const _UNKNOWN_ERROR_CODE: i32 = -32001;
 }
 
 /// LSP 位置信息
 #[derive(Serialize, Deserialize, Debug, Clone, PartialEq)]
+#[serde(rename_all = "camelCase")]
 pub struct Position {
     pub line: u32,
     pub character: u32,
@@ -70,6 +75,7 @@ pub struct Position {
 
 /// LSP 范围信息
 #[derive(Serialize, Deserialize, Debug, Clone, PartialEq)]
+#[serde(rename_all = "camelCase")]
 pub struct Range {
     pub start: Position,
     pub end: Position,
@@ -77,6 +83,7 @@ pub struct Range {
 
 /// LSP 位置信息
 #[derive(Serialize, Deserialize, Debug, Clone)]
+#[serde(rename_all = "camelCase")]
 pub struct Location {
     pub uri: String,
     pub range: Range,
@@ -84,6 +91,7 @@ pub struct Location {
 
 /// LSP 诊断信息
 #[derive(Serialize, Deserialize, Debug, Clone)]
+#[serde(rename_all = "camelCase")]
 pub struct Diagnostic {
     pub range: Range,
     pub severity: Option<DiagnosticSeverity>,
@@ -95,6 +103,7 @@ pub struct Diagnostic {
 
 /// LSP 诊断相关信息
 #[derive(Serialize, Deserialize, Debug, Clone)]
+#[serde(rename_all = "camelCase")]
 pub struct DiagnosticRelatedInformation {
     pub location: Location,
     pub message: String,
@@ -112,6 +121,7 @@ pub enum DiagnosticSeverity {
 
 /// LSP 初始化参数
 #[derive(Serialize, Deserialize, Debug, Clone)]
+#[serde(rename_all = "camelCase")]
 pub struct InitializeParams {
     #[serde(skip_serializing_if = "Option::is_none")]
     pub process_id: Option<i32>,
@@ -129,6 +139,7 @@ pub struct InitializeParams {
 
 /// LSP 客户端信息
 #[derive(Serialize, Deserialize, Debug, Clone)]
+#[serde(rename_all = "camelCase")]
 pub struct ClientInfo {
     pub name: String,
     #[serde(skip_serializing_if = "Option::is_none")]
@@ -137,6 +148,7 @@ pub struct ClientInfo {
 
 /// LSP 客户端能力
 #[derive(Serialize, Deserialize, Debug, Clone, Default)]
+#[serde(rename_all = "camelCase")]
 pub struct ClientCapabilities {
     #[serde(skip_serializing_if = "Option::is_none")]
     pub workspace: Option<WorkspaceClientCapabilities>,
@@ -150,6 +162,7 @@ pub struct ClientCapabilities {
 
 /// LSP 工作区客户端能力
 #[derive(Serialize, Deserialize, Debug, Clone, Default)]
+#[serde(rename_all = "camelCase")]
 pub struct WorkspaceClientCapabilities {
     #[serde(flatten)]
     pub fields: HashMap<String, Value>,
@@ -157,6 +170,7 @@ pub struct WorkspaceClientCapabilities {
 
 /// LSP 文本文档客户端能力
 #[derive(Serialize, Deserialize, Debug, Clone, Default)]
+#[serde(rename_all = "camelCase")]
 pub struct TextDocumentClientCapabilities {
     #[serde(flatten)]
     pub fields: HashMap<String, Value>,
@@ -164,6 +178,7 @@ pub struct TextDocumentClientCapabilities {
 
 /// LSP 窗口客户端能力
 #[derive(Serialize, Deserialize, Debug, Clone, Default)]
+#[serde(rename_all = "camelCase")]
 pub struct WindowClientCapabilities {
     #[serde(flatten)]
     pub fields: HashMap<String, Value>,
@@ -171,6 +186,7 @@ pub struct WindowClientCapabilities {
 
 /// LSP 初始化结果
 #[derive(Serialize, Deserialize, Debug, Clone)]
+#[serde(rename_all = "camelCase")]
 pub struct InitializeResult {
     pub capabilities: ServerCapabilities,
     #[serde(skip_serializing_if = "Option::is_none")]
@@ -179,6 +195,7 @@ pub struct InitializeResult {
 
 /// LSP 服务器能力
 #[derive(Serialize, Deserialize, Debug, Clone, Default)]
+#[serde(rename_all = "camelCase")]
 pub struct ServerCapabilities {
     #[serde(skip_serializing_if = "Option::is_none")]
     pub text_document_sync: Option<TextDocumentSyncOptions>,
@@ -210,12 +227,15 @@ pub struct ServerCapabilities {
     pub document_range_formatting_provider: Option<bool>,
     #[serde(skip_serializing_if = "Option::is_none")]
     pub rename_provider: Option<bool>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub semantic_tokens_provider: Option<Value>,
     #[serde(flatten)]
     pub other: HashMap<String, Value>,
 }
 
 /// LSP 文本文档同步选项
 #[derive(Serialize, Deserialize, Debug, Clone)]
+#[serde(rename_all = "camelCase")]
 pub struct TextDocumentSyncOptions {
     #[serde(skip_serializing_if = "Option::is_none")]
     pub open_close: Option<bool>,
@@ -240,6 +260,7 @@ pub enum TextDocumentSyncKind {
 
 /// LSP 保存选项
 #[derive(Serialize, Deserialize, Debug, Clone)]
+#[serde(rename_all = "camelCase")]
 pub struct SaveOptions {
     #[serde(skip_serializing_if = "Option::is_none")]
     pub include_text: Option<bool>,
@@ -247,6 +268,7 @@ pub struct SaveOptions {
 
 /// LSP 补全选项
 #[derive(Serialize, Deserialize, Debug, Clone)]
+#[serde(rename_all = "camelCase")]
 pub struct CompletionOptions {
     #[serde(skip_serializing_if = "Option::is_none")]
     pub resolve_provider: Option<bool>,
@@ -256,6 +278,7 @@ pub struct CompletionOptions {
 
 /// LSP 签名帮助选项
 #[derive(Serialize, Deserialize, Debug, Clone)]
+#[serde(rename_all = "camelCase")]
 pub struct SignatureHelpOptions {
     #[serde(skip_serializing_if = "Option::is_none")]
     pub trigger_characters: Option<Vec<String>>,
@@ -263,6 +286,7 @@ pub struct SignatureHelpOptions {
 
 /// LSP 服务器信息
 #[derive(Serialize, Deserialize, Debug, Clone)]
+#[serde(rename_all = "camelCase")]
 pub struct ServerInfo {
     pub name: String,
     #[serde(skip_serializing_if = "Option::is_none")]
@@ -271,12 +295,14 @@ pub struct ServerInfo {
 
 /// LSP 文档打开通知参数
 #[derive(Serialize, Deserialize, Debug, Clone)]
+#[serde(rename_all = "camelCase")]
 pub struct DidOpenTextDocumentParams {
     pub text_document: TextDocumentItem,
 }
 
 /// LSP 文档变更通知参数
 #[derive(Serialize, Deserialize, Debug, Clone)]
+#[serde(rename_all = "camelCase")]
 pub struct DidChangeTextDocumentParams {
     pub text_document: VersionedTextDocumentIdentifier,
     pub content_changes: Vec<TextDocumentContentChangeEvent>,
@@ -284,18 +310,21 @@ pub struct DidChangeTextDocumentParams {
 
 /// LSP 文档关闭通知参数
 #[derive(Serialize, Deserialize, Debug, Clone)]
+#[serde(rename_all = "camelCase")]
 pub struct DidCloseTextDocumentParams {
     pub text_document: TextDocumentIdentifier,
 }
 
 /// LSP 文档标识符
 #[derive(Serialize, Deserialize, Debug, Clone)]
+#[serde(rename_all = "camelCase")]
 pub struct TextDocumentIdentifier {
     pub uri: String,
 }
 
 /// LSP 版本化文档标识符
 #[derive(Serialize, Deserialize, Debug, Clone)]
+#[serde(rename_all = "camelCase")]
 pub struct VersionedTextDocumentIdentifier {
     pub uri: String,
     pub version: i32,
@@ -303,6 +332,7 @@ pub struct VersionedTextDocumentIdentifier {
 
 /// LSP 文档项
 #[derive(Serialize, Deserialize, Debug, Clone)]
+#[serde(rename_all = "camelCase")]
 pub struct TextDocumentItem {
     pub uri: String,
     pub language_id: String,
@@ -313,6 +343,7 @@ pub struct TextDocumentItem {
 /// LSP 文档内容变更事件
 #[derive(Serialize, Deserialize, Debug, Clone)]
 #[serde(untagged)]
+#[serde(rename_all = "camelCase")]
 pub enum TextDocumentContentChangeEvent {
     /// 完整文档更新
     Full {
@@ -327,6 +358,7 @@ pub enum TextDocumentContentChangeEvent {
 
 /// LSP 诊断发布参数
 #[derive(Serialize, Deserialize, Debug, Clone)]
+#[serde(rename_all = "camelCase")]
 pub struct PublishDiagnosticsParams {
     pub uri: String,
     pub diagnostics: Vec<Diagnostic>,
@@ -334,6 +366,7 @@ pub struct PublishDiagnosticsParams {
 
 /// LSP 自动完成请求参数
 #[derive(Serialize, Deserialize, Debug, Clone)]
+#[serde(rename_all = "camelCase")]
 pub struct CompletionParams {
     pub text_document: TextDocumentIdentifier,
     pub position: Position,
@@ -343,6 +376,7 @@ pub struct CompletionParams {
 
 /// LSP 自动完成上下文
 #[derive(Serialize, Deserialize, Debug, Clone)]
+#[serde(rename_all = "camelCase")]
 pub struct CompletionContext {
     pub trigger_kind: CompletionTriggerKind,
     #[serde(skip_serializing_if = "Option::is_none")]
@@ -359,6 +393,7 @@ pub enum CompletionTriggerKind {
 
 /// LSP 自动完成项
 #[derive(Serialize, Deserialize, Debug, Clone)]
+#[serde(rename_all = "camelCase")]
 pub struct CompletionItem {
     pub label: String,
     #[serde(skip_serializing_if = "Option::is_none")]
@@ -413,7 +448,9 @@ pub enum CompletionResponse {
 
 /// LSP 自动完成列表
 #[derive(Serialize, Deserialize, Debug, Clone)]
+#[serde(rename_all = "camelCase")]
 pub struct CompletionList {
     pub is_incomplete: bool,
     pub items: Vec<CompletionItem>,
 }
+

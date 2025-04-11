@@ -70,6 +70,7 @@ pub struct IRGenerator<'t> {
 }
 
 #[derive(Debug)]
+#[allow(dead_code)]
 pub enum IRGeneratorError {
     InvalidASTNodeType(ASTNodeType),
     InvalidScope,

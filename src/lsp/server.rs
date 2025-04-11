@@ -5,11 +5,13 @@ use std::sync::{Arc, Mutex};
 use log::{debug, error, info, warn};
 use serde_json::Value;
 
+use crate::lsp::semantic::encode_semantic_tokens;
 use crate::parser::lexer;
 
 use super::capabilities::initialize_capabilities;
 use super::document::TextDocument;
 use super::protocol::*;
+use super::semantic::SemanticTokenTypes;
 
 /// LSP 服务器状态
 #[derive(Debug, PartialEq, Clone, Copy)]
@@ -50,7 +52,7 @@ impl LspServer {
     ) -> Result<InitializeResult, ResponseError> {
         if self.state == ServerState::Initialized {
             return Err(ResponseError {
-                code: ErrorCodes::INVALID_REQUEST,
+                code: error_codes::INVALID_REQUEST,
                 message: "Server is already initialized".to_string(),
                 data: None,
             });
@@ -176,7 +178,10 @@ impl LspServer {
     }
 
     // 验证文档并发送诊断消息
-    fn validate_document(&self, uri: &str) -> Option<Vec<Diagnostic>> {
+    fn validate_document(
+        &self,
+        uri: &str,
+    ) -> Option<(Vec<Diagnostic>, Option<Vec<SemanticTokenTypes>>)> {
         info!("验证文档: {} 开始", uri);
         if let Some(document) = self.documents.get(uri) {
             info!(
@@ -201,19 +206,22 @@ impl LspServer {
                 warn!("文档内容为空!");
             }
 
-            // 生成诊断信息
-            let diagnostics = match std::panic::catch_unwind(|| {
-                super::diagnostics::validate_document(document)
-            }) {
-                Ok(diags) => diags,
+            // 生成诊断信息和语义着色
+            match std::panic::catch_unwind(|| super::diagnostics::validate_document(document)) {
+                Ok((diagnostics, semantic_tokens)) => {
+                    info!("诊断完成: 生成了 {} 个诊断信息", diagnostics.len());
+                    if let Some(tokens) = &semantic_tokens {
+                        info!("语义着色: 生成了 {} 个标记", tokens.len());
+                    } else {
+                        info!("语义着色: 未能生成标记");
+                    }
+                    Some((diagnostics, semantic_tokens))
+                }
                 Err(e) => {
                     error!("诊断过程中发生崩溃: {:?}", e);
-                    vec![] // 返回空诊断列表
+                    Some((vec![], None)) // 返回空诊断列表和无语义标记
                 }
-            };
-
-            info!("诊断完成: 生成了 {} 个诊断信息", diagnostics.len());
-            Some(diagnostics)
+            }
         } else {
             warn!("找不到要验证的文档: {}", uri);
             None
@@ -233,7 +241,7 @@ impl LspServer {
             Ok(CompletionResponse::List(items))
         } else {
             Err(ResponseError {
-                code: ErrorCodes::INVALID_PARAMS,
+                code: error_codes::INVALID_PARAMS,
                 message: format!("Document not found: {}", uri),
                 data: None,
             })
@@ -244,7 +252,7 @@ impl LspServer {
     fn calculate_completions(
         &self,
         document: &TextDocument,
-        position: Position,
+        _position: Position,
     ) -> Vec<CompletionItem> {
         // 基于XLang语法，提供关键字、运算符等的完成项
         let mut items = Vec::new();
@@ -388,7 +396,7 @@ pub fn run_lsp_server<R: BufRead, W: Write>(
                         id: RequestId::Number(-1),
                         result: None,
                         error: Some(ResponseError {
-                            code: ErrorCodes::PARSE_ERROR,
+                            code: error_codes::PARSE_ERROR,
                             message: format!("Failed to parse request: {}", e),
                             data: None,
                         }),
@@ -412,7 +420,6 @@ pub fn run_lsp_server<R: BufRead, W: Write>(
 
 /// 处理LSP请求
 fn handle_request(server: Arc<Mutex<LspServer>>, request: RequestMessage) -> ResponseMessage {
-
     let mut response = ResponseMessage {
         jsonrpc: "2.0".to_string(),
         id: request.id.clone(),
@@ -435,7 +442,7 @@ fn handle_request(server: Arc<Mutex<LspServer>>, request: RequestMessage) -> Res
             }
             Err(e) => {
                 response.error = Some(ResponseError {
-                    code: ErrorCodes::INVALID_PARAMS,
+                    code: error_codes::INVALID_PARAMS,
                     message: format!("Invalid initialize params: {}", e),
                     data: None,
                 });
@@ -467,8 +474,64 @@ fn handle_request(server: Arc<Mutex<LspServer>>, request: RequestMessage) -> Res
                 }
                 Err(e) => {
                     response.error = Some(ResponseError {
-                        code: ErrorCodes::INVALID_PARAMS,
+                        code: error_codes::INVALID_PARAMS,
                         message: format!("Invalid completion params: {}", e),
+                        data: None,
+                    });
+                }
+            }
+        }
+        "textDocument/semanticTokens/full" => {
+            match serde_json::from_value::<TextDocumentIdentifier>(
+                request
+                    .params
+                    .get("textDocument")
+                    .cloned()
+                    .unwrap_or(serde_json::Value::Null),
+            ) {
+                Ok(text_doc) => {
+                    let uri = text_doc.uri.clone();
+                    let server = server.lock().unwrap();
+
+                    if let Some(document) = server.documents.get(&uri) {
+                        // 生成语义标记
+                        if let Some((_, semantic_tokens)) = server.validate_document(&uri) {
+                            if let Some(tokens) = semantic_tokens {
+                                // 编码标记
+                                info!("编码语义标记: {:?}", tokens);
+                                let encoded_tokens =
+                                    encode_semantic_tokens(&tokens, &document.content);
+
+                                // 创建结果
+                                let result = serde_json::json!({
+                                    "data": encoded_tokens
+                                });
+
+                                response.result = Some(result);
+                            } else {
+                                // 如果没有标记，返回空数组
+                                response.result = Some(serde_json::json!({
+                                    "data": []
+                                }));
+                            }
+                        } else {
+                            // 如果没有验证结果，返回空数组
+                            response.result = Some(serde_json::json!({
+                                "data": []
+                            }));
+                        }
+                    } else {
+                        response.error = Some(ResponseError {
+                            code: error_codes::INVALID_PARAMS,
+                            message: format!("Document not found: {}", uri),
+                            data: None,
+                        });
+                    }
+                }
+                Err(e) => {
+                    response.error = Some(ResponseError {
+                        code: error_codes::INVALID_PARAMS,
+                        message: format!("Invalid semantic tokens params: {}", e),
                         data: None,
                     });
                 }
@@ -476,7 +539,7 @@ fn handle_request(server: Arc<Mutex<LspServer>>, request: RequestMessage) -> Res
         }
         _ => {
             response.error = Some(ResponseError {
-                code: ErrorCodes::METHOD_NOT_FOUND,
+                code: error_codes::METHOD_NOT_FOUND,
                 message: format!("Method not found: {}", request.method),
                 data: None,
             });
@@ -512,10 +575,28 @@ fn handle_notification<W: Write>(
                     let mut server_locked = server.lock().unwrap();
                     server_locked.did_open(params);
 
-                    // 发送诊断通知 - 使用传入参数中的 URI
-                    if let Some(diagnostics) = server_locked.validate_document(&uri) {
+                    // 发送诊断通知和语义着色信息
+                    if let Some((diagnostics, semantic_tokens)) =
+                        server_locked.validate_document(&uri)
+                    {
+                        // 获取文档内容
+                        let content = if let Some(doc) = server_locked.documents.get(&uri) {
+                            doc.content.clone()
+                        } else {
+                            String::new()
+                        };
+
                         drop(server_locked); // 释放锁
+
+                        // 发送诊断信息
                         send_diagnostics(writer, &uri, diagnostics)?;
+
+                        // 如果有语义着色信息，则发送语义着色通知
+                        if let Some(tokens) = semantic_tokens {
+                            // 编码标记并发送
+                            let encoded_tokens = encode_semantic_tokens(&tokens, &content);
+                            send_semantic_tokens_encoded(writer, &uri, encoded_tokens)?;
+                        }
                     }
                 }
                 Err(e) => {
@@ -527,13 +608,18 @@ fn handle_notification<W: Write>(
             match serde_json::from_value::<DidChangeTextDocumentParams>(notification.params) {
                 Ok(params) => {
                     let uri = params.text_document.uri.clone();
-                    let mut server_locked = server.lock().unwrap();
-                    server_locked.did_change(params);
+                    let mut server = server.lock().unwrap();
+                    server.did_change(params);
 
-                    // 发送诊断通知
-                    if let Some(diagnostics) = server_locked.validate_document(&uri) {
-                        drop(server_locked); // 释放锁
+                    // 发送诊断通知和语义着色信息
+                    if let Some((diagnostics, _)) = server.validate_document(&uri) {
+                        // 获取文档内容
+
+                        drop(server); // 释放锁
+
+                        // 发送诊断信息
                         send_diagnostics(writer, &uri, diagnostics)?;
+
                     }
                 }
                 Err(e) => {
@@ -608,6 +694,29 @@ fn send_diagnostics<W: Write>(
         params: serde_json::to_value(params).unwrap(),
     };
 
+    send_message(writer, &notification)
+}
+
+/// 发送已编码的语义着色通知
+fn send_semantic_tokens_encoded<W: Write>(
+    writer: &mut W,
+    uri: &str,
+    encoded_tokens: Vec<u32>,
+) -> Result<(), String> {
+    let params = serde_json::json!({
+        "textDocument": {
+            "uri": uri
+        },
+        "tokens": encoded_tokens
+    });
+
+    info!("Sending semantic tokens for {}: {:?}", uri, encoded_tokens);
+
+    let notification = NotificationMessage {
+        jsonrpc: "2.0".to_string(),
+        method: "textDocument/semanticTokens/full".to_string(),
+        params,
+    };
     send_message(writer, &notification)
 }
 

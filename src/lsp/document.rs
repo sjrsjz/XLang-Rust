@@ -1,6 +1,7 @@
 use super::protocol::*;
 
 /// 文本文档结构
+#[allow(dead_code)]
 pub struct TextDocument {
     /// 文档URI
     pub uri: String,

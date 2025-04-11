@@ -6,6 +6,7 @@ use super::instruction_set::VMInstruction;
 pub struct Opcode32 {
     opcode: u32,
 }
+#[allow(dead_code)]
 impl Opcode32 {
     pub fn build_opcode(
         instruction: u8,
@@ -92,6 +93,7 @@ impl DecodedOpcode{
 }
 
 #[derive(Debug, Clone)]
+#[allow(dead_code)]
 pub enum OpcodeArgument {
     None,
     Int32(i32),
@@ -102,6 +104,7 @@ pub enum OpcodeArgument {
     ByteArray(u64),
 }
 #[derive(Debug, Clone)]
+#[allow(dead_code)]
 pub struct ProcessedOpcode {
     pub instruction: u8,
     pub operand1: OpcodeArgument,

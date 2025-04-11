@@ -9,6 +9,7 @@ use super::opcode::*;
 use rustc_hash::FxHashMap as HashMap;
 
 #[derive(Debug)]
+#[allow(dead_code)]
 pub enum IRTranslatorError {
     InvalidInstruction(IR),
 }

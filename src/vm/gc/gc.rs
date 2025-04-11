@@ -124,7 +124,7 @@ impl GCRef {
         }
     }
 
-    pub fn wrap_mut<T: GCObject + 'static>(obj: &mut T) -> GCRef {
+    pub fn _wrap_mut<T: GCObject + 'static>(obj: &mut T) -> GCRef {
         let obj = obj as *mut T as *mut dyn GCObject;
         if obj.is_null() {
             panic!("Failed to wrap object!");
@@ -134,14 +134,14 @@ impl GCRef {
         }
     }
 
-    pub fn lock(&self) {
+    pub fn _lock(&self) {
         unsafe {
             let obj = self.reference as *mut dyn GCObject;
             (*obj).get_traceable().lock = true;
         }
     }
 
-    pub fn unlock(&self) {
+    pub fn _unlock(&self) {
         unsafe {
             let obj = self.reference as *mut dyn GCObject;
             (*obj).get_traceable().lock = false;
@@ -534,14 +534,14 @@ impl GCSystem {
         }
     }
 
-    pub fn debug_print(&self) {
+    pub fn _debug_print(&self) {
         for i in 0..self.objects.len() {
             let gc_ref = &self.objects[i];
             println!("Object {}: {:?}", i, gc_ref.get_const_traceable());
         }
     }
 
-    pub fn print_reference_graph(&self) {
+    pub fn _print_reference_graph(&self) {
         println!("\n=== GC Reference Graph ===");
 
         // 创建对象索引映射，方便查找
@@ -596,7 +596,7 @@ impl GCSystem {
         self.collect();
     }
 
-    pub fn is_available(&self, gc_ref: &GCRef) -> bool {
+    pub fn _is_available(&self, gc_ref: &GCRef) -> bool {
         for obj in &self.objects {
             if obj == gc_ref {
                 return true;
@@ -605,11 +605,11 @@ impl GCSystem {
         false
     }
 
-    pub fn count(&self) -> usize {
+    pub fn _count(&self) -> usize {
         self.objects.len()
     }
 
-    pub fn get_all_objects(&self) -> &Vec<GCRef> {
+    pub fn _get_all_objects(&self) -> &Vec<GCRef> {
         &self.objects
     }
 }

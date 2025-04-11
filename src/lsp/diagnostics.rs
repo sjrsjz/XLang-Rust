@@ -2,20 +2,23 @@ use log::{debug, error, info};
 
 use super::document::TextDocument;
 use super::protocol::*;
+use super::semantic::SemanticTokenTypes;
+use crate::lsp::semantic::do_semantic;
 use crate::parser::ast::ast_token_stream;
 use crate::parser::ast::build_ast;
 use crate::parser::ast::ParserError;
 use crate::parser::lexer::lexer;
 use crate::parser::lexer::Token;
-
 /// 验证文档并生成诊断信息
-pub fn validate_document(document: &TextDocument) -> Vec<Diagnostic> {
+/// 返回诊断信息和可选的语义着色结果
+pub fn validate_document(document: &TextDocument) -> (Vec<Diagnostic>, Option<Vec<SemanticTokenTypes>>) {
     let mut diagnostics = Vec::new();
+    let mut semantic_tokens = None;
     
     // 检查文档是否为空
     if document.content.is_empty() {
         info!("文档内容为空，跳过验证: {}", document.uri);
-        return diagnostics;
+        return (diagnostics, semantic_tokens);
     }
     
     info!("正在进行词法分析: {}", document.uri);
@@ -27,7 +30,7 @@ pub fn validate_document(document: &TextDocument) -> Vec<Diagnostic> {
         Ok(tokens) => tokens,
         Err(e) => {
             error!("词法分析过程中发生错误: {:?}", e);
-            return vec![Diagnostic {
+            return (vec![Diagnostic {
                 range: Range {
                     start: Position { line: 0, character: 0 },
                     end: Position { line: 0, character: 1 },
@@ -37,7 +40,7 @@ pub fn validate_document(document: &TextDocument) -> Vec<Diagnostic> {
                 source: Some("xlang-lsp".to_string()),
                 message: "词法分析失败: 可能包含无法识别的标记".to_string(),
                 related_information: None,
-            }];
+            }], None);
         }
     };
     
@@ -48,7 +51,7 @@ pub fn validate_document(document: &TextDocument) -> Vec<Diagnostic> {
     
     if filtered_tokens.is_empty() {
         info!("过滤后无有效标记，可能只有注释或空白: {}", document.uri);
-        return diagnostics;
+        return (diagnostics, semantic_tokens);
     }
     
     // 尝试解析AST
@@ -59,7 +62,7 @@ pub fn validate_document(document: &TextDocument) -> Vec<Diagnostic> {
         Ok(gathered) => gathered,
         Err(e) => {
             error!("标记流处理失败: {:?}", e);
-            return vec![Diagnostic {
+            return (vec![Diagnostic {
                 range: Range {
                     start: Position { line: 0, character: 0 },
                     end: Position { line: 0, character: 1 },
@@ -69,14 +72,27 @@ pub fn validate_document(document: &TextDocument) -> Vec<Diagnostic> {
                 source: Some("xlang-lsp".to_string()),
                 message: "处理标记流时发生错误".to_string(),
                 related_information: None,
-            }];
+            }], None);
         }
     };
     
     match build_ast(gathered) {
-        Ok(_) => {
+        Ok(ast) => {
             // 解析成功，没有错误
             info!("文档解析成功: {}", document.uri);
+            
+            // 进行语义着色处理
+            info!("开始进行语义着色分析");
+            match do_semantic(&document.content, ast) {
+                Ok(tokens) => {
+                    info!("语义着色处理成功，生成了 {} 个标记", tokens.len());
+                    semantic_tokens = Some(tokens);
+                },
+                Err(e) => {
+                    error!("语义着色处理失败: {}", e);
+                    // 语义着色失败不应该影响诊断结果
+                }
+            }
         },
         Err(parse_error) => {
             // 解析失败，创建诊断信息
@@ -110,10 +126,12 @@ pub fn validate_document(document: &TextDocument) -> Vec<Diagnostic> {
         }
     }
     
-    info!("诊断完成，生成了 {} 个诊断信息", diagnostics.len());
-    diagnostics
+    info!("诊断完成，生成了 {} 个诊断信息，语义着色: {}", 
+          diagnostics.len(), 
+          if semantic_tokens.is_some() { "成功" } else { "无" });
+          
+    (diagnostics, semantic_tokens)
 }
-
 /// 根据解析错误类型创建诊断信息
 fn create_diagnostic_from_parser_error<'t>(
     parse_error: &ParserError<'t>,

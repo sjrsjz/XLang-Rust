@@ -4,6 +4,7 @@ mod capabilities;
 mod document;
 mod diagnostics;
 mod handlers;
+mod semantic;
 
 use std::net::{TcpListener, TcpStream};
 use std::io::{BufReader, BufWriter};
