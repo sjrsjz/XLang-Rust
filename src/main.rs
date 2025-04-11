@@ -90,7 +90,8 @@ enum Commands {
 
 // Compile code and generate intermediate representation
 fn build_code(code: &str) -> Result<IRPackage, String> {
-    let tokens = lexer::reject_comment(lexer::tokenize(code));
+    let tokens = lexer::tokenize(code);
+    let tokens = lexer::reject_comment(&tokens);
     let gathered = ast_token_stream::from_stream(&tokens);
     let ast = match build_ast(gathered) {
         Ok(ast) => ast,
@@ -911,7 +912,8 @@ fn is_input_complete(input: &str) -> bool {
     }
 
     // Also try to tokenize the input using the lexer
-    let tokens = lexer::reject_comment(lexer::tokenize(input));
+    let tokens = lexer::tokenize(input);
+    let tokens = lexer::reject_comment(&tokens);
 
     // Input is incomplete if:
     // 1. Any bracket count is unbalanced

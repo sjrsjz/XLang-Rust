@@ -564,11 +564,11 @@ pub mod lexer {
     }
 
     // Reject comments from the token list
-    pub fn reject_comment(tokens: Vec<super::Token>) -> Vec<super::Token> {
+    pub fn reject_comment<'t>(tokens: &'t Vec<super::Token>) -> Vec<super::Token<'t>> {
         let mut result = Vec::new();
         for token in tokens {
             if token.token_type != super::TokenType::COMMENT {
-                result.push(token);
+                result.push(token.clone());
             }
         }
         result

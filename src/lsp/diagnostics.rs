@@ -46,7 +46,7 @@ pub fn validate_document(document: &TextDocument) -> (Vec<Diagnostic>, Option<Ve
     
     info!("词法分析完成，获得 {} 个标记", tokens.len());
     
-    let filtered_tokens = lexer::reject_comment(tokens);
+    let filtered_tokens = lexer::reject_comment(&tokens);
     debug!("过滤注释后有 {} 个标记", filtered_tokens.len());
     
     if filtered_tokens.is_empty() {
@@ -83,7 +83,7 @@ pub fn validate_document(document: &TextDocument) -> (Vec<Diagnostic>, Option<Ve
             
             // 进行语义着色处理
             info!("开始进行语义着色分析");
-            match do_semantic(&document.content, ast) {
+            match do_semantic(&document.content, ast, &tokens) {
                 Ok(tokens) => {
                     info!("语义着色处理成功，生成了 {} 个标记", tokens.len());
                     semantic_tokens = Some(tokens);

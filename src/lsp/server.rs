@@ -190,22 +190,6 @@ impl LspServer {
                 document.content.len()
             );
 
-            // 打印文档内容摘要 (调试用)
-            if !document.content.is_empty() {
-                let preview = if document.content.len() > 100 {
-                    format!(
-                        "{}...(共{}字节)",
-                        &document.content[..100],
-                        document.content.len()
-                    )
-                } else {
-                    document.content.clone()
-                };
-                debug!("文档内容预览: {}", preview);
-            } else {
-                warn!("文档内容为空!");
-            }
-
             // 生成诊断信息和语义着色
             match std::panic::catch_unwind(|| super::diagnostics::validate_document(document)) {
                 Ok((diagnostics, semantic_tokens)) => {
@@ -311,7 +295,8 @@ impl LspServer {
 
     /// 从文档中提取变量名
     fn extract_variables_from_document(&self, document: &TextDocument) -> Option<Vec<String>> {
-        let tokens = lexer::lexer::reject_comment(lexer::lexer::tokenize(&document.content));
+        let tokens = lexer::lexer::tokenize(&document.content);
+        let tokens = lexer::lexer::reject_comment(&tokens);
         let mut variables = Vec::new();
 
         // 简单的变量提取: 查找 := 定义的变量
@@ -498,7 +483,6 @@ fn handle_request(server: Arc<Mutex<LspServer>>, request: RequestMessage) -> Res
                         if let Some((_, semantic_tokens)) = server.validate_document(&uri) {
                             if let Some(tokens) = semantic_tokens {
                                 // 编码标记
-                                info!("编码语义标记: {:?}", tokens);
                                 let encoded_tokens =
                                     encode_semantic_tokens(&tokens, &document.content);
 
@@ -709,8 +693,6 @@ fn send_semantic_tokens_encoded<W: Write>(
         },
         "tokens": encoded_tokens
     });
-
-    info!("Sending semantic tokens for {}: {:?}", uri, encoded_tokens);
 
     let notification = NotificationMessage {
         jsonrpc: "2.0".to_string(),

@@ -1,4 +1,7 @@
-use crate::parser::ast::{ASTNode, ASTNodeType};
+use crate::parser::{
+    ast::{ASTNode, ASTNodeType},
+    lexer::{Token, TokenType},
+};
 
 /// 语义着色器
 
@@ -41,11 +44,28 @@ pub enum SemanticTokenTypes {
     Comment,
 }
 
-pub fn do_semantic(code: &str, ast: ASTNode) -> Result<Vec<SemanticTokenTypes>, String> {
+pub fn do_semantic(
+    code: &str,
+    ast: ASTNode,
+    tokens_with_comment: &Vec<Token>,
+) -> Result<Vec<SemanticTokenTypes>, String> {
     let mut semantic_tokens = vec![SemanticTokenTypes::Comment; code.len()];
 
     // 递归处理AST节点并标记语义类型
     process_node(&ast, &mut semantic_tokens, code)?;
+
+    // 遍历tokens_with_comment，标记注释
+    for token in tokens_with_comment {
+        if token.token_type == TokenType::COMMENT {
+            let start = token.position;
+            let end = start + token.origin_token.len();
+            if start < code.len() && end <= code.len() {
+                for i in start..end {
+                    semantic_tokens[i] = SemanticTokenTypes::Comment;
+                }
+            }
+        }
+    }
 
     Ok(semantic_tokens)
 }
@@ -111,6 +131,20 @@ fn process_node(
                 }
             }
         }
+
+        match &node.node_type {
+            ASTNodeType::Let(_) => {
+                // 标记当前token为variable
+                let start = node.token.as_ref().map_or(0, |t| t.position);
+                let end = start + node.token.as_ref().map_or(0, |t| t.origin_token.len());
+                for i in start..end {
+                    if i < tokens.len() {
+                        tokens[i] = SemanticTokenTypes::Variable;
+                    }
+                }
+            }
+            _ => {}
+        };
     }
 
     for child in &node.children {
@@ -145,17 +179,16 @@ fn calculate_node_range(node: &ASTNode) -> (usize, usize) {
 
     (min_pos, max_pos)
 }
-
-
-
-/// 将语义标记编码为LSP协议所需的格式 (Semantic Tokens) - Corrected Version
+/// 将语义标记编码为LSP协议所需的格式 (Semantic Tokens) - Corrected for Line Breaks
 ///
 /// LSP 语义标记数据格式是一个 `Vec<u32>`，其中每 5 个 u32 代表一个语义标记：
 /// 1. delta_line: 相对于前一个标记的行号增量。
 /// 2. delta_start_char: 相对于前一个标记起始字符的增量 (UTF-16)。新行则为绝对起始位置。
 /// 3. length: 标记的长度 (UTF-16)。
 /// 4. token_type: 标记类型的索引 (由 legend 决定)。
-/// 5. token_modifiers_bitmask: 标记修饰符 (默认为 0)。
+/// 5. token_modifiers_bitmask: 标记修饰符位掩码 (默认为 0)。
+///
+/// 此版本确保语义标记不会跨越换行符进行合并。
 ///
 /// # Arguments
 ///
@@ -172,7 +205,6 @@ pub(super) fn encode_semantic_tokens(tokens: &[SemanticTokenTypes], text: &str) 
         "Tokens length must match text byte length"
     );
 
-    // 将自定义语义标记类型映射到LSP语义标记类型索引
     let get_token_type_index = |token_type: &SemanticTokenTypes| -> Option<u32> {
         match token_type {
             SemanticTokenTypes::Null => Some(22),
@@ -186,7 +218,7 @@ pub(super) fn encode_semantic_tokens(tokens: &[SemanticTokenTypes], text: &str) 
             SemanticTokenTypes::Boundary => Some(27),
             SemanticTokenTypes::Assign => Some(28),
             SemanticTokenTypes::LambdaDef => Some(29),
-            SemanticTokenTypes::Expressions => Some(17), // 如果表达式没有子节点，使用默认类型
+            SemanticTokenTypes::Expressions => Some(30),
             SemanticTokenTypes::LambdaCall => Some(31),
             SemanticTokenTypes::AsyncLambdaCall => Some(32),
             SemanticTokenTypes::Operation => Some(33),
@@ -212,162 +244,175 @@ pub(super) fn encode_semantic_tokens(tokens: &[SemanticTokenTypes], text: &str) 
             SemanticTokenTypes::Comment => Some(17),
         }
     };
-    const MOD_NONE: u32 = 0; // 无修饰符
-    const MOD_DECLARATION: u32 = 1 << 0; // 声明
-    const MOD_DEFINITION: u32 = 1 << 1; // 定义
-    const MOD_READONLY: u32 = 1 << 2; // 只读属性
-    const MOD_STATIC: u32 = 1 << 3; // 静态成员
-    const _MOD_DEPRECATED: u32 = 1 << 4; // 已弃用
-    const _MOD_ABSTRACT: u32 = 1 << 5; // 抽象
-    const MOD_ASYNC: u32 = 1 << 6; // 异步
-    const MOD_MODIFICATION: u32 = 1 << 7; // 修改操作
-    const _MOD_DOCUMENTATION: u32 = 1 << 8; // 文档
-    const _MOD_DEFAULT: u32 = 1 << 9; // 默认值
+
+    #[allow(dead_code)]
+    const MOD_NONE: u32 = 0;
+    #[allow(dead_code)]
+    const MOD_DECLARATION: u32 = 1 << 0;
+    #[allow(dead_code)]
+    const MOD_DEFINITION: u32 = 1 << 1;
+    #[allow(dead_code)]
+    const MOD_READONLY: u32 = 1 << 2;
+    #[allow(dead_code)]
+    const MOD_STATIC: u32 = 1 << 3;
+    #[allow(dead_code)]
+    const MOD_DEPRECATED: u32 = 1 << 4;
+    #[allow(dead_code)]
+    const MOD_ABSTRACT: u32 = 1 << 5;
+    #[allow(dead_code)]
+    const MOD_ASYNC: u32 = 1 << 6;
+    #[allow(dead_code)]
+    const MOD_MODIFICATION: u32 = 1 << 7;
+    #[allow(dead_code)]
+    const MOD_DOCUMENTATION: u32 = 1 << 8;
+    #[allow(dead_code)]
+    const MOD_DEFAULT: u32 = 1 << 9;
+
     let get_token_modifiers = |token_type: &SemanticTokenTypes| -> u32 {
-        match token_type {
-            // 基本类型 - 无修饰符
-            SemanticTokenTypes::Null
-            | SemanticTokenTypes::String
-            | SemanticTokenTypes::Boolean
-            | SemanticTokenTypes::Number
-            | SemanticTokenTypes::Base64 => MOD_NONE,
-
-            // 对象属性相关
-            SemanticTokenTypes::KeyValue => MOD_DEFINITION,
-            SemanticTokenTypes::IndexOf => MOD_READONLY,
-            SemanticTokenTypes::GetAttr => MOD_READONLY,
-
-            // 变量相关
-            SemanticTokenTypes::Variable => MOD_NONE,
+       match token_type {
+            SemanticTokenTypes::KeyValue => MOD_DEFINITION | MOD_DECLARATION, // KeyValue 通常是定义
             SemanticTokenTypes::Let => MOD_DECLARATION | MOD_DEFINITION,
-            SemanticTokenTypes::Modifier => MOD_STATIC | MOD_MODIFICATION,
-            SemanticTokenTypes::NamedTo => MOD_DEFINITION,
-
-            // 函数/lambda相关
+            SemanticTokenTypes::Variable => MOD_NONE, // 变量使用可能没有，声明时可能有
             SemanticTokenTypes::LambdaDef => MOD_DECLARATION | MOD_DEFINITION,
-            SemanticTokenTypes::LambdaCall => MOD_NONE,
             SemanticTokenTypes::AsyncLambdaCall => MOD_ASYNC,
-
-            // 控制流相关
-            SemanticTokenTypes::Range => MOD_READONLY,
-            SemanticTokenTypes::In => MOD_READONLY,
             SemanticTokenTypes::Yield => MOD_ASYNC,
-
-            // 其他操作
             SemanticTokenTypes::Assign => MOD_MODIFICATION,
-            SemanticTokenTypes::Operation => MOD_MODIFICATION,
-
-            // 默认无修饰符
+            SemanticTokenTypes::Operation => MOD_MODIFICATION, // 不确定，看具体操作
+            SemanticTokenTypes::Modifier => MOD_NONE, // 修饰符本身通常不带修饰符
+            SemanticTokenTypes::GetAttr => MOD_READONLY, // 通常是读取
+            SemanticTokenTypes::IndexOf => MOD_READONLY, // 通常是读取
+            SemanticTokenTypes::Range => MOD_READONLY, // 范围通常是只读的
             _ => MOD_NONE,
         }
     };
+    // --- State Initialization (保持不变) ---
     let mut result = Vec::new();
     let mut previous_line = 0;
     let mut previous_char_utf16 = 0;
 
     let mut current_line = 0;
-    let mut current_char_utf16 = 0;
+    let mut current_char_utf16 = 0; // Tracks UTF-16 position on the current line
 
     // --- State for the currently accumulating token ---
-    // Stores the ORIGINAL type and start position
-    let mut current_original_token_type: Option<SemanticTokenTypes> = None; // Store the actual type
+    let mut current_original_token_type: Option<SemanticTokenTypes> = None;
     let mut token_start_line = 0;
     let mut token_start_char_utf16 = 0;
     let mut current_token_len_utf16 = 0;
 
+    // Helper closure to finalize and push a token
+    let finalize_token = |
+        result: &mut Vec<u32>,
+        token_type_opt: Option<SemanticTokenTypes>,
+        start_line: u32,
+        start_char: u32,
+        len: u32,
+        prev_line: &mut u32,
+        prev_char: &mut u32,
+    | {
+        if let Some(token_type) = token_type_opt {
+             // 仅当 token 类型有效（非Null且有映射）时才生成
+            if let Some(lsp_token_index) = get_token_type_index(&token_type) {
+                let delta_line = start_line - *prev_line;
+                let delta_start_char = if delta_line == 0 {
+                    start_char - *prev_char
+                } else {
+                    start_char // 新行，绝对位置
+                };
+                let token_modifiers = get_token_modifiers(&token_type);
+
+                result.extend_from_slice(&[
+                    delta_line,
+                    delta_start_char,
+                    len,
+                    lsp_token_index,
+                    token_modifiers,
+                ]);
+
+                *prev_line = start_line;
+                *prev_char = start_char;
+            }
+        }
+    };
+
+
+    // --- Iterate through characters ---
     for (byte_idx, ch) in text.char_indices() {
         let char_len_utf16 = ch.len_utf16() as u32;
-        // Get the *original* semantic type for the start byte of this char
+        // 获取此字符开始处的原始语义类型
         let byte_semantic_type = tokens
             .get(byte_idx)
             .copied()
-            .unwrap_or(SemanticTokenTypes::Null); // Default to Null if out of bounds (shouldn't happen with assert)
+            .unwrap_or(SemanticTokenTypes::Null); // 默认值处理边界情况
 
-        // --- Check if the ORIGINAL token type changes OR if the current char is Null ---
-        // A new token starts/ends if the type is different from the accumulating one,
-        // or if the current type is Null (which always breaks segments).
+        // --- NEW: Check for Newline FIRST ---
+        if ch == '\n' {
+            // Finalize any token accumulating *before* the newline
+            finalize_token(
+                &mut result,
+                current_original_token_type,
+                token_start_line,
+                token_start_char_utf16,
+                current_token_len_utf16,
+                &mut previous_line,
+                &mut previous_char_utf16,
+            );
+
+            // Reset accumulation state for the new line
+            current_original_token_type = None;
+            current_token_len_utf16 = 0;
+
+            // Advance position trackers AFTER finalizing
+            current_line += 1;
+            current_char_utf16 = 0;
+            continue; // Move to the next character, skip normal processing for newline
+        }
+
+        // --- Logic for non-newline characters ---
+
+        // Check if the ORIGINAL token type changes
         let type_changed = match current_original_token_type {
             Some(current_type) => current_type != byte_semantic_type,
-            None => byte_semantic_type != SemanticTokenTypes::Null, // If nothing is accumulating, change only if the new type isn't Null
+            None => byte_semantic_type != SemanticTokenTypes::Null, // Start if not null
         };
 
         if type_changed {
-            // --- Finalize the previous token (if one exists and is not Null) ---
-            if let Some(prev_original_type) = current_original_token_type {
-                // Only generate LSP token if the original type maps to an index
-                if let Some(lsp_token_index) = get_token_type_index(&prev_original_type) {
-                    let delta_line = token_start_line - previous_line;
-                    let delta_start_char = if delta_line == 0 {
-                        token_start_char_utf16 - previous_char_utf16
-                    } else {
-                        token_start_char_utf16
-                    };
-                    let token_modifiers = 0;
+            // Finalize the *previous* token (if one exists)
+             finalize_token(
+                &mut result,
+                current_original_token_type,
+                token_start_line,
+                token_start_char_utf16,
+                current_token_len_utf16,
+                &mut previous_line,
+                &mut previous_char_utf16,
+            );
 
-                    result.extend_from_slice(&[
-                        delta_line,
-                        delta_start_char,
-                        current_token_len_utf16,
-                        lsp_token_index,
-                        token_modifiers,
-                    ]);
-
-                    previous_line = token_start_line;
-                    previous_char_utf16 = token_start_char_utf16;
-                }
-            }
-
-            // --- Start a new token (only if the current character's type is NOT Null) ---
-
-            // Check again if this type maps to an LSP index before starting
-            if get_token_type_index(&byte_semantic_type).is_some() {
-                current_original_token_type = Some(byte_semantic_type);
-                token_start_line = current_line;
-                token_start_char_utf16 = current_char_utf16;
-                current_token_len_utf16 = char_len_utf16;
-            } else {
-                // This type (e.g., a custom type not in legend) maps to None, treat as Null
-                current_original_token_type = None;
-                current_token_len_utf16 = 0;
-            }
+            current_original_token_type = Some(byte_semantic_type);
+            token_start_line = current_line;
+            token_start_char_utf16 = current_char_utf16;
+            current_token_len_utf16 = char_len_utf16;
         } else {
-            // --- Continue the current token (if one is active) ---
-            // Type is the same as the previous character, just extend the length
-            // This also handles consecutive Null characters correctly (does nothing)
+            // Type is the same, continue the current token (if one is active)
             if current_original_token_type.is_some() {
                 current_token_len_utf16 += char_len_utf16;
             }
+            // If current_original_token_type is None (e.g., consecutive Nulls), do nothing
         }
 
-        // --- Advance the current position tracking ---
-        if ch == '\n' {
-            current_line += 1;
-            current_char_utf16 = 0;
-        } else {
-            current_char_utf16 += char_len_utf16;
-        }
+        // --- Advance character position (only for non-newline chars) ---
+         current_char_utf16 += char_len_utf16;
     }
 
-    // --- Finalize the very last token after the loop finishes ---
-    if let Some(last_original_type) = current_original_token_type {
-        if let Some(lsp_token_index) = get_token_type_index(&last_original_type) {
-            let delta_line = token_start_line - previous_line;
-            let delta_start_char = if delta_line == 0 {
-                token_start_char_utf16 - previous_char_utf16
-            } else {
-                token_start_char_utf16
-            };
-            let token_modifiers = get_token_modifiers(&last_original_type);
-
-            result.extend_from_slice(&[
-                delta_line,
-                delta_start_char,
-                current_token_len_utf16,
-                lsp_token_index,
-                token_modifiers,
-            ]);
-        }
-    }
+    // --- Finalize the very last token after the loop ---
+     finalize_token(
+        &mut result,
+        current_original_token_type,
+        token_start_line,
+        token_start_char_utf16,
+        current_token_len_utf16,
+        &mut previous_line,
+        &mut previous_char_utf16,
+    );
 
     result
 }
