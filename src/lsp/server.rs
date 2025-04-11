@@ -244,9 +244,10 @@ impl LspServer {
         // 添加XLang关键字
         let keywords = vec![
             "if", "else", "while", "return", "break", "continue", "and", "or", "not", "null",
-            "true", "false", "in", "async", "await", "yield",
+            "true", "false", "in", "async", "await", "yield", "deepcopy", "import", "keyof",
+            "valueof", "typeof", "selfof", "dyn", "copy", "ref", "deref", "assert", "wrap", "wipe",
+            "aliasof", "bind", "boundary", "collect", "raise", "xor", "this", "self"
         ];
-
         for keyword in keywords {
             items.push(CompletionItem {
                 label: keyword.to_string(),
@@ -263,6 +264,15 @@ impl LspServer {
             ("print", "Print a value to the console"),
             ("input", "Read input from the console"),
             ("len", "Get the length of a collection"),
+            ("int", "Convert a value to integer"),
+            ("float", "Convert a value to floating point number"),
+            ("string", "Convert a value to string"),
+            ("bool", "Convert a value to boolean"),
+            ("bytes", "Convert a value to bytes"),
+            (
+                "load_clambda",
+                "Load CLambda from a C dynamic link library",
+            ),
         ];
 
         for (func, desc) in functions {
@@ -603,7 +613,6 @@ fn handle_notification<W: Write>(
 
                         // 发送诊断信息
                         send_diagnostics(writer, &uri, diagnostics)?;
-
                     }
                 }
                 Err(e) => {
