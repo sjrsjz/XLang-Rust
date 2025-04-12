@@ -308,7 +308,7 @@ impl Context {
 
                         // 统一函数调用和跳转的颜色
                         let (symbol, symbol_color) = if *is_function_call {
-                            ("->", function_color)
+                            (">", function_color)
                         } else {
                             (">", normal_color)
                         };

@@ -4,6 +4,7 @@ use super::document::TextDocument;
 use super::protocol::*;
 use super::semantic::SemanticTokenTypes;
 use crate::lsp::semantic::do_semantic;
+use crate::parser::analyzer::analyze_ast;
 use crate::parser::ast::ast_token_stream;
 use crate::parser::ast::build_ast;
 use crate::parser::ast::ParserError;
@@ -80,7 +81,29 @@ pub fn validate_document(document: &TextDocument) -> (Vec<Diagnostic>, Option<Ve
         Ok(ast) => {
             // 解析成功，没有错误
             info!("文档解析成功: {}", document.uri);
+            info!("分析变量定义: {}", document.uri);
+            let result = analyze_ast(&ast);
+            for warn in result.warnings{
+                match warn {
+                    crate::parser::analyzer::AnalyzeWarn::UndefinedVariable(var) => {
+                        if var.token.is_none() {
+                            continue;
+                        }
+                        let range = get_token_range(var.token.unwrap(), &document.content);
+                        diagnostics.push(Diagnostic {
+                            range,
+                            severity: Some(DiagnosticSeverity::Warning),
+                            code: Some(serde_json::Value::String("W001".to_string())),
+                            source: Some("xlang-lsp".to_string()),
+                            message: format!("变量 '{}' 未明确定义", var.token.unwrap().token),
+                            related_information: None,
+                        });
+                    },                    
+                }
+            }
+
             
+
             // 进行语义着色处理
             info!("开始进行语义着色分析");
             match do_semantic(&document.content, ast, &tokens) {
