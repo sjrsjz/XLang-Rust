@@ -2,6 +2,7 @@ mod parser;
 mod lsp;
 mod vm;
 use colored::Colorize;
+use parser::analyzer::analyze_ast;
 use rustyline::highlight::CmdKind;
 use vm::executor::variable::VMInstructions;
 use vm::executor::variable::VMLambda;
@@ -99,6 +100,14 @@ fn build_code(code: &str) -> Result<IRPackage, String> {
             return Err(err_token.format(&tokens, code.to_string()).to_string());
         }
     };
+
+    let analyse_result = analyze_ast(&ast);
+    for error in &analyse_result.errors {
+        println!("{}", error.format(code.to_string()).bright_red());
+    }
+    if !analyse_result.errors.is_empty() {
+        return Err("AST analysis failed".to_string());
+    }
 
     let namespace = ir_generator::NameSpace::new("Main".to_string(), None);
     let mut functions = Functions::new();

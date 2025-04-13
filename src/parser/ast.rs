@@ -10,6 +10,8 @@ pub enum ParserError<'t> {
     NotFullyMatched(&'t Token<'t>, &'t Token<'t>),
     InvalidVariableName(&'t Token<'t>),
     UnsupportedStructure(&'t Token<'t>),
+    MissingStructure(&'t Token<'t>, String), // (token, expected structure)
+    ErrorStructure(&'t Token<'t>, String),   // (token, expected structure)
 }
 
 impl ParserError<'_> {
@@ -24,10 +26,20 @@ impl ParserError<'_> {
         let find_position = |byte_pos: usize| -> (usize, usize) {
             let mut current_byte = 0;
             for (line_num, line) in lines.iter().enumerate() {
-                let line_bytes = line.len() + 1; // +1 for newline
+                // 计算行长度（包括换行符）
+                // Windows通常使用CRLF (\r\n)，而Unix使用LF (\n)
+                // 我们需要检测使用的是哪种换行符
+                let eol_len = if source_code.contains("\r\n") { 2 } else { 1 };
+                let line_bytes = line.len() + eol_len; // 加上实际的换行符长度
+
                 if current_byte + line_bytes > byte_pos {
                     // 计算行内的字节偏移
                     let line_offset = byte_pos - current_byte;
+
+                    // 边界检查
+                    if line_offset > line.len() {
+                        return (line_num, line.graphemes(true).count()); // 位置在行尾
+                    }
 
                     // 找到有效的字符边界
                     let valid_offset = line
@@ -44,8 +56,9 @@ impl ParserError<'_> {
                 }
                 current_byte += line_bytes;
             }
-            (lines.len() - 1, 0) // Default to last line
+            (lines.len().saturating_sub(1), 0) // Default to last line
         };
+
 
         match self {
             ParserError::UnexpectedToken(token) => {
@@ -297,6 +310,64 @@ impl ParserError<'_> {
 
                 error_msg
             }
+
+            ParserError::MissingStructure(token, structure) => {
+                let (line_num, col) = find_position(token.position);
+                let line = if line_num < lines.len() {
+                    lines[line_num]
+                } else {
+                    ""
+                };
+
+                let mut error_msg = format!(
+                    "{}: {}\n\n",
+                    "Parse Error".bright_red().bold(),
+                    format!("Missing structure: {}", structure).yellow()
+                );
+                error_msg.push_str(&format!(
+                    "{} {}:{}\n",
+                    "Position".bright_blue(),
+                    (line_num + 1).to_string().bright_cyan(),
+                    (col + 1).to_string().bright_cyan()
+                ));
+                error_msg.push_str(&format!("{}\n", line.white()));
+                error_msg.push_str(&format!(
+                    "{}{}\n",
+                    " ".repeat(col),
+                    "^".repeat(token.origin_token.len()).bright_red().bold()
+                ));
+
+                error_msg
+            }
+
+            ParserError::ErrorStructure(token, structure) => {
+                let (line_num, col) = find_position(token.position);
+                let line = if line_num < lines.len() {
+                    lines[line_num]
+                } else {
+                    ""
+                };
+
+                let mut error_msg = format!(
+                    "{}: {}\n\n",
+                    "Parse Error".bright_red().bold(),
+                    format!("Error structure: {}", structure).yellow()
+                );
+                error_msg.push_str(&format!(
+                    "{} {}:{}\n",
+                    "Position".bright_blue(),
+                    (line_num + 1).to_string().bright_cyan(),
+                    (col + 1).to_string().bright_cyan()
+                ));
+                error_msg.push_str(&format!("{}\n", line.white()));
+                error_msg.push_str(&format!(
+                    "{}{}\n",
+                    " ".repeat(col),
+                    "^".repeat(token.origin_token.len()).bright_red().bold()
+                ));
+
+                error_msg
+            }
         }
     }
 }
@@ -410,9 +481,10 @@ pub enum ASTNodeType {
     In,
     Yield,
     AsyncLambdaCall,
-    Alias(String), // Type::Value
-    Set,           // collection | filter
-    Map,           // collection |> map
+    Alias(String),      // Type::Value
+    Set,                // collection | filter
+    Map,                // collection |> map
+    Annotation(String), // @annotation expr
 }
 
 #[derive(Debug, PartialEq, Eq, Clone)]
@@ -656,6 +728,12 @@ fn match_all<'t>(
 
     node_matcher.add_matcher(Box::new(
         |tokens, current| -> Result<(Option<ASTNode<'t>>, usize), ParserError<'t>> {
+            match_annotation(tokens, current)
+        },
+    ));
+
+    node_matcher.add_matcher(Box::new(
+        |tokens, current| -> Result<(Option<ASTNode<'t>>, usize), ParserError<'t>> {
             match_return_yield_raise(tokens, current)
         },
     ));
@@ -891,6 +969,56 @@ fn match_expressions<'t>(
         )),
         last_offset + node_offset,
     ))
+}
+
+fn match_annotation<'t>(
+    tokens: &Vec<GatheredTokens<'t>>,
+    current: usize,
+) -> Result<(Option<ASTNode<'t>>, usize), ParserError<'t>> {
+    if current >= tokens.len() {
+        return Ok((None, 0));
+    }
+
+    if !is_symbol(&tokens[current], "@") {
+        return Ok((None, 0));
+    }
+
+    if current + 1 >= tokens.len() {
+        return Err(ParserError::MissingStructure(
+            &tokens[current][0],
+            "Annotation".to_string(),
+        ));
+    };
+
+    if tokens[current + 1].len() != 1 || tokens[current + 1][0].token_type != TokenType::IDENTIFIER
+    {
+        return Err(ParserError::ErrorStructure(
+            &tokens[current][0],
+            "Annotation requires an Identifer".to_string(),
+        ));
+    };
+
+    let annotation = tokens[current + 1][0].token.to_string();
+    let right_tokens = tokens.get(current + 2..).unwrap_or(&[]).to_vec();
+    let (right, right_offset) = match_all(&right_tokens, 0)?;
+    if right.is_none() {
+        return Ok((None, 0));
+    }
+
+    if right_offset != right_tokens.len() {
+        return Err(ParserError::NotFullyMatched(
+            right_tokens.first().unwrap().first().unwrap(),
+            right_tokens.last().unwrap().last().unwrap(),
+        ));
+    }
+
+    let right = right.unwrap();
+    let node = ASTNode::new(
+        ASTNodeType::Annotation(annotation),
+        Some(&tokens[current].first().unwrap()),
+        Some(vec![right]),
+    );
+    Ok((Some(node), right_offset + 2))
 }
 
 fn match_return_yield_raise<'t>(
@@ -2129,7 +2257,7 @@ fn match_quick_call<'t>(
             ));
         }
         let right_tokens = tokens.get(current + 2..).unwrap_or(&[]).to_vec();
-        let (right, right_offset) = match_all(&right_tokens,  0)?;
+        let (right, right_offset) = match_all(&right_tokens, 0)?;
         if right.is_none() {
             return Ok((None, 0));
         }
@@ -2140,9 +2268,7 @@ fn match_quick_call<'t>(
             ));
         }
         let mut right = right.unwrap();
-        if right.node_type != ASTNodeType::Tuple
-            && right.node_type != ASTNodeType::AssumeTuple
-        {
+        if right.node_type != ASTNodeType::Tuple && right.node_type != ASTNodeType::AssumeTuple {
             right = ASTNode::new(
                 ASTNodeType::Tuple,
                 if current + 2 < tokens.len() {

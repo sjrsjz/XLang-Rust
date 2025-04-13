@@ -42,6 +42,7 @@ pub enum SemanticTokenTypes {
     Set,   // collection | filter
     Map,   // collection |> map
     Comment,
+    Annotation, // 注解
 }
 
 pub fn do_semantic(
@@ -114,6 +115,7 @@ fn process_node(
             ASTNodeType::Alias(_) => SemanticTokenTypes::Alias,
             ASTNodeType::Set => SemanticTokenTypes::Set,
             ASTNodeType::Map => SemanticTokenTypes::Map,
+            ASTNodeType::Annotation(_) => SemanticTokenTypes::Annotation,
             _ => SemanticTokenTypes::Variable, // 默认情况
         };
 
@@ -140,6 +142,15 @@ fn process_node(
                 for i in start..end {
                     if i < tokens.len() {
                         tokens[i] = SemanticTokenTypes::Variable;
+                    }
+                }
+            }
+            ASTNodeType::Annotation(annotation) => {
+                let start = node.token.as_ref().map_or(0, |t| t.position);
+                let end = start + node.token.as_ref().map_or(0, |t| t.origin_token.len()) + annotation.len();
+                for i in start..end {
+                    if i < tokens.len() {
+                        tokens[i] = SemanticTokenTypes::Annotation;
                     }
                 }
             }
@@ -242,7 +253,7 @@ pub(super) fn encode_semantic_tokens(tokens: &[SemanticTokenTypes], text: &str) 
             SemanticTokenTypes::Set => Some(50),
             SemanticTokenTypes::Map => Some(51),
             SemanticTokenTypes::Comment => Some(17),
-        }
+            SemanticTokenTypes::Annotation => Some(14),}
     };
 
     #[allow(dead_code)]

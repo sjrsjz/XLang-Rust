@@ -83,17 +83,17 @@ pub fn validate_document(document: &TextDocument) -> (Vec<Diagnostic>, Option<Ve
             info!("文档解析成功: {}", document.uri);
             info!("分析变量定义: {}", document.uri);
             let result = analyze_ast(&ast);
-            for warn in result.warnings{
-                match warn {
-                    crate::parser::analyzer::AnalyzeWarn::UndefinedVariable(var) => {
+            for error in result.errors{
+                match error {
+                    crate::parser::analyzer::AnalyzeError::UndefinedVariable(var) => {
                         if var.token.is_none() {
                             continue;
                         }
                         let range = get_token_range(var.token.unwrap(), &document.content);
                         diagnostics.push(Diagnostic {
                             range,
-                            severity: Some(DiagnosticSeverity::Warning),
-                            code: Some(serde_json::Value::String("W001".to_string())),
+                            severity: Some(DiagnosticSeverity::Error),
+                            code: Some(serde_json::Value::String("VAR-E001".to_string())),
                             source: Some("xlang-lsp".to_string()),
                             message: format!("变量 '{}' 未明确定义", var.token.unwrap().token),
                             related_information: None,
@@ -169,7 +169,7 @@ fn create_diagnostic_from_parser_error<'t>(
             Diagnostic {
                 range,
                 severity: Some(DiagnosticSeverity::Error),
-                code: Some(serde_json::Value::String("E001".to_string())),
+                code: Some(serde_json::Value::String("AST-E001".to_string())),
                 source: Some("xlang-lsp".to_string()),
                 message: format!("意外标记: '{}'", token.token),
                 related_information: None,
@@ -211,7 +211,7 @@ fn create_diagnostic_from_parser_error<'t>(
             Diagnostic {
                 range: main_range,
                 severity: Some(DiagnosticSeverity::Error),
-                code: Some(serde_json::Value::String("E002".to_string())),
+                code: Some(serde_json::Value::String("AST-E002".to_string())),
                 source: Some("xlang-lsp".to_string()),
                 message: "括号不匹配".to_string(),
                 related_information: Some(related),
@@ -223,7 +223,7 @@ fn create_diagnostic_from_parser_error<'t>(
             Diagnostic {
                 range,
                 severity: Some(DiagnosticSeverity::Error),
-                code: Some(serde_json::Value::String("E003".to_string())),
+                code: Some(serde_json::Value::String("AST-E003".to_string())),
                 source: Some("xlang-lsp".to_string()),
                 message: "无效的语法结构".to_string(),
                 related_information: None,
@@ -243,7 +243,7 @@ fn create_diagnostic_from_parser_error<'t>(
             Diagnostic {
                 range,
                 severity: Some(DiagnosticSeverity::Error),
-                code: Some(serde_json::Value::String("E004".to_string())),
+                code: Some(serde_json::Value::String("AST-E004".to_string())),
                 source: Some("xlang-lsp".to_string()),
                 message: "表达式未完全匹配".to_string(),
                 related_information: None,
@@ -255,7 +255,7 @@ fn create_diagnostic_from_parser_error<'t>(
             Diagnostic {
                 range,
                 severity: Some(DiagnosticSeverity::Error),
-                code: Some(serde_json::Value::String("E005".to_string())),
+                code: Some(serde_json::Value::String("AST-E005".to_string())),
                 source: Some("xlang-lsp".to_string()),
                 message: format!("无效的变量名: '{}'", token.token),
                 related_information: None,
@@ -267,9 +267,33 @@ fn create_diagnostic_from_parser_error<'t>(
             Diagnostic {
                 range,
                 severity: Some(DiagnosticSeverity::Error),
-                code: Some(serde_json::Value::String("E006".to_string())),
+                code: Some(serde_json::Value::String("AST-E006".to_string())),
                 source: Some("xlang-lsp".to_string()),
                 message: "不支持的语法结构".to_string(),
+                related_information: None,
+            }
+        },
+        ParserError::MissingStructure(token, expected) => {
+            // 缺失结构错误
+            let range = get_token_range(token, source_code);
+            Diagnostic {
+                range,
+                severity: Some(DiagnosticSeverity::Error),
+                code: Some(serde_json::Value::String("AST-E007".to_string())),
+                source: Some("xlang-lsp".to_string()),
+                message: format!("缺失的结构: '{}'", expected),
+                related_information: None,
+            }
+        },
+        ParserError::ErrorStructure(token, err) => {
+            // 错误结构错误
+            let range = get_token_range(token, source_code);
+            Diagnostic {
+                range,
+                severity: Some(DiagnosticSeverity::Error),
+                code: Some(serde_json::Value::String("AST-E008".to_string())),
+                source: Some("xlang-lsp".to_string()),
+                message: format!("错误的结构: '{}'", err),
                 related_information: None,
             }
         },

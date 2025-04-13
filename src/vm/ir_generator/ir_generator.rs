@@ -130,6 +130,13 @@ impl<'t> IRGenerator<'t> {
                 instructions.push((self.generate_debug_info(ast_node), IR::PopFrame));
                 Ok(instructions)
             }
+            ASTNodeType::Annotation(_) => {
+                let mut instructions = Vec::new();
+                for child in &ast_node.children {
+                    instructions.extend(self.generate_without_redirect(child)?);
+                }
+                Ok(instructions)
+            }
             ASTNodeType::LambdaDef(is_dyn) => {
                 let mut instructions = Vec::new();
                 let args = &ast_node.children[0];
