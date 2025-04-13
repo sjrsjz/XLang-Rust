@@ -772,6 +772,12 @@ fn match_all<'t>(
 
     node_matcher.add_matcher(Box::new(
         |tokens, current| -> Result<(Option<ASTNode<'t>>, usize), ParserError<'t>> {
+            match_quick_call(tokens, current)
+        },
+    ));
+    
+    node_matcher.add_matcher(Box::new(
+        |tokens, current| -> Result<(Option<ASTNode<'t>>, usize), ParserError<'t>> {
             match_lambda_def(tokens, current)
         },
     ));
@@ -878,11 +884,6 @@ fn match_all<'t>(
         },
     ));
 
-    node_matcher.add_matcher(Box::new(
-        |tokens, current| -> Result<(Option<ASTNode<'t>>, usize), ParserError<'t>> {
-            match_quick_call(tokens, current)
-        },
-    ));
 
     node_matcher.add_matcher(Box::new(
         |tokens, current| -> Result<(Option<ASTNode<'t>>, usize), ParserError<'t>> {

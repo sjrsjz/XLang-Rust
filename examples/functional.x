@@ -309,7 +309,7 @@ fp := bind {
         cache := {};
         
         return (x?) -> {
-            key := str(x);
+            key := string(x);
             if (key in cache) {
                 return cache[key];
             };

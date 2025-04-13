@@ -682,10 +682,20 @@ impl VMExecutor {
         let find_position = |byte_pos: usize| -> (usize, usize) {
             let mut current_byte = 0;
             for (line_num, line) in lines.iter().enumerate() {
-                let line_bytes = line.len() + 1; // +1 for newline
+                // 计算行长度（包括换行符）
+                // Windows通常使用CRLF (\r\n)，而Unix使用LF (\n)
+                // 我们需要检测使用的是哪种换行符
+                let eol_len = if source_code.contains("\r\n") { 2 } else { 1 };
+                let line_bytes = line.len() + eol_len; // 加上实际的换行符长度
+
                 if current_byte + line_bytes > byte_pos {
                     // 计算行内的字节偏移
                     let line_offset = byte_pos - current_byte;
+
+                    // 边界检查
+                    if line_offset > line.len() {
+                        return (line_num, line.graphemes(true).count()); // 位置在行尾
+                    }
 
                     // 找到有效的字符边界
                     let valid_offset = line
@@ -702,7 +712,7 @@ impl VMExecutor {
                 }
                 current_byte += line_bytes;
             }
-            (lines.len() - 1, 0) // Default to last line
+            (lines.len().saturating_sub(1), 0) // Default to last line
         };
 
         // Get line and column number for current position
