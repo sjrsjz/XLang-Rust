@@ -248,9 +248,9 @@ assert(is_error(boundary divide(10, 2)) == false);
 
 // try-catch 模式
 try_divide := (x?, y?) -> {
-    result := boundary divide(x, y);
-    if (is_error(result)) {
-        print("Error:", result);
+    result := boundary @dynamic divide(x, y);
+    if (@dynamic is_error(result)) {
+        @dynamic print("Error:", result);
         return null;
     } else {
         return result;
@@ -301,12 +301,12 @@ assert(counter.increment() == 1);
 // 定义异步函数
 async_function := () -> {
     // 模拟异步操作
-    print("异步操作开始");
+    @dynamic print("异步操作开始");
     n := 0;
     while (n < 10) {
         n = n + 1;
     };
-    print("异步操作完成");
+    @dynamic print("异步操作完成");
     return "结果";
 };
 
@@ -387,15 +387,15 @@ assert("Person" in quick_set(aliasof person));
 dynamic_function := () -> {
     // 不使用 @dynamic 会导致静态检查错误
     // 因为 xyz 未定义
-    print(@dynamic xyz);
+    @dynamic print(@dynamic xyz);
 };
 
 // 使用函数装饰器
 my_decorator := (fn?) -> {
     return (...(keyof fn + (__fn__ => fn,))) -> {
-        print("调用前");
+        @dynamic print("调用前");
         result := @dynamic __fn__(...(keyof this));
-        print("调用后");
+        @dynamic print("调用后");
         return result;
     };
 };
@@ -414,7 +414,7 @@ assert(6 in set2);
 
 // 部分应用
 add := (x?, y?) -> x + y;
-add5 := (y?) -> add(5, y);
+add5 := (y?) -> @dynamic add(5, y);
 assert(add5(3) == 8);
 
 /* 内置库和实用函数 */
@@ -456,7 +456,7 @@ Person := () -> bind {
         return self;
     },
     greet => () -> {
-        return "Hello, I'm " + self.name + " and I'm " + string(self.age) + " years old.";
+        return "Hello, I'm " + self.name + " and I'm " + @dynamic string(self.age) + " years old.";
     },
     birthYear => () -> {
         return 2023 - self.age;
@@ -488,7 +488,7 @@ Student := (Person?) -> bind {
         return self;
     },
     greet => () -> {
-        return self.super.greet() + " I attend " + self.school + " in grade " + string(self.grade) + ".";
+        return self.super.greet() + " I attend " + self.school + " in grade " + @dynamic string(self.grade) + ".";
     },
     study => () -> {
         return self.super.name + " is studying hard.";

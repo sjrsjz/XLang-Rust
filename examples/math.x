@@ -55,14 +55,14 @@ math := bind {
     
     // Power and exponential functions - now using power operator
     exp => (x => 0) -> {
-        x := float(x);
+        x := @dynamic float(x);
         return self.E ** x;
     },
     
     // Natural logarithm - still needs approximation
     log => (x => 0, base => E) -> {
-        x := float(x);
-        base := float(base);
+        x := @dynamic float(x);
+        base := @dynamic float(base);
 
         if (x <= 0 or base <= 0 or base == 1) {
             return null; // Error case
@@ -115,8 +115,8 @@ math := bind {
     
     // Power function using power operator
     pow => (x => 0, y => 0) -> {
-        x := float(x);
-        y := float(y);
+        x := @dynamic float(x);
+        y := @dynamic float(y);
         // Special cases for clarity
         if (y == 0) { return 1; };
         if (x == 0) { return 0; };
@@ -127,14 +127,14 @@ math := bind {
     
     // Square root using power operator
     sqrt => (x => 0) -> {
-        x := float(x);
+        x := @dynamic float(x);
         if (x < 0) { return null; }; // Error for negative values
         return x ** 0.5;
     },
     
     // Cube root using power operator
     cbrt => (x => 0) -> {
-        x := float(x);
+        x := @dynamic float(x);
         return x ** (1/3);
     },
     
@@ -147,7 +147,7 @@ math := bind {
     
     // Trigonometric functions
     sin => (x => 0) -> {
-        x := float(x);
+        x := @dynamic float(x);
 
         // Normalize angle to [0, 2π)
         x = x % self.TAU;
@@ -169,7 +169,7 @@ math := bind {
     },
     
     cos => (x => 0) -> {
-        x := float(x);
+        x := @dynamic float(x);
 
         // Normalize angle to [0, 2π)
         x = x % self.TAU;
@@ -198,7 +198,7 @@ math := bind {
     
     // Inverse trigonometric functions
     asin => (x => 0) -> {
-        x := float(x);
+        x := @dynamic float(x);
         if (x < -1 or x > 1) { return null; }; // Domain error
         
         // Taylor series approximation for small x
@@ -227,13 +227,13 @@ math := bind {
     },
     
     acos => (x => 0) -> {
-        x := float(x);
+        x := @dynamic float(x);
         if (x < -1 or x > 1) { return null; }; // Domain error
         return self.PI / 2 - self.asin(x);
     },
     
     atan => (x => 0) -> {
-        x := float(x);
+        x := @dynamic float(x);
         // Taylor series for small x: atan(x) = x - x³/3 + x⁵/5 - ...
         if (x > -1 and x < 1) {
             result := x;
@@ -264,7 +264,7 @@ math := bind {
     },
     
     atan2 => (y => 0, x => 0) -> {
-        x := float(x);
+        x := @dynamic float(x);
         if (x == 0) {
             if (y > 0) { return self.PI / 2; };
             if (y < 0) { return -self.PI / 2; };
@@ -286,19 +286,19 @@ math := bind {
     
     // Hyperbolic functions
     sinh => (x => 0) -> {
-        x := float(x);
+        x := @dynamic float(x);
         // Using direct formula with power operator
         return (self.E ** x - self.E ** (-x)) / 2;
     },
     
     cosh => (x => 0) -> {
-        x := float(x);
+        x := @dynamic float(x);
         // Using direct formula with power operator
         return (self.E ** x + self.E ** (-x)) / 2;
     },
     
     tanh => (x => 0) -> {
-        x := float(x);
+        x := @dynamic float(x);
         if (x > 20) { return 1; }; // Avoid overflow
         if (x < -20) { return -1; };
         
@@ -312,7 +312,7 @@ math := bind {
     sum => (arr => (,)) -> {
         total := 0;
         i := 0;
-        while (i < len(arr)) {
+        while (i < @dynamic len(arr)) {
             total = total + arr[i];
             i = i + 1;
         };
@@ -320,21 +320,21 @@ math := bind {
     },
     
     mean => (arr => (,)) -> {
-        if (len(arr) == 0) { return null; };
-        return self.sum(arr) / len(arr);
+        if (@dynamic len(arr) == 0) { return null; };
+        return self.sum(arr) / @dynamic len(arr);
     },
     
     variance => (arr => (,)) -> {
-        if (len(arr) == 0) { return null; };
+        if (@dynamic len(arr) == 0) { return null; };
         mean := self.mean(arr);
         sum_squared_diff := 0;
         i := 0;
-        while (i < len(arr)) {
+        while (i < @dynamic len(arr)) {
             diff := arr[i] - mean;
             sum_squared_diff = sum_squared_diff + diff * diff;
             i = i + 1;
         };
-        return sum_squared_diff / len(arr);
+        return sum_squared_diff / @dynamic len(arr);
     },
     
     std => (arr => (,)) -> {
@@ -344,10 +344,10 @@ math := bind {
     vector => bind {
         // Vector operations
         add => (v1 => (,), v2 => (,)) -> {
-            if (len(v1) != len(v2)) { return null; }; // Dimension mismatch
+            if (@dynamic len(v1) != len(v2)) { return null; }; // Dimension mismatch
             result := (,);
             i := 0;
-            while (i < len(v1)) {
+            while (i < @dynamic len(v1)) {
                 result = result + (v1[i] + v2[i],);
                 i = i + 1;
             };
@@ -355,10 +355,10 @@ math := bind {
         },
         
         sub => (v1 => (,), v2 => (,)) -> {
-            if (len(v1) != len(v2)) { return null; }; // Dimension mismatch
+            if (@dynamic len(v1) != len(v2)) { return null; }; // Dimension mismatch
             result := (,);
             i := 0;
-            while (i < len(v1)) {
+            while (i < @dynamic len(v1)) {
                 result = result + (v1[i] - v2[i],);
                 i = i + 1;
             };
@@ -366,10 +366,10 @@ math := bind {
         },
         
         dot => (v1 => (,), v2 => (,)) -> {
-            if (len(v1) != len(v2)) { return null; }; // Dimension mismatch
+            if (@dynamic len(v1) != len(v2)) { return null; }; // Dimension mismatch
             result := 0;
             i := 0;
-            while (i < len(v1)) {
+            while (i < @dynamic len(v1)) {
                 result = result + v1[i] * v2[i];
                 i = i + 1;
             };
@@ -379,7 +379,7 @@ math := bind {
         scale => (v => (,), scalar => 0) -> {
             result := (,);
             i := 0;
-            while (i < len(v)) {
+            while (i < @dynamic len(v)) {
                 result = result + (v[i] * scalar,);
                 i = i + 1;
             };
@@ -389,7 +389,7 @@ math := bind {
         magnitude => (v => (,)) -> {
             sum_squared := 0;
             i := 0;
-            while (i < len(v)) {
+            while (i < @dynamic len(v)) {
                 sum_squared = sum_squared + v[i] * v[i];
                 i = i + 1;
             };

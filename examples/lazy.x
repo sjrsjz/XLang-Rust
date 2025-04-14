@@ -7,7 +7,7 @@ lazy_value := (expensive_computation?) -> {
 };
 
 expensive_computation := () -> {
-    print("Expensive computation executed");
+    @dynamic print("Expensive computation executed");
     return 42;
 };
 print(lazy_value(expensive_computation));

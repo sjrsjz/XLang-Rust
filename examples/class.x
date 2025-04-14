@@ -8,7 +8,7 @@ inject_super := (instance?) -> {
     return instance;
 };
 
-super_class_builder := () -> bind SuperClass::inject_sub(
+super_class_builder := () -> bind (@dynamic SuperClass::inject_sub)(
     {
         'subclass' : wrap null,
         say => () -> {
@@ -19,12 +19,12 @@ super_class_builder := () -> bind SuperClass::inject_sub(
 
 
 
-class_builder := (text?, super => super_class_builder()) -> inject_super(
+class_builder := (text?, super => super_class_builder()) -> (@dynamic inject_super)(
     bind ClassA::{
         'text' : text,
         'super' : super,
         say => () -> {
-            print(self.text);
+            @dynamic print(self.text);
         },
     },
 );

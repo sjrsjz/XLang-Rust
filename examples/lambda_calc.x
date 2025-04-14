@@ -1,9 +1,9 @@
 TRUE := (x?, y?) -> x;
 FALSE := (x?, y?) -> y;
-AND := (x?, y?) -> x(y, FALSE);
-OR := (x?, y?) -> x(TRUE, y);
-NOT := (x?) -> x(FALSE, TRUE);
-XOR := (x?, y?) -> x(NOT(y), y);
+AND := (x?, y?) -> x(y, @dynamic FALSE);
+OR := (x?, y?) -> x(@dynamic TRUE, y);
+NOT := (x?) -> x(@dynamic FALSE, @dynamic TRUE);
+XOR := (x?, y?) -> x(@dynamic NOT(y), y);
 
 to_bool := (f?) -> f(true, false);
 
@@ -19,7 +19,7 @@ NUM := (n?) -> (f?, x?, n!) -> {
 };
 
 ADD := (m?, n?) -> (f?, x?, m!, n!) -> m(f, n(f, x));
-MULT := (m?, n?) -> (f?, x?, m!, n!) -> m((g?, f => f) -> n(f, g), x);
+MULT := (m?, n?) -> (f?, x?, m!, n!) -> m((g?, f!, n!) -> n(f, g), x);
 
 SUCC := (n?) -> (f?, x?, n!) -> f(n(f, x));
 

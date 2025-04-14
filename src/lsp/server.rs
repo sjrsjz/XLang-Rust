@@ -1,4 +1,4 @@
-use std::collections::HashMap;
+use std::collections::{HashMap, HashSet}; // 添加 HashSet
 use std::io::{BufRead, Write};
 use std::sync::{Arc, Mutex};
 
@@ -6,6 +6,8 @@ use log::{debug, error, info, warn};
 use serde_json::Value;
 
 use crate::lsp::semantic::encode_semantic_tokens;
+use crate::parser::analyzer;
+use crate::parser::ast::build_ast;
 use crate::parser::lexer;
 
 use super::capabilities::initialize_capabilities;
@@ -236,17 +238,18 @@ impl LspServer {
     fn calculate_completions(
         &self,
         document: &TextDocument,
-        _position: Position,
+        position: Position,
     ) -> Vec<CompletionItem> {
         // 基于XLang语法，提供关键字、运算符等的完成项
         let mut items = Vec::new();
+        let mut unique_vars = HashSet::new(); // 用于存储唯一的变量名
 
         // 添加XLang关键字
         let keywords = vec![
             "if", "else", "while", "return", "break", "continue", "and", "or", "not", "null",
             "true", "false", "in", "async", "await", "yield", "deepcopy", "import", "keyof",
             "valueof", "typeof", "selfof", "dyn", "copy", "ref", "deref", "assert", "wrap", "wipe",
-            "aliasof", "bind", "boundary", "collect", "raise", "xor", "this", "self"
+            "aliasof", "bind", "boundary", "collect", "raise", "xor",
         ];
         for keyword in keywords {
             items.push(CompletionItem {
@@ -259,69 +262,144 @@ impl LspServer {
             });
         }
 
-        // 添加XLang内置函数
-        let functions = vec![
-            ("print", "Print a value to the console"),
-            ("input", "Read input from the console"),
-            ("len", "Get the length of a collection"),
-            ("int", "Convert a value to integer"),
-            ("float", "Convert a value to floating point number"),
-            ("string", "Convert a value to string"),
-            ("bool", "Convert a value to boolean"),
-            ("bytes", "Convert a value to bytes"),
-            (
-                "load_clambda",
-                "Load CLambda from a C dynamic link library",
-            ),
-        ];
+        // --- 使用分析器获取变量上下文 ---
+        // 1. 解析 AST
+        let lex_result = lexer::lexer::tokenize(&document.content);
+        let lex_result = lexer::lexer::reject_comment(&lex_result);
+        let parse_result = build_ast(&lex_result);
+        if let Ok(ast) = parse_result {
+            // 2. 将 LSP Position 转换为字节偏移
+            if let Some(byte_offset) = position_to_byte_offset(&document.content, position.clone())
+            {
+                // 3. 调用分析器获取特定位置的上下文
+                let analysis_output = analyzer::analyze_ast(&ast, Some(byte_offset));
 
-        for (func, desc) in functions {
-            items.push(CompletionItem {
-                label: func.to_string(),
-                kind: Some(CompletionItemKind::Function),
-                detail: Some("Built-in function".to_string()),
-                documentation: Some(desc.to_string()),
-                insert_text: Some(format!("{}(", func)),
-                other: HashMap::new(),
-            });
-        }
+                // 4. 如果分析器在断点处捕获了上下文，则提取变量
+                if let Some(context) = analysis_output.context_at_break {
+                    // 从内到外遍历作用域帧
+                    let last_context = context.last_context();
+                    if let Some(last_context) = last_context {
+                        for frame in last_context.iter().rev() {
+                            for var in &frame.variables {
+                                // 添加到 HashSet 以确保唯一性
+                                if unique_vars.insert(var.name.clone()) {
+                                    // 根据变量类型确定 CompletionItemKind 和 detail
+                                    let (kind, detail) = match var.assumed_type {
+                                        analyzer::AssumedType::Lambda => (
+                                            CompletionItemKind::Function,
+                                            format!("Function: {}", var.name),
+                                        ),
+                                        analyzer::AssumedType::String => (
+                                            CompletionItemKind::Variable, // 或者 Text?
+                                            format!("String: {}", var.name),
+                                        ),
+                                        analyzer::AssumedType::Number => (
+                                            CompletionItemKind::Variable, // 或者 Number?
+                                            format!("Number: {}", var.name),
+                                        ),
+                                        analyzer::AssumedType::Boolean => (
+                                            CompletionItemKind::Variable, // 或者 Boolean?
+                                            format!("Boolean: {}", var.name),
+                                        ),
+                                        analyzer::AssumedType::Tuple => (
+                                            CompletionItemKind::Class, // 或者 Struct/Class?
+                                            format!("Tuple: {}", var.name),
+                                        ),
+                                        // 可以为其他类型添加更多分支
+                                        _ => (
+                                            CompletionItemKind::Variable,
+                                            format!(
+                                                "Variable: {} (type: {:?})",
+                                                var.name, var.assumed_type
+                                            ),
+                                        ),
+                                    };
 
-        // 尝试从当前文档中提取变量名
-        if let Some(extracted_vars) = self.extract_variables_from_document(document) {
-            for var in extracted_vars {
-                items.push(CompletionItem {
-                    label: var.clone(),
-                    kind: Some(CompletionItemKind::Variable),
-                    detail: Some("Local variable".to_string()),
-                    documentation: None,
-                    insert_text: Some(var),
-                    other: HashMap::new(),
-                });
+                                    items.push(CompletionItem {
+                                        label: var.name.clone(),
+                                        kind: Some(kind),
+                                        detail: Some(detail),
+                                        documentation: None, // 可以考虑未来添加基于类型的文档
+                                        insert_text: Some(var.name.clone()), // 对于函数，可能需要添加 '()'
+                                        other: HashMap::new(),
+                                    });
+                                }
+                            }
+                        }
+                    }
+                } else {
+                    info!(
+                        "Analyzer did not capture context at break position {}",
+                        byte_offset
+                    );
+                    // 即使没有捕获到精确位置的上下文，也可以考虑使用全局上下文（如果需要）
+                    // let full_analysis = analyzer::analyze_ast(&ast, None);
+                    // // ... process full_analysis.context_at_break (which should be None)
+                    // // or potentially analyze without break point to get final context?
+                }
+            } else {
+                warn!("Could not convert position {:?} to byte offset", position);
             }
+        } else {
+            warn!("Failed to parse document for completion: {}", document.uri);
+            // 解析失败，仅返回关键字和内置函数
         }
 
         items
     }
+}
 
-    /// 从文档中提取变量名
-    fn extract_variables_from_document(&self, document: &TextDocument) -> Option<Vec<String>> {
-        let tokens = lexer::lexer::tokenize(&document.content);
-        let tokens = lexer::lexer::reject_comment(&tokens);
-        let mut variables = Vec::new();
+/// 将 LSP 的 Position (0-based line, 0-based UTF-16 character offset) 转换为字节偏移量
+fn position_to_byte_offset(text: &str, position: Position) -> Option<usize> {
+    let mut byte_offset = 0;
+    let mut current_line = 0;
 
-        // 简单的变量提取: 查找 := 定义的变量
-        for i in 0..tokens.len().saturating_sub(1) {
-            if tokens[i].token_type == lexer::TokenType::IDENTIFIER
-                && i + 1 < tokens.len()
-                && tokens[i + 1].token_type == lexer::TokenType::SYMBOL
-                && tokens[i + 1].token == ":="
-            {
-                variables.push(tokens[i].token.to_string());
+    for line in text.lines() {
+        if current_line == position.line {
+            // 找到目标行，计算字符偏移对应的字节偏移
+            let mut char_offset = 0;
+            for (i, ch) in line.char_indices() {
+                if char_offset == position.character {
+                    return Some(byte_offset + i);
+                }
+                // LSP 使用 UTF-16 编码单位计数，Rust 字符串迭代器使用 Unicode 标量值 (char)
+                // 对于 BMP 字符，两者长度相同。对于代理对，UTF-16 长度为 2，char 长度为 1。
+                // 这里简化处理，假设大部分是 BMP 字符，或者不严格要求精确处理代理对。
+                // 更精确的方法需要处理 UTF-16 编码。
+                char_offset += ch.len_utf16() as u32; // 使用 UTF-16 长度计数
+                if char_offset > position.character {
+                    // 如果超过了目标字符偏移，说明位置在字符内部或无效，返回当前字节偏移
+                    return Some(byte_offset + i);
+                }
             }
+            // 如果循环结束还没找到，说明位置在行尾
+            return Some(byte_offset + line.len());
         }
-
-        Some(variables)
+        // 加上行内容和换行符的字节长度
+        // 需要处理 \n 和 \r\n 两种情况
+        byte_offset += line.len();
+        if text[byte_offset..].starts_with("\r\n") {
+            byte_offset += 2;
+        } else if text[byte_offset..].starts_with('\n') {
+            byte_offset += 1;
+        } else {
+            // 文件末尾没有换行符
+            if current_line == position.line {
+                // 如果是最后一行且位置在行尾
+                return Some(byte_offset);
+            }
+            // 否则可能 position.line 超出范围
+            break;
+        }
+        current_line += 1;
     }
+
+    // 如果行号超出范围，或者文本为空
+    if current_line == position.line && position.character == 0 {
+        return Some(byte_offset); // 可能是空文件或最后一行之后的位置
+    }
+
+    None // 位置无效
 }
 
 /// 运行LSP服务器

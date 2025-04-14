@@ -101,7 +101,7 @@ fn build_code(code: &str) -> Result<IRPackage, String> {
         }
     };
 
-    let analyse_result = analyze_ast(&ast);
+    let analyse_result = analyze_ast(&ast, None);
     for error in &analyse_result.errors {
         println!("{}", error.format(code.to_string()).bright_red());
     }

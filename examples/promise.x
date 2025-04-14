@@ -14,17 +14,17 @@ x := 0;
 
 my_promise := promise(
     f => (x => x) -> {
-        print("Simulating async operation...");
+        @dynamic print("Simulating async operation...");
         if (x == 0) {
             raise Err::"Error occurred";
         };
         return x;
     },
     then => (result?) -> {
-        print("Promise resolved with:", result);
+        @dynamic print("Promise resolved with:", result);
     },
     catch => (err?) -> {
-        print("Caught error:", err);
+        @dynamic print("Caught error:", err);
     }
 );
 

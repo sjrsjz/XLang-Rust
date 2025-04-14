@@ -82,7 +82,7 @@ pub fn validate_document(document: &TextDocument) -> (Vec<Diagnostic>, Option<Ve
             // 解析成功，没有错误
             info!("文档解析成功: {}", document.uri);
             info!("分析变量定义: {}", document.uri);
-            let result = analyze_ast(&ast);
+            let result = analyze_ast(&ast, None);
             for error in result.errors{
                 match error {
                     crate::parser::analyzer::AnalyzeError::UndefinedVariable(var) => {

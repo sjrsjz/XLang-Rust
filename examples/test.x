@@ -80,7 +80,7 @@ if (is_err(A)){
     print(A)
 };
 
-foo := (n=>0)->{a:=n;if(n<10){foo(a+1)}};foo();
+foo := (n=>0)->{a:=n;if(n<10){this(a+1)}};foo();
 
 create_async_func := () -> (n=>0) -> {
     while (n = n + 1; n < 10) {
@@ -114,16 +114,16 @@ print("all asyncs finished");
 
 extend := (obj?, methods => (,)) -> {
     new_obj := (,);
-    n := 0; while(n < len(obj)) {
+    n := 0; while(n < @dynamic len(obj)) {
         i := 0;
-        found := while(i < len(methods)) {
+        found := while(i < @dynamic len(methods)) {
             if (typeof obj[n] == "named") { if (keyof obj[n] == keyof methods[i]) { break true } };
             i = i + 1;
         };
         if (found != true) { new_obj = new_obj + (obj[n],) };
         n = n + 1;
     };
-    n := 0; while(n < len(methods)) {
+    n := 0; while(n < @dynamic len(methods)) {
         new_obj = new_obj + (methods[n],);
         n = n + 1;
     };
@@ -197,7 +197,7 @@ iter := (container?, wrapper?) ->
 		return () -> false;
 	} else {
 		return (container => container, wrapper => wrapper, n => 0) -> {
-			if (n >= len(container)) {
+			if (n >= @dynamic len(container)) {
 				return false;
 			};
 			wrapper = container[n];
@@ -222,9 +222,9 @@ RelationTable := (keys => (,)) -> {
         },
         key_idx => (keys => (,)) -> {
             idx := (,);
-            n := 0; while(n < len(keys)) {
+            n := 0; while(n < @dynamic len(keys)) {
                 found := false;
-                i := 0; while(i < len(self.keys)) {
+                i := 0; while(i < @dynamic len(self.keys)) {
                     if (keys[n] == self.keys[i]) {
                         idx = idx + (i,);
                         found = true;
@@ -245,10 +245,10 @@ RelationTable := (keys => (,)) -> {
             if (idx == null) {
                 return null;
             };
-            new_table := RelationTable(keys);
-            n := 0; while(n < len(self.data)) {
+            new_table := @dynamic RelationTable(keys);
+            n := 0; while(n < @dynamic len(self.data)) {
                 row := (,);
-                i := 0; while(i < len(idx)) {
+                i := 0; while(i < @dynamic len(idx)) {
                     row = row + (self.data[n][idx[i]],);
                     i = i + 1;
                 };
@@ -259,8 +259,8 @@ RelationTable := (keys => (,)) -> {
         },
 
         filter => (condition => (v?, table?) -> false) -> {
-            new_table := RelationTable(self.keys);
-            n := 0; while(n < len(self.data)) {
+            new_table := @dynamic RelationTable(self.keys);
+            n := 0; while(n < @dynamic len(self.data)) {
                 if (condition(self.data[n], self) == true) {
                     new_table.append(self.data[n]);
                 };
@@ -288,7 +288,7 @@ fib := (n => 0) -> {
     } else if (n == 1) {
         return 1;
     } else {
-        return fib(n - 1) + fib(n - 2);
+        return this(n - 1) + this(n - 2);
     };
 };
 print(fib(4));
@@ -302,7 +302,7 @@ none := (n => 0) -> {
 	// 	return 1;//return none(0);
 	// };
 };
-none2 := () -> {
+none2 := () -> @dynamic {
 	none(1) + none(2);
 };
 

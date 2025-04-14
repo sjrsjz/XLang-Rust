@@ -6,7 +6,7 @@ fp := bind {
     map => (arr => (), fn => (x?) -> null) -> {
         result := ();
         i := 0;
-        while (i < len(arr)) {
+        while (i < @dynamic len(arr)) {
             result = result + (fn(arr[i]),);
             i = i + 1;
         };
@@ -16,7 +16,7 @@ fp := bind {
     filter => (arr => (), predicate => (x?) -> false) -> {
         result := ();
         i := 0;
-        while (i < len(arr)) {
+        while (i < @dynamic len(arr)) {
             if (predicate(arr[i])) {
                 result = result + (arr[i],);
             };
@@ -26,11 +26,11 @@ fp := bind {
     },
     
     reduce => (arr => (), fn => (acc?, x?) -> null, initial?) -> {
-        if (len(arr) == 0) { return initial; };
+        if (@dynamic len(arr) == 0) { return initial; };
         
         acc := copy initial;
         i := 0;
-        while (i < len(arr)) {
+        while (i < @dynamic len(arr)) {
             acc = fn(acc, arr[i]);
             i = i + 1;
         };
@@ -39,7 +39,7 @@ fp := bind {
     
     // 函数组合
     compose => (f => (x?) -> null, g => (x?) -> null) -> {
-        return (x?) -> {
+        return (x?, f!, g!) -> {
             return f(g(x));
         };
     },
@@ -47,34 +47,16 @@ fp := bind {
     pipe => (x?, fns => ()) -> {
         result := copy x;
         i := 0;
-        while (i < len(fns)) {
+        while (i < @dynamic len(fns)) {
             result = fns[i](result);
             i = i + 1;
         };
         return result;
     },
     
-    // 柯里化和部分应用
-    curry2 => (fn => (a?, b?) -> null) -> {
-        return (a?) -> {
-            return (b?) -> {
-                return fn(a, b);
-            };
-        };
-    },
-    
-    curry3 => (fn => (a?, b?, c?) -> null) -> {
-        return (a?) -> {
-            return (b?) -> {
-                return (c?) -> {
-                    return fn(a, b, c);
-                };
-            };
-        };
-    },
     
     partial => (fn => (x?) -> null, args => ()) -> {
-        return (x?) -> {
+        return (x?, args!, fn!) -> {
             all_args := copy args + (x,);
             return fn(all_args);
         };
@@ -190,7 +172,7 @@ fp := bind {
     },
     
     constant => (x?) -> {
-        return () -> {
+        return (x!) -> {
             return x;
         };
     },
@@ -212,7 +194,7 @@ fp := bind {
         take => (arr => (), n => 0) -> {
             result := ();
             i := 0;
-            count := if (n > len(arr)) (len(arr)) else n;
+            count := if (n > @dynamic len(arr)) (@dynamic len(arr)) else n;
             
             while (i < count) {
                 result = result + (arr[i],);
@@ -226,7 +208,7 @@ fp := bind {
             result := ();
             i := n;
             
-            while (i < len(arr)) {
+            while (i < @dynamic len(arr)) {
                 result = result + (arr[i],);
                 i = i + 1;
             };
@@ -236,7 +218,7 @@ fp := bind {
         
         find => (arr => (), predicate => (x?) -> false) -> {
             i := 0;
-            while (i < len(arr)) {
+            while (i < @dynamic len(arr)) {
                 if (predicate(arr[i])) {
                     return self.Option.Some(arr[i]);
                 };
@@ -247,7 +229,7 @@ fp := bind {
         
         all => (arr => (), predicate => (x?) -> false) -> {
             i := 0;
-            while (i < len(arr)) {
+            while (i < @dynamic len(arr)) {
                 if (not predicate(arr[i])) {
                     return false;
                 };
@@ -258,7 +240,7 @@ fp := bind {
         
         any => (arr => (), predicate => (x?) -> false) -> {
             i := 0;
-            while (i < len(arr)) {
+            while (i < @dynamic len(arr)) {
                 if (predicate(arr[i])) {
                     return true;
                 };
@@ -270,7 +252,7 @@ fp := bind {
         zip => (arr1 => (), arr2 => ()) -> {
             result := ();
             i := 0;
-            len := if (len(arr1) < len(arr2)) (len(arr1)) else len(arr2);
+            len := if (@dynamic len(arr1) < @dynamic len(arr2)) (@dynamic len(arr1)) else @dynamic len(arr2);
             
             while (i < len) {
                 result = result + ((arr1[i], arr2[i]),);
@@ -285,8 +267,8 @@ fp := bind {
             snd := ();
             i := 0;
             
-            while (i < len(pairs)) {
-                if (len(pairs[i]) >= 2) {
+            while (i < @dynamic len(pairs)) {
+                if (@dynamic len(pairs[i]) >= 2) {
                     fst = fst + (pairs[i][0],);
                     snd = snd + (pairs[i][1],);
                 };
@@ -299,17 +281,17 @@ fp := bind {
     
     // 函数复合工具
     flip => (fn => (a?, b?) -> null) -> {
-        return (b?, a?) -> {
+        return (b?, a?, fn!) -> {
             return fn(a, b);
         };
     },
     
     // 记忆化（memoization）
     memoize => (fn => (x?) -> null) -> {
-        cache := {};
+        cache := ();
         
-        return (x?) -> {
-            key := string(x);
+        return (x?, cache!, fn!) -> {
+            key := @dynamic string(x);
             if (key in cache) {
                 return cache[key];
             };
@@ -324,7 +306,7 @@ fp := bind {
             return () -> false;
         } else {
             return (container => container, wrapper => wrapper, n => 0) -> {
-                if (n >= len(container)) {
+                if (n >= @dynamic len(container)) {
                     return false;
                 };
                 wrapper = container[n];
@@ -337,7 +319,7 @@ fp := bind {
             "container": container,
             "index": 0,
             next => () -> {
-                if (self.index >= len(self.container)) {
+                if (self.index >= @dynamic len(self.container)) {
                     return null;
                 };
                 value := self.container[self.index];
@@ -345,17 +327,17 @@ fp := bind {
                 return value;
             },
             has_next => () -> {
-                return self.index < len(self.container);
+                return self.index < @dynamic len(self.container);
             },
             reset => () -> {
                 self.index = 0;
             },
             step => (step => 1) -> {
                 self.index = self.index + step;
-                return self.index < len(self.container);
+                return self.index < @dynamic len(self.container);
             },
             get => () -> {
-                if (self.index >= len(self.container)) {
+                if (self.index >= @dynamic len(self.container)) {
                     return null;
                 };
                 return self.container[self.index];
@@ -364,16 +346,16 @@ fp := bind {
     },
     extend => (obj?, methods => ()) -> {
         new_obj := ();
-        n := 0; while(n < len(obj)) {
+        n := 0; while(n < @dynamic len(obj)) {
             i := 0;
-            found := while(i < len(methods)) {
+            found := while(i < @dynamic len(methods)) {
                 if (typeof obj[n] == "named") { if (keyof obj[n] == keyof methods[i]) { break true } };
                 i = i + 1;
             };
             if (found != true) { new_obj = new_obj + (obj[n],) };
             n = n + 1;
         };
-        n := 0; while(n < len(methods)) {
+        n := 0; while(n < @dynamic len(methods)) {
             new_obj = new_obj + (methods[n],);
             n = n + 1;
         };
