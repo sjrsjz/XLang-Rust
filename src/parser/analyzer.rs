@@ -1,10 +1,25 @@
+use std::sync::Arc;
+
 use super::ast::ASTNode;
+
+#[derive(Debug, Clone)]
+pub enum AssumedType {
+    Unknown,
+    Lambda,
+    String,
+    Number,
+    Boolean,
+    Base64,
+    Null,
+    Range,
+    Tuple,
+}
 
 #[derive(Debug, Clone)]
 #[allow(dead_code)]
 pub struct Variable {
     pub name: String,
-    pub value: String,
+    pub assumed_type: AssumedType,
 }
 
 #[derive(Debug)]
@@ -70,7 +85,7 @@ impl AnalyzeError<'_> {
 
         match self {
             AnalyzeError::UndefinedVariable(node) => {
-                let (line_num, col) = find_position(match node.token {
+                let (line_num, col) = find_position(match node.start_token {
                     Some(node) => node.position,
                     None => 0,
                 });
@@ -172,8 +187,8 @@ impl VariableContext {
 pub fn analyze_ast<'t>(ast: &'t ASTNode) -> AnalyzeResult<'t> {
     let mut context = VariableContext::new();
     let mut warnings = Vec::new();
-
-    analyze_node(ast, &mut context, &mut warnings, false);
+    let auto_break = Arc::new(None);
+    analyze_node(ast, &mut context, &mut warnings, false,auto_break);
 
     AnalyzeResult { errors: warnings }
 }
@@ -183,9 +198,15 @@ fn analyze_node<'t>(
     context: &mut VariableContext,
     warnings: &mut Vec<AnalyzeError<'t>>,
     dynamic: bool,
-) {
+    auto_break: Arc<Option<&mut bool>> // 是否打断分析
+) -> AssumedType {
     use super::ast::ASTNodeType;
-
+    if let Some(auto_break_ref) = auto_break.as_ref() {
+        if **auto_break_ref {
+            // 如果设置了打断标志，直接返回
+            return AssumedType::Unknown;
+        }
+    };
     match &node.node_type {
         ASTNodeType::Let(var_name) => {
             // 处理变量定义
@@ -197,43 +218,48 @@ fn analyze_node<'t>(
                 if is_lambda {
                     let var = Variable {
                         name: var_name.clone(),
-                        value: "".to_string(),
+                        assumed_type: AssumedType::Lambda,
                     };
                     let _ = context.define_variable(&var);
                 }
 
                 // 分析赋值表达式
-                analyze_node(value_node, context, warnings, dynamic);
+                let assumed_type = analyze_node(value_node, context, warnings, dynamic, auto_break);
 
                 // 如果不是lambda函数，按原方式处理
                 if !is_lambda {
                     let var = Variable {
                         name: var_name.clone(),
-                        value: "".to_string(), // 实际值在运行时才能确定
+                        assumed_type: assumed_type.clone(),
                     };
                     let _ = context.define_variable(&var);
                 }
+
+                return assumed_type;
             }
+            return AssumedType::Unknown;
         }
         ASTNodeType::Annotation(annotation) => {
+            let mut assumed_type = AssumedType::Unknown;
             match annotation.as_str() {
                 "dynamic" => {
                     for child in &node.children {
-                        analyze_node(child, context, warnings, true);
+                        assumed_type = analyze_node(child, context, warnings, true,auto_break.clone());
                     }
                 }
                 "static" => {
                     for child in &node.children {
-                        analyze_node(child, context, warnings, false);
+                        assumed_type = analyze_node(child, context, warnings, false,auto_break.clone());
                     }
                 }
                 _ => {
                     // 处理其他注解类型
                     for child in &node.children {
-                        analyze_node(child, context, warnings, dynamic);
+                        assumed_type = analyze_node(child, context, warnings, dynamic,auto_break.clone());
                     }
                 }
             }
+            return assumed_type;
         }
 
         ASTNodeType::Variable(var_name) => {
@@ -258,18 +284,25 @@ fn analyze_node<'t>(
                     warnings.push(AnalyzeError::UndefinedVariable(node));
                 }
             }
+            // 返回变量的假定类型
+            if let Some(var) = context.get_variable(var_name) {
+                return var.assumed_type.clone();
+            } else {
+                return AssumedType::Unknown;
+            }
         }
         ASTNodeType::Body | ASTNodeType::Boundary => {
             // 创建新的作用域
             context.push_frame();
-
+            let mut assumed_type = AssumedType::Unknown;
             // 分析所有子节点
             for child in &node.children {
-                analyze_node(child, context, warnings, dynamic);
+                assumed_type = analyze_node(child, context, warnings, dynamic,auto_break.clone());
             }
 
             // 离开作用域
             let _ = context.pop_frame();
+            return assumed_type;
         }
         ASTNodeType::LambdaDef(_) => {
             // 处理Lambda定义，创建新的作用域
@@ -277,124 +310,146 @@ fn analyze_node<'t>(
 
             // 处理参数列表（第一个子节点）
             if let Some(params) = node.children.first() {
-                analyze_tuple_params(params, context, warnings, dynamic);
+                analyze_tuple_params(params, context, warnings, dynamic,auto_break.clone());
             }
 
             // 分析函数体（第二个子节点）
             if node.children.len() > 1 {
-                analyze_node(&node.children[1], context, warnings, dynamic);
+                analyze_node(&node.children[1], context, warnings, dynamic,auto_break.clone());
             }
 
             // 离开函数作用域
             let _ = context.pop_frame();
+
+            // 返回Lambda类型
+            return AssumedType::Lambda;
         }
         ASTNodeType::LambdaCall => {
             // 分析函数调用
             // 先分析被调用的函数
             if let Some(func_node) = node.children.first() {
-                analyze_node(func_node, context, warnings, dynamic);
+                analyze_node(func_node, context, warnings, dynamic,auto_break.clone());
             }
 
             // 分析参数
             if node.children.len() > 1 {
-                analyze_node(&node.children[1], context, warnings, dynamic);
+                analyze_node(&node.children[1], context, warnings, dynamic,auto_break.clone());
             }
+
+            return AssumedType::Unknown; // 返回函数调用的假定类型
         }
         ASTNodeType::Expressions => {
             // 处理多个表达式
+            let mut last_type = AssumedType::Unknown;
             for child in &node.children {
-                analyze_node(child, context, warnings, dynamic);
+                last_type = analyze_node(child, context, warnings, dynamic,auto_break.clone());
             }
+            return last_type; // 返回最后一个表达式的类型
         }
         ASTNodeType::Assign => {
             // 赋值操作
             if node.children.len() >= 2 {
                 // 先分析右侧表达式
-                analyze_node(&node.children[1], context, warnings, dynamic);
+                let assumed_type = analyze_node(&node.children[1], context, warnings, dynamic,auto_break.clone());
 
-                analyze_node(&node.children[0], context, warnings, dynamic);
+                analyze_node(&node.children[0], context, warnings, dynamic,auto_break.clone());
+
+                return assumed_type; // 返回赋值右侧的类型
             }
+            return AssumedType::Unknown;
         }
         ASTNodeType::If => {
             // 分析条件
             if let Some(condition) = node.children.first() {
-                analyze_node(condition, context, warnings, dynamic);
+                analyze_node(condition, context, warnings, dynamic,auto_break.clone());
             }
 
             // 分析 then 块
+            let mut then_type = AssumedType::Unknown;
             if node.children.len() > 1 {
-                analyze_node(&node.children[1], context, warnings, dynamic);
+                then_type = analyze_node(&node.children[1], context, warnings, dynamic,auto_break.clone());
             }
 
             // 分析 else 块（如果存在）
             if node.children.len() > 2 {
-                analyze_node(&node.children[2], context, warnings, dynamic);
+                analyze_node(&node.children[2], context, warnings, dynamic,auto_break.clone());
             }
+
+            return then_type; // 返回 then 块的类型
         }
         ASTNodeType::While => {
             // 分析循环条件
             if let Some(condition) = node.children.first() {
-                analyze_node(condition, context, warnings, dynamic);
+                analyze_node(condition, context, warnings, dynamic,auto_break.clone());
             }
 
             // 分析循环体
+            let mut body_type = AssumedType::Unknown;
             if node.children.len() > 1 {
-                analyze_node(&node.children[1], context, warnings, dynamic);
+                body_type = analyze_node(&node.children[1], context, warnings, dynamic,auto_break.clone());
             }
+
+            return body_type; // 返回循环体的类型
         }
         ASTNodeType::Return | ASTNodeType::Yield | ASTNodeType::Raise => {
             // 分析返回值
             if let Some(value) = node.children.first() {
-                analyze_node(value, context, warnings, dynamic);
+                return analyze_node(value, context, warnings, dynamic,auto_break.clone());
             }
+            return AssumedType::Unknown;
         }
         ASTNodeType::Operation(_) => {
             // 分析操作符两侧的表达式
+            let mut last_type = AssumedType::Unknown;
             for child in &node.children {
-                analyze_node(child, context, warnings, dynamic);
+                last_type = analyze_node(child, context, warnings, dynamic,auto_break.clone());
             }
+            return last_type; // 返回操作结果类型
         }
         ASTNodeType::Tuple => {
             // 分析元组的每个元素
             for child in &node.children {
-                analyze_node(child, context, warnings, dynamic);
+                analyze_node(child, context, warnings, dynamic,auto_break.clone());
             }
+            return AssumedType::Tuple; // 返回元组类型
         }
         ASTNodeType::GetAttr => {
             // 分析对象和属性
             if node.children.len() >= 2 {
-                analyze_node(&node.children[0], context, warnings, dynamic); // 对象
-                analyze_node(&node.children[1], context, warnings, dynamic);
-                // 属性
+                analyze_node(&node.children[0], context, warnings, dynamic,auto_break.clone()); // 对象
+                analyze_node(&node.children[1], context, warnings, dynamic,auto_break.clone()); // 属性
             }
+            return AssumedType::Unknown; // 属性访问的类型未知
         }
         ASTNodeType::IndexOf => {
             // 分析索引操作
             if node.children.len() >= 2 {
-                analyze_node(&node.children[0], context, warnings, dynamic); // 被索引的对象
-                analyze_node(&node.children[1], context, warnings, dynamic);
-                // 索引值
+                analyze_node(&node.children[0], context, warnings, dynamic,auto_break.clone()); // 被索引的对象
+                analyze_node(&node.children[1], context, warnings, dynamic,auto_break.clone()); // 索引值
             }
+            return AssumedType::Unknown; // 索引结果的类型未知
         }
         ASTNodeType::Modifier(_) => {
             // 分析修饰器的目标
             if let Some(target) = node.children.first() {
-                analyze_node(target, context, warnings, dynamic);
+                return analyze_node(target, context, warnings, dynamic,auto_break.clone());
             }
+            return AssumedType::Unknown;
         }
         // 其他简单数据类型不需要特殊处理
-        ASTNodeType::String(_)
-        | ASTNodeType::Boolean(_)
-        | ASTNodeType::Number(_)
-        | ASTNodeType::Base64(_)
-        | ASTNodeType::Null => {
-            // 不需要特殊处理
-        }
+        ASTNodeType::String(_) => AssumedType::String,
+        ASTNodeType::Boolean(_) => AssumedType::Boolean,
+        ASTNodeType::Number(_) => AssumedType::Number,
+        ASTNodeType::Base64(_) => AssumedType::Base64,
+        ASTNodeType::Null => AssumedType::Null,
+        ASTNodeType::Range => AssumedType::Range,
         // 其他节点类型的通用处理（递归处理所有子节点）
         _ => {
+            let mut last_type = AssumedType::Unknown;
             for child in &node.children {
-                analyze_node(child, context, warnings, dynamic);
+                last_type = analyze_node(child, context, warnings, dynamic,auto_break.clone());
             }
+            return last_type;
         }
     }
 }
@@ -405,6 +460,7 @@ fn analyze_tuple_params<'t>(
     context: &mut VariableContext,
     warnings: &mut Vec<AnalyzeError<'t>>,
     dynamic: bool,
+    auto_break: Arc<Option<&mut bool>>,
 ) {
     use super::ast::ASTNodeType;
 
@@ -415,7 +471,7 @@ fn analyze_tuple_params<'t>(
                     // 在函数作用域中注册参数
                     let var = Variable {
                         name: var_name.clone(),
-                        value: "".to_string(), // 参数值在运行时确定
+                        assumed_type: AssumedType::Unknown, // 参数类型在运行时确定
                     };
                     let _ = context.define_variable(&var);
                 }
@@ -423,47 +479,50 @@ fn analyze_tuple_params<'t>(
                     // 处理默认参数 param => default_value
                     if param.children.len() >= 2 {
                         // 分析默认值表达式
-                        analyze_node(&param.children[1], context, warnings, dynamic);
+                        let assumed_type =
+                            analyze_node(&param.children[1], context, warnings, dynamic,auto_break.clone());
 
                         // 注册参数名
                         if let ASTNodeType::Variable(var_name) = &param.children[0].node_type {
                             let var = Variable {
                                 name: var_name.clone(),
-                                value: "".to_string(),
+                                assumed_type,
                             };
                             let _ = context.define_variable(&var);
                         } else if let ASTNodeType::String(var_name) = &param.children[0].node_type {
                             let var = Variable {
                                 name: var_name.clone(),
-                                value: "".to_string(),
+                                assumed_type,
                             };
                             let _ = context.define_variable(&var);
                         } else {
                             // 分析更复杂的参数结构
-                            analyze_node(&param.children[0], context, warnings, dynamic);
+                            analyze_node(&param.children[0], context, warnings, dynamic,auto_break.clone());
                         }
                     }
                 }
                 // 处理其他类型的参数定义
-                _ => analyze_node(param, context, warnings, dynamic),
+                _ => {
+                    analyze_node(param, context, warnings, dynamic,auto_break.clone());
+                }
             }
         }
     } else if let ASTNodeType::AssumeTuple = params.node_type {
         // 处理可变参数
         if let Some(param) = params.children.first() {
-            analyze_node(param, context, warnings, dynamic);
+            analyze_node(param, context, warnings, dynamic,auto_break.clone());
         }
     } else {
         // 单参数函数
         if let ASTNodeType::Variable(var_name) = &params.node_type {
             let var = Variable {
                 name: var_name.clone(),
-                value: "".to_string(),
+                assumed_type: AssumedType::Unknown,
             };
             let _ = context.define_variable(&var);
         } else {
             // 其他复杂参数类型
-            analyze_node(params, context, warnings, dynamic);
+            analyze_node(params, context, warnings, dynamic,auto_break.clone());
         }
     }
 }

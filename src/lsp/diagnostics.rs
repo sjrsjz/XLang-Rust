@@ -86,16 +86,16 @@ pub fn validate_document(document: &TextDocument) -> (Vec<Diagnostic>, Option<Ve
             for error in result.errors{
                 match error {
                     crate::parser::analyzer::AnalyzeError::UndefinedVariable(var) => {
-                        if var.token.is_none() {
+                        if var.start_token.is_none() {
                             continue;
                         }
-                        let range = get_token_range(var.token.unwrap(), &document.content);
+                        let range = get_token_range(var.start_token.unwrap(), &document.content);
                         diagnostics.push(Diagnostic {
                             range,
                             severity: Some(DiagnosticSeverity::Error),
                             code: Some(serde_json::Value::String("VAR-E001".to_string())),
                             source: Some("xlang-lsp".to_string()),
-                            message: format!("变量 '{}' 未明确定义", var.token.unwrap().token),
+                            message: format!("变量 '{}' 未明确定义", var.start_token.unwrap().token),
                             related_information: None,
                         });
                     },                    

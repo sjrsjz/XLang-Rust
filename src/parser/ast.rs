@@ -532,22 +532,22 @@ pub enum ASTNodeModifier {
 #[derive(Debug)]
 pub struct ASTNode<'t> {
     pub node_type: ASTNodeType,       // Type of the node
-    pub token: Option<&'t Token<'t>>, // Token associated with the node
+    pub start_token: Option<&'t Token<'t>>, // Start Token associated with the node
+    pub end_token: Option<&'t Token<'t>>,   // End token associated with the node
     pub children: Vec<ASTNode<'t>>,   // Children of the node
 }
 
 impl ASTNode<'_> {
     pub fn new<'t>(
         node_type: ASTNodeType,
-        token: Option<&'t Token>,
+        start_token: Option<&'t Token>,
+        end_token: Option<&'t Token>,
         children: Option<Vec<ASTNode<'t>>>,
     ) -> ASTNode<'t> {
         ASTNode {
             node_type,
-            token: match token {
-                Some(token) => Some(token),
-                None => None,
-            },
+            start_token,
+            end_token,
             children: children.unwrap_or_default(),
         }
     }
@@ -602,7 +602,7 @@ impl<'a> NodeMatcher<'a> {
         current: usize,
     ) -> Result<(Option<ASTNode<'a>>, usize), ParserError<'a>> {
         if tokens.is_empty() {
-            return Ok((Some(ASTNode::new(ASTNodeType::None, None, None)), 0));
+            return Ok((Some(ASTNode::new(ASTNodeType::None, None, None, None)), 0));
         }
         for matcher in &self.matchers {
             if current >= tokens.len() {
@@ -966,6 +966,7 @@ fn match_expressions<'t>(
         Some(ASTNode::new(
             ASTNodeType::Expressions,
             Some(&tokens[current].first().unwrap()),
+            Some(&tokens[current + last_offset + node_offset - 1].last().unwrap()),
             Some(separated),
         )),
         last_offset + node_offset,
@@ -1017,6 +1018,7 @@ fn match_annotation<'t>(
     let node = ASTNode::new(
         ASTNodeType::Annotation(annotation),
         Some(&tokens[current].first().unwrap()),
+        Some(&tokens[current + right_offset + 1].last().unwrap()),
         Some(vec![right]),
     );
     Ok((Some(node), right_offset + 2))
@@ -1058,6 +1060,7 @@ fn match_return_yield_raise<'t>(
         Some(ASTNode::new(
             node_type,
             Some(&tokens[current].first().unwrap()),
+            Some(&tokens[current + right_offset].last().unwrap()),
             Some(vec![right]),
         )),
         right_offset + 1,
@@ -1105,6 +1108,7 @@ fn match_tuple<'t>(
         Some(ASTNode::new(
             ASTNodeType::Tuple,
             Some(&tokens[current].first().unwrap()),
+            Some(&tokens[current + last_offset + node_offset - 1].last().unwrap()),
             Some(separated),
         )),
         last_offset + node_offset,
@@ -1148,6 +1152,7 @@ fn match_let<'t>(
             Some(ASTNode::new(
                 ASTNodeType::Let(name),
                 Some(&tokens[current].first().unwrap()),
+                Some(&tokens[current + right_offset + 1].last().unwrap()),
                 Some(vec![right]),
             )),
             right_offset + 2,
@@ -1156,6 +1161,7 @@ fn match_let<'t>(
             Some(ASTNode::new(
                 ASTNodeType::Let(name),
                 Some(&tokens[current].first().unwrap()),
+                Some(&tokens[current + right_offset + 1].last().unwrap()),
                 Some(vec![right]),
             )),
             right_offset + 2,
@@ -1221,6 +1227,7 @@ fn match_assign<'t>(
         Some(ASTNode::new(
             ASTNodeType::Assign,
             Some(&tokens[current].first().unwrap()),
+            Some(&tokens[current + offset + right_offset].last().unwrap()),
             Some(vec![left, right]),
         )),
         offset + right_offset + 1, // +1 是因为 = 符号
@@ -1253,7 +1260,7 @@ fn match_named_to<'t>(
     let mut left = left.unwrap();
 
     if let ASTNodeType::Variable(name) = left.node_type {
-        left = ASTNode::new(ASTNodeType::String(name), left.token, Some(left.children));
+        left = ASTNode::new(ASTNodeType::String(name), left.start_token, left.start_token, Some(left.children));
     }
 
     let (right, right_offset) = match_all(tokens, current + 2)?;
@@ -1266,6 +1273,7 @@ fn match_named_to<'t>(
         Some(ASTNode::new(
             ASTNodeType::NamedTo,
             Some(&tokens[current].first().unwrap()),
+            Some(&tokens[current + right_offset + 1].last().unwrap()),
             Some(vec![left, right]),
         )),
         right_offset + 2,
@@ -1307,6 +1315,7 @@ fn match_key_value<'t>(
         Some(ASTNode::new(
             ASTNodeType::KeyValue,
             Some(&tokens[current].first().unwrap()),
+            Some(&tokens[current + right_offset + 1].last().unwrap()),
             Some(vec![left, right]),
         )),
         right_offset + 2,
@@ -1349,6 +1358,7 @@ fn match_while<'t>(
         Some(ASTNode::new(
             ASTNodeType::While,
             Some(&tokens[current].first().unwrap()),
+            Some(&tokens[current + body_offset + 1].last().unwrap()),
             Some(vec![condition, body]),
         )),
         body_offset + 2,
@@ -1411,6 +1421,7 @@ fn match_if<'t>(
             Some(ASTNode::new(
                 ASTNodeType::If,
                 Some(&tokens[current].first().unwrap()),
+                Some(&tokens[current + false_condition_offset + 3].last().unwrap()),
                 Some(vec![condition, true_condition, false_condition]),
             )),
             false_condition_offset + 4,
@@ -1420,6 +1431,7 @@ fn match_if<'t>(
         Some(ASTNode::new(
             ASTNodeType::If,
             Some(&tokens[current].first().unwrap()),
+            Some(&tokens[current + true_condition_offset + 1].last().unwrap()),
             Some(vec![condition, true_condition]),
         )),
         true_condition_offset + 2,
@@ -1450,6 +1462,7 @@ fn match_control_flow<'t>(
             Some(ASTNode::new(
                 ASTNodeType::Break,
                 Some(&tokens[current].first().unwrap()),
+                Some(&tokens[current + right_offset].last().unwrap()),
                 Some(vec![right]),
             )),
             right_offset + 1,
@@ -1471,6 +1484,7 @@ fn match_control_flow<'t>(
             Some(ASTNode::new(
                 ASTNodeType::Continue,
                 Some(&tokens[current].first().unwrap()),
+                Some(&tokens[current + right_offset].last().unwrap()),
                 Some(vec![right]),
             )),
             right_offset + 1,
@@ -1528,6 +1542,7 @@ fn match_or<'t>(
         Some(ASTNode::new(
             ASTNodeType::Operation(ASTNodeOperation::Or),
             Some(&tokens[current].first().unwrap()),
+            Some(&tokens.last().unwrap().last().unwrap()),
             Some(vec![left, right]),
         )),
         tokens.len() - current, // return full length of the tokens
@@ -1583,6 +1598,7 @@ fn match_and<'t>(
         Some(ASTNode::new(
             ASTNodeType::Operation(ASTNodeOperation::And),
             Some(&tokens[current].first().unwrap()),
+            Some(&tokens.last().unwrap().last().unwrap()),
             Some(vec![left, right]),
         )),
         tokens.len() - current, // return full length of the tokens
@@ -1638,6 +1654,7 @@ fn match_xor<'t>(
         Some(ASTNode::new(
             ASTNodeType::Operation(ASTNodeOperation::Xor),
             Some(&tokens[current].first().unwrap()),
+            Some(&tokens.last().unwrap().last().unwrap()),
             Some(vec![left, right]),
         )),
         tokens.len() - current, // return full length of the tokens
@@ -1661,6 +1678,7 @@ fn match_not<'t>(
             Some(ASTNode::new(
                 ASTNodeType::Operation(ASTNodeOperation::Not),
                 Some(&tokens[current].first().unwrap()),
+                Some(&tokens[current + node_offset].last().unwrap()),
                 Some(vec![node]),
             )),
             node_offset + 1,
@@ -1734,6 +1752,7 @@ fn match_operation_compare<'t>(
         Some(ASTNode::new(
             ASTNodeType::Operation(operation),
             Some(&tokens[current].first().unwrap()),
+            Some(&tokens.last().unwrap().last().unwrap()),
             Some(vec![left, right]),
         )),
         tokens.len() - current, // return full length of the tokens
@@ -1828,6 +1847,7 @@ fn match_operation_add_sub<'t>(
         Some(ASTNode::new(
             ASTNodeType::Operation(operation),
             Some(&tokens[current].first().unwrap()),
+            Some(&tokens.last().unwrap().last().unwrap()),
             Some(vec![left, right]),
         )),
         tokens.len() - current, // 返回整个匹配长度
@@ -1904,6 +1924,7 @@ fn match_operation_mul_div_mod<'t>(
         Some(ASTNode::new(
             ASTNodeType::Operation(operation),
             Some(&tokens[current].first().unwrap()),
+            Some(&tokens.last().unwrap().last().unwrap()),
             Some(vec![left, right]),
         )),
         tokens.len() - current, // 返回整个匹配长度
@@ -1963,6 +1984,7 @@ fn match_bitwise_shift<'t>(
                 ASTNodeOperation::RightShift
             }),
             Some(&tokens[current].first().unwrap()),
+            Some(&tokens.last().unwrap().last().unwrap()),
             Some(vec![left, right]),
         )),
         tokens.len() - current, // return full length of the tokens
@@ -1991,6 +2013,7 @@ fn match_unary<'t>(
             Some(ASTNode::new(
                 ASTNodeType::Operation(operation),
                 Some(&tokens[current].first().unwrap()),
+                Some(&tokens[current + node_offset].last().unwrap()),
                 Some(vec![node]),
             )),
             node_offset + 1,
@@ -2046,6 +2069,7 @@ fn match_power<'t>(
         Some(ASTNode::new(
             ASTNodeType::Operation(ASTNodeOperation::Power),
             Some(&tokens[current].first().unwrap()),
+            Some(&tokens.last().unwrap().last().unwrap()),
             Some(vec![left, right]),
         )),
         tokens.len() - current, // return full length of the tokens
@@ -2114,6 +2138,7 @@ fn match_map<'t>(
         Some(ASTNode::new(
             ASTNodeType::Map,
             Some(&tokens[current].first().unwrap()),
+            Some(&tokens.last().unwrap().last().unwrap()),
             Some(vec![left, right]),
         )),
         tokens.len() - current, // 返回整个匹配长度
@@ -2182,6 +2207,7 @@ fn match_set_def<'t>(
         Some(ASTNode::new(
             ASTNodeType::Set,
             Some(&tokens[current].first().unwrap()),
+            Some(&tokens.last().unwrap().last().unwrap()),
             Some(vec![left, right]),
         )),
         tokens.len() - current, // 返回整个匹配长度
@@ -2214,7 +2240,8 @@ fn match_lambda_def<'t>(
     if left.node_type != ASTNodeType::Tuple && left.node_type != ASTNodeType::AssumeTuple {
         left = ASTNode::new(
             ASTNodeType::Tuple,
-            Some(&tokens[current].first().unwrap()),
+            left.start_token,
+            left.end_token,
             Some(vec![left]),
         );
     }
@@ -2230,6 +2257,7 @@ fn match_lambda_def<'t>(
         Some(ASTNode::new(
             ASTNodeType::LambdaDef(is_dyn),
             Some(&tokens[current].first().unwrap()),
+            Some(&tokens[current + offset - 1].last().unwrap()),
             Some(vec![left, right]),
         )),
         right_offset + offset,
@@ -2277,6 +2305,7 @@ fn match_quick_call<'t>(
                 } else {
                     None
                 },
+                right.end_token,
                 Some(vec![right]),
             );
         }
@@ -2284,6 +2313,7 @@ fn match_quick_call<'t>(
             Some(ASTNode::new(
                 ASTNodeType::LambdaCall,
                 Some(&tokens[current].first().unwrap()),
+                Some(&tokens[current + right_offset + 1].last().unwrap()),
                 Some(vec![left, right]),
             )),
             right_offset + 2,
@@ -2317,6 +2347,7 @@ fn match_modifier<'t>(
                 Some(ASTNode::new(
                     ASTNodeType::Boundary,
                     Some(&tokens[current].first().unwrap()),
+                    Some(&tokens[current + node_offset].last().unwrap()),
                     Some(vec![node]),
                 )),
                 node_offset + 1,
@@ -2346,6 +2377,7 @@ fn match_modifier<'t>(
             Some(ASTNode::new(
                 ASTNodeType::Modifier(modifier),
                 Some(&tokens[current].first().unwrap()),
+                Some(&tokens[current + node_offset].last().unwrap()),
                 Some(vec![node]),
             )),
             node_offset + 1,
@@ -2376,13 +2408,14 @@ fn match_quick_named_to<'t>(
         }
         let mut node = node.unwrap();
         if let ASTNodeType::Variable(name) = node.node_type {
-            node = ASTNode::new(ASTNodeType::String(name), node.token, Some(node.children));
+            node = ASTNode::new(ASTNodeType::String(name), node.start_token, node.end_token, Some(node.children));
         }
         return Ok((
             Some(ASTNode::new(
                 ASTNodeType::NamedTo,
+                Some(&tokens[current].first().unwrap()),
                 Some(&tokens.last().unwrap().last().unwrap()),
-                Some(vec![node, ASTNode::new(ASTNodeType::Null, None, None)]),
+                Some(vec![node, ASTNode::new(ASTNodeType::Null, None, None, None)]),
             )),
             node_offset + 1,
         ));
@@ -2405,10 +2438,11 @@ fn match_quick_named_to<'t>(
         return Ok((
             Some(ASTNode::new(
                 ASTNodeType::NamedTo,
+                Some(&tokens[current].first().unwrap()),
                 Some(&tokens.last().unwrap().last().unwrap()),
                 Some(vec![
-                    ASTNode::new(ASTNodeType::String(name.clone()), node.token, None),
-                    ASTNode::new(ASTNodeType::Variable(name), node.token, None),
+                    ASTNode::new(ASTNodeType::String(name.clone()), node.start_token, node.start_token, None),
+                    ASTNode::new(ASTNodeType::Variable(name), node.start_token, node.end_token, None),
                 ]),
             )),
             node_offset + 1,
@@ -2443,6 +2477,7 @@ fn match_assume_tuple<'t>(
         Some(ASTNode::new(
             ASTNodeType::AssumeTuple,
             Some(&tokens[current].first().unwrap()),
+            Some(&tokens[current + node_offset].last().unwrap()),
             Some(vec![node]),
         )),
         node_offset + 1,
@@ -2497,6 +2532,7 @@ fn match_alias<'t>(
         Some(ASTNode::new(
             ASTNodeType::Alias(type_name),
             Some(&tokens[current].first().unwrap()),
+            Some(&tokens[current + value_offset + 1].last().unwrap()),
             Some(vec![value_node]),
         )),
         value_offset + 2,
@@ -2577,6 +2613,7 @@ fn match_member_access_and_call<'t>(
                 Some(ASTNode::new(
                     ASTNodeType::IndexOf,
                     Some(&tokens[current].first().unwrap()),
+                    Some(&tokens[access_pos].last().unwrap()),
                     Some(vec![left, index_node]),
                 )),
                 (access_pos - current) + 1,
@@ -2620,13 +2657,15 @@ fn match_member_access_and_call<'t>(
             if let ASTNodeType::Variable(var_name) = right.node_type {
                 right = ASTNode::new(
                     ASTNodeType::String(var_name),
-                    right.token,
+                    right.start_token,
+                    right.end_token,
                     Some(right.children),
                 );
                 return Ok((
                     Some(ASTNode::new(
                         ASTNodeType::GetAttr,
                         Some(&tokens[current].first().unwrap()),
+                        Some(&tokens[access_pos + right_offset].last().unwrap()),
                         Some(vec![left, right]),
                     )),
                     (access_pos - current) + 1 + right_offset,
@@ -2637,6 +2676,7 @@ fn match_member_access_and_call<'t>(
                 Some(ASTNode::new(
                     ASTNodeType::GetAttr,
                     Some(&tokens[current].first().unwrap()),
+                    Some(&tokens[access_pos + right_offset].last().unwrap()),
                     Some(vec![left, right]),
                 )),
                 (access_pos - current) + 1 + right_offset,
@@ -2688,7 +2728,8 @@ fn match_member_access_and_call<'t>(
             {
                 ASTNode::new(
                     ASTNodeType::Tuple,
-                    Some(&tokens[access_pos][0]),
+                    args_node.start_token,
+                    args_node.end_token,
                     Some(vec![args_node]),
                 )
             } else {
@@ -2703,6 +2744,7 @@ fn match_member_access_and_call<'t>(
                         ASTNodeType::LambdaCall
                     },
                     Some(&tokens[current].first().unwrap()),
+                    Some(&tokens[access_pos].last().unwrap()),
                     Some(vec![left, args]),
                 )),
                 (access_pos - current) + 1,
@@ -2747,6 +2789,7 @@ fn match_range<'t>(
         Some(ASTNode::new(
             ASTNodeType::Range,
             Some(&tokens[current].first().unwrap()),
+            Some(&tokens[current + right_offset + 1].last().unwrap()),
             Some(vec![left, right]),
         )),
         right_offset + 2,
@@ -2786,6 +2829,7 @@ fn match_in<'t>(
         Some(ASTNode::new(
             ASTNodeType::In,
             Some(&tokens[current].first().unwrap()),
+            Some(&tokens[current + right_offset + 1].last().unwrap()),
             Some(vec![left, right]),
         )),
         right_offset + 2,
@@ -2810,6 +2854,7 @@ fn match_variable<'t>(
                 Some(ASTNode::new(
                     ASTNodeType::Tuple,
                     Some(&tokens[current].first().unwrap()),
+                    Some(&tokens[current].last().unwrap()),
                     Some(vec![]),
                 )),
                 1,
@@ -2835,6 +2880,7 @@ fn match_variable<'t>(
             Some(ASTNode::new(
                 ASTNodeType::Body,
                 Some(&tokens[current].first().unwrap()),
+                Some(&tokens[current].last().unwrap()),                
                 body.map(|b| vec![b]),
             )),
             1,
@@ -2849,6 +2895,7 @@ fn match_variable<'t>(
             Some(ASTNode::new(
                 ASTNodeType::String(tokens[current].first().unwrap().token.to_string()),
                 Some(&tokens[current].first().unwrap()),
+                Some(&tokens[current].last().unwrap()),
                 None,
             )),
             1,
@@ -2863,6 +2910,7 @@ fn match_variable<'t>(
             Some(ASTNode::new(
                 ASTNodeType::Number(tokens[current].first().unwrap().token.to_string()),
                 Some(&tokens[current].first().unwrap()),
+                Some(&tokens[current].last().unwrap()),
                 None,
             )),
             1,
@@ -2877,6 +2925,7 @@ fn match_variable<'t>(
             Some(ASTNode::new(
                 ASTNodeType::Base64(tokens[current].first().unwrap().token.to_string()),
                 Some(&tokens[current].first().unwrap()),
+                Some(&tokens[current].last().unwrap()),
                 None,
             )),
             1,
@@ -2889,6 +2938,7 @@ fn match_variable<'t>(
             Some(ASTNode::new(
                 ASTNodeType::Boolean(String::from("true")),
                 Some(&tokens[current].first().unwrap()),
+                Some(&tokens[current].last().unwrap()),
                 None,
             )),
             1,
@@ -2901,6 +2951,7 @@ fn match_variable<'t>(
             Some(ASTNode::new(
                 ASTNodeType::Boolean(String::from("false")),
                 Some(&tokens[current].first().unwrap()),
+                Some(&tokens[current].last().unwrap()),
                 None,
             )),
             1,
@@ -2913,6 +2964,7 @@ fn match_variable<'t>(
             Some(ASTNode::new(
                 ASTNodeType::Null,
                 Some(&tokens[current].first().unwrap()),
+                Some(&tokens[current].last().unwrap()),
                 None,
             )),
             1,
@@ -2927,6 +2979,7 @@ fn match_variable<'t>(
             Some(ASTNode::new(
                 ASTNodeType::Variable(tokens[current].first().unwrap().token.to_string()),
                 Some(&tokens[current].first().unwrap()),
+                Some(&tokens[current].last().unwrap()),
                 None,
             )),
             1,

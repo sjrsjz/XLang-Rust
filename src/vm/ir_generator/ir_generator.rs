@@ -104,7 +104,7 @@ impl<'t> IRGenerator<'t> {
 
     fn generate_debug_info(&mut self, ast_node: &ASTNode) -> DebugInfo {
         DebugInfo {
-            code_position: match ast_node.token {
+            code_position: match ast_node.start_token {
                 Some(token) => token.position,
                 None => 0,
             },
@@ -150,7 +150,7 @@ impl<'t> IRGenerator<'t> {
 
                     instructions.push((
                         self.generate_debug_info(ast_node),
-                        IR::LoadLambda("__main__".to_string(), ast_node.token.unwrap().position),
+                        IR::LoadLambda("__main__".to_string(), ast_node.start_token.unwrap().position),
                     ));
                 } else {
                     let (full_signature, signature) = self.new_function_signature();
@@ -170,7 +170,7 @@ impl<'t> IRGenerator<'t> {
                     instructions.push((self.generate_debug_info(ast_node), IR::ForkInstruction));
                     instructions.push((
                         self.generate_debug_info(ast_node),
-                        IR::LoadLambda(full_signature, ast_node.token.unwrap().position),
+                        IR::LoadLambda(full_signature, ast_node.start_token.unwrap().position),
                     ));
                 }
                 Ok(instructions)

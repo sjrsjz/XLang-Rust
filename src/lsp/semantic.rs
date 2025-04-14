@@ -137,23 +137,23 @@ fn process_node(
         match &node.node_type {
             ASTNodeType::Let(_) => {
                 // 标记当前token为variable
-                let start = node.token.as_ref().map_or(0, |t| t.position);
-                let end = start + node.token.as_ref().map_or(0, |t| t.origin_token.len());
+                let start = node.start_token.as_ref().map_or(0, |t| t.position);
+                let end = start + node.start_token.as_ref().map_or(0, |t| t.origin_token.len());
                 for i in start..end {
                     if i < tokens.len() {
                         tokens[i] = SemanticTokenTypes::Variable;
                     }
                 }
             }
-            ASTNodeType::Annotation(annotation) => {
-                let start = node.token.as_ref().map_or(0, |t| t.position);
-                let end = start + node.token.as_ref().map_or(0, |t| t.origin_token.len()) + annotation.len();
-                for i in start..end {
-                    if i < tokens.len() {
-                        tokens[i] = SemanticTokenTypes::Annotation;
-                    }
-                }
-            }
+            // ASTNodeType::Annotation(annotation) => {
+            //     let start = node.start_token.as_ref().map_or(0, |t| t.position);
+            //     let end = start + node.start_token.as_ref().map_or(0, |t| t.origin_token.len()) + annotation.len();
+            //     for i in start..end {
+            //         if i < tokens.len() {
+            //             tokens[i] = SemanticTokenTypes::Annotation;
+            //         }
+            //     }
+            // }
             _ => {}
         };
     }
@@ -171,17 +171,20 @@ fn calculate_node_range(node: &ASTNode) -> (usize, usize) {
     let mut max_pos = 0;
 
     // 考虑当前节点自身的token
-    if let Some(token) = &node.token {
+    if let Some(token) = &node.start_token {
         min_pos = min_pos.min(token.position);
+    }
+
+    if let Some(token) = &node.end_token {
         max_pos = max_pos.max(token.position + token.origin_token.len());
     }
 
-    // 递归考虑所有子节点的范围
-    for child in &node.children {
-        let (child_min, child_max) = calculate_node_range(child);
-        min_pos = min_pos.min(child_min);
-        max_pos = max_pos.max(child_max);
-    }
+    // // 递归考虑所有子节点的范围
+    // for child in &node.children {
+    //     let (child_min, child_max) = calculate_node_range(child);
+    //     min_pos = min_pos.min(child_min);
+    //     max_pos = max_pos.max(child_max);
+    // }
 
     // 如果没有token，返回默认范围
     if min_pos == usize::MAX {
