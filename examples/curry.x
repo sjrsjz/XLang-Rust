@@ -1,4 +1,4 @@
-builtins := (() -> dyn import "builtins.xbc")();
+builtins := (() -> dyn import "./builtins.xbc")();
 print := builtins.print;
 
 // 无限柯里化求和函数

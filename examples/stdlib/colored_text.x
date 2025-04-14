@@ -1,61 +1,67 @@
-"""
+/*
 彩色文字构建库
-提供函数来为文本添加 ANSI 颜色代码。
-""";
-// ANSI 颜色代码
+提供函数来为文本添加颜色和背景色
+*/
+
+try_catch := boundary (@dynamic (__stdlib_root!) -> dyn import (__stdlib_root + "/try_catch.xbc"))();
+builtins := boundary (@dynamic (__stdlib_root!) -> dyn import (__stdlib_root + "/builtins.xbc"))();
+
 colors := {
     // 前景色
-    'black': "\x1b[30m",
-    'red': "\x1b[31m",
-    'green': "\x1b[32m",
-    'yellow': "\x1b[33m",
-    'blue': "\x1b[34m",
-    'magenta': "\x1b[35m",
-    'cyan': "\x1b[36m",
-    'white': "\x1b[37m",
-    'bright_black': "\x1b[90m",
-    'bright_red': "\x1b[91m",
-    'bright_green': "\x1b[92m",
-    'bright_yellow': "\x1b[93m",
-    'bright_blue': "\x1b[94m",
-    'bright_magenta': "\x1b[95m",
-    'bright_cyan': "\x1b[96m",
-    'bright_white': "\x1b[97m",
+    'black': "\u001b[30m",
+    'red': "\u001b[31m",
+    'green': "\u001b[32m",
+    'yellow': "\u001b[33m",
+    'blue': "\u001b[34m",
+    'magenta': "\u001b[35m",
+    'cyan': "\u001b[36m",
+    'white': "\u001b[37m",
+    'bright_black': "\u001b[90m",
+    'bright_red': "\u001b[91m",
+    'bright_green': "\u001b[92m",
+    'bright_yellow': "\u001b[93m",
+    'bright_blue': "\u001b[94m",
+    'bright_magenta': "\u001b[95m",
+    'bright_cyan': "\u001b[96m",
+    'bright_white': "\u001b[97m",
 
     // 背景色
-    'bg_black': "\x1b[40m",
-    'bg_red': "\x1b[41m",
-    'bg_green': "\x1b[42m",
-    'bg_yellow': "\x1b[43m",
-    'bg_blue': "\x1b[44m",
-    'bg_magenta': "\x1b[45m",
-    'bg_cyan': "\x1b[46m",
-    'bg_white': "\x1b[47m",
-    'bg_bright_black': "\x1b[100m",
-    'bg_bright_red': "\x1b[101m",
-    'bg_bright_green': "\x1b[102m",
-    'bg_bright_yellow': "\x1b[103m",
-    'bg_bright_blue': "\x1b[104m",
-    'bg_bright_magenta': "\x1b[105m",
-    'bg_bright_cyan': "\x1b[106m",
-    'bg_bright_white': "\x1b[107m",
+    'bg_black': "\u001b[40m",
+    'bg_red': "\u001b[41m",
+    'bg_green': "\u001b[42m",
+    'bg_yellow': "\u001b[43m",
+    'bg_blue': "\u001b[44m",
+    'bg_magenta': "\u001b[45m",
+    'bg_cyan': "\u001b[46m",
+    'bg_white': "\u001b[47m",
+    'bg_bright_black': "\u001b[100m",
+    'bg_bright_red': "\u001b[101m",
+    'bg_bright_green': "\u001b[102m",
+    'bg_bright_yellow': "\u001b[103m",
+    'bg_bright_blue': "\u001b[104m",
+    'bg_bright_magenta': "\u001b[105m",
+    'bg_bright_cyan': "\u001b[106m",
+    'bg_bright_white': "\u001b[107m",
 
     // 重置
-    'reset': "\x1b[0m"
+    'reset': "\u001b[0m"
 };
 
 // 核心函数：为文本添加颜色
-colorize := (text?, fg?, bg?, colors!) -> {
+colorize := (text?, fg?, bg?, colors!, try_catch!, builtins!) -> {
     prefix := "";
-    quick_check := (v?, colors!) -> {
+    quick_check := (v?, colors!, try_catch!, builtins!) -> {
+        if (v == null) {
+            return false; // 如果颜色为null，返回false
+        };
         n := 0;
-        while (n < @dynamic len(colors)) {
+        while (n < builtins.len(colors)) {
             if (v == keyof colors[n]) {
                 return true;
             };
             n = n + 1;
         };
-        return false;
+        raise try_catch.Err("Invalid color: " + v); // 如果颜色不在列表中，抛出异常
     };
     if (fg != null and quick_check(fg)) {
         prefix = prefix + colors.{fg};
@@ -66,19 +72,13 @@ colorize := (text?, fg?, bg?, colors!) -> {
     if (prefix == "") {
         return text; // 没有指定有效颜色
     } else {
-        @dynamic print("a");
         return prefix + text + colors.reset;
     };
 };
 
-// 测试函数
-test_colorize := () -> @dynamic {
-    // 测试不同颜色组合
-    print(colorize("Hello, World!", "red", "bg_black"));
-    print(colorize("Hello, World!", "green", "bg_white"));
-    print(colorize("Hello, World!", "blue", null));
-    print(colorize("Hello, World!", null, "bg_cyan"));
-    print(colorize("Hello, World!", "yellow", "bg_magenta"));
+return bind {
+    // 颜色列表
+    colors!,
+    // 核心函数：为文本添加颜色
+    colorize!,
 };
-
-test_colorize();

@@ -1,4 +1,4 @@
-builtins := (() -> dyn import "builtins.xbc")();
+builtins := (() -> dyn import "./builtins.xbc")();
 print := builtins.print;
 
 my_async_func1 := () -> {

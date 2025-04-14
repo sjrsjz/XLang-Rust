@@ -282,6 +282,14 @@ pub fn analyze_ast<'t>(ast: &'t ASTNode, break_at_position: Option<usize>) -> An
         name: "load_clambda".to_string(),
         assumed_type: AssumedType::Lambda,
     });
+    let _ = context.define_variable(&Variable {
+        name: "json_encode".to_string(),
+        assumed_type: AssumedType::Lambda,
+    });
+    let _ = context.define_variable(&Variable {
+        name: "json_decode".to_string(),
+        assumed_type: AssumedType::Lambda,
+    });
     // let _ = context.define_variable(&Variable { name: "this".to_string(), assumed_type: AssumedType::Lambda });
     // let _ = context.define_variable(&Variable { name: "self".to_string(), assumed_type: AssumedType::Tuple });
 
@@ -447,7 +455,7 @@ fn analyze_node<'t>(
             }
             return assumed_type;
         }
-        ASTNodeType::LambdaDef(_) => {
+        ASTNodeType::LambdaDef(is_dynamic_gen) => {
             // 进入 Lambda 定义，创建一个全新的、隔离的上下文
             context.push_frame();
             // 在新的上下文中处理参数（参数定义在第一个帧中）
@@ -470,23 +478,8 @@ fn analyze_node<'t>(
                 // 弹出 Lambda 定义的帧
                 panic!("Failed to pop frame after Lambda definition");
             }
-            context.push_context();
-            // 将参数添加到新的上下文中
-            for arg in args.variables {
-                let _ = context.define_variable(&arg);
-            }
-            let _ = context.define_variable(&Variable {
-                name: "this".to_string(),
-                assumed_type: AssumedType::Lambda,
-            });
-            let _ = context.define_variable(&Variable {
-                name: "self".to_string(),
-                assumed_type: AssumedType::Tuple,
-            });
-
-            // 在新的上下文中分析 Lambda 体
-            if node.children.len() > 1 {
-                // Lambda 体可能创建自己的帧 (push_frame/pop_frame)
+            if *is_dynamic_gen {
+                context.push_frame();
                 analyze_node(
                     &node.children[1],
                     context,
@@ -499,11 +492,47 @@ fn analyze_node<'t>(
                     // 如果在 Lambda 体分析中中断，不弹出上下文
                     return AssumedType::Lambda;
                 }
-            }
+                // 弹出 Lambda 定义的帧
+                if context.pop_frame().is_err() {
+                    panic!("Failed to pop frame after Lambda definition");
+                }
+                return AssumedType::Lambda;
+            } else {
+                context.push_context();
+                // 将参数添加到新的上下文中
+                for arg in args.variables {
+                    let _ = context.define_variable(&arg);
+                }
+                let _ = context.define_variable(&Variable {
+                    name: "this".to_string(),
+                    assumed_type: AssumedType::Lambda,
+                });
+                let _ = context.define_variable(&Variable {
+                    name: "self".to_string(),
+                    assumed_type: AssumedType::Tuple,
+                });
 
-            // 只有在没有中断的情况下才弹出 Lambda 的上下文
-            if context_at_break.is_none() {
-                let _ = context.pop_context(); // 退出 Lambda，恢复到父上下文
+                // 在新的上下文中分析 Lambda 体
+                if node.children.len() > 1 {
+                    // Lambda 体可能创建自己的帧 (push_frame/pop_frame)
+                    analyze_node(
+                        &node.children[1],
+                        context,
+                        warnings,
+                        dynamic,
+                        break_at_position,
+                        context_at_break,
+                    );
+                    if context_at_break.is_some() {
+                        // 如果在 Lambda 体分析中中断，不弹出上下文
+                        return AssumedType::Lambda;
+                    }
+                }
+
+                // 只有在没有中断的情况下才弹出 Lambda 的上下文
+                if context_at_break.is_none() {
+                    let _ = context.pop_context(); // 退出 Lambda，恢复到父上下文
+                }
             }
 
             return AssumedType::Lambda;

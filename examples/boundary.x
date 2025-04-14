@@ -1,4 +1,4 @@
-builtins := (() -> dyn import "builtins.xbc")();
+builtins := (() -> dyn import "./builtins.xbc")();
 print := builtins.print;
 
 retry := (f?, args => ()) -> (max_retry => 0, f => f, args => args, retry => 0) -> {

@@ -114,8 +114,139 @@ pub fn try_contains_as_vmobject(value: &GCRef, other: &GCRef) -> Result<bool, VM
         "Cannot check contains for a non-containable type".to_string(),
     ))
 }
-
 pub fn try_repr_vmobject(
+    value: GCRef,
+    ref_path: Option<Vec<GCRef>>,
+) -> Result<String, VMVariableError> {
+    // 检查循环引用
+    if let Some(ref path) = ref_path {
+        for prev_ref in path {
+            if std::ptr::eq(prev_ref.get_const_reference(), value.get_const_reference()) {
+                // 循环引用不显示别名
+                return Ok("<Cycled>".to_string());
+            }
+        }
+    }
+
+    // 创建新的引用路径，将当前对象添加到路径中
+    let new_ref_path = if let Some(mut path) = ref_path {
+        path.push(value.clone());
+        Some(path)
+    } else {
+        Some(vec![value.clone()])
+    };
+
+    // 获取别名字符串
+    let alias = try_const_alias_as_vmobject(&value)?;
+    let alias_str = alias.join("::");
+    let alias_prefix = if alias_str.is_empty() {
+        "".to_string()
+    } else {
+        format!("{}::", alias_str) // 添加分隔符
+    };
+
+    // --- 生成基础表示 ---
+    let base_repr = if value.isinstance::<VMInt>() {
+        let int = value.as_const_type::<VMInt>();
+        int.value.to_string()
+    } else if value.isinstance::<VMString>() {
+        let string = value.as_const_type::<VMString>();
+        // 转义特殊字符并添加引号
+        let mut escaped_string = String::new();
+        escaped_string.push('"'); // 开始引号
+        for c in string.value.chars() {
+            match c {
+                '\\' => escaped_string.push_str("\\\\"),
+                '"' => escaped_string.push_str("\\\""),
+                '\n' => escaped_string.push_str("\\n"),
+                '\r' => escaped_string.push_str("\\r"),
+                '\t' => escaped_string.push_str("\\t"),
+                _ if c.is_control() => {
+                    escaped_string.push_str(&format!("\\u{:04x}", c as u32));
+                }
+                _ => escaped_string.push(c),
+            }
+        }
+        escaped_string.push('"'); // 结束引号
+        escaped_string
+    } else if value.isinstance::<VMFloat>() {
+        let float = value.as_const_type::<VMFloat>();
+        float.value.to_string()
+    } else if value.isinstance::<VMBoolean>() {
+        let boolean = value.as_const_type::<VMBoolean>();
+        boolean.value.to_string()
+    } else if value.isinstance::<VMNull>() {
+        "null".to_string()
+    } else if value.isinstance::<VMKeyVal>() {
+        let kv = value.as_const_type::<VMKeyVal>();
+        // 递归调用时不传递别名，因为别名是顶层对象的
+        let key = try_repr_vmobject(kv.get_const_key().clone(), new_ref_path.clone())?;
+        let val = try_repr_vmobject(kv.get_const_value().clone(), new_ref_path)?;
+        format!("{}: {}", key, val)
+    } else if value.isinstance::<VMNamed>() {
+        let named = value.as_const_type::<VMNamed>();
+        let key = try_repr_vmobject(named.get_const_key().clone(), new_ref_path.clone())?;
+        let val = try_repr_vmobject(named.get_const_value().clone(), new_ref_path)?;
+        format!("{} => {}", key, val)
+    } else if value.isinstance::<VMTuple>() {
+        let tuple = value.as_const_type::<VMTuple>();
+        if tuple.values.is_empty() {
+            "()".to_string()
+        } else {
+            let mut items_repr = Vec::new();
+            for val in &tuple.values {
+                items_repr.push(try_repr_vmobject(val.clone(), new_ref_path.clone())?);
+            }
+            if tuple.values.len() == 1 {
+                format!("({},)", items_repr[0]) // 单元素元组特殊表示
+            } else {
+                format!("({})", items_repr.join(", "))
+            }
+        }
+    } else if value.isinstance::<VMLambda>() {
+        let lambda = value.as_const_type::<VMLambda>();
+        let default_args =
+            try_repr_vmobject(lambda.default_args_tuple.clone(), new_ref_path.clone())?;
+        let result_repr = try_repr_vmobject(lambda.result.clone(), new_ref_path)?;
+        format!("{}::{} -> {}", lambda.signature, default_args, result_repr)
+    } else if value.isinstance::<VMInstructions>() {
+        "VMInstructions".to_string() // 指令集通常不显示内部细节
+    } else if value.isinstance::<VMWrapper>() {
+        let wrapper = value.as_const_type::<VMWrapper>();
+        let inner_repr = try_repr_vmobject(wrapper.value_ref.clone(), new_ref_path)?;
+        format!("wrap({})", inner_repr)
+    } else if value.isinstance::<VMRange>() {
+        let range = value.as_const_type::<VMRange>();
+        format!("{}..{}", range.start, range.end)
+    } else if value.isinstance::<VMBytes>() {
+        let bytes = value.as_const_type::<VMBytes>();
+        format!(
+            "$\"{}\"",
+            base64::engine::general_purpose::STANDARD.encode(&bytes.value)
+        )
+    } else if value.isinstance::<VMSet>() {
+        let set = value.as_const_type::<VMSet>();
+        let collection_repr = try_repr_vmobject(set.collection.clone(), new_ref_path.clone())?;
+        let filter_repr = try_repr_vmobject(set.filter.clone(), new_ref_path)?;
+        format!("{{{} | {}}}", collection_repr, filter_repr)
+    } else if value.isinstance::<VMCLambdaInstruction>() {
+        let clambda = value.as_const_type::<VMCLambdaInstruction>();
+        // CLambda 的 repr 可能需要更详细的信息，这里暂时简化
+        format!("CLambda({:?})", clambda.clambda)
+    } else {
+        // 如果有其他未处理的类型，返回错误
+        return Err(VMVariableError::TypeError(
+            value.clone(),
+            "Cannot represent this type".to_string(), // 更明确的错误消息
+        ));
+    };
+
+    // --- 组合别名和基础表示 ---
+    Ok(format!("{}{}", alias_prefix, base_repr))
+}
+
+
+pub fn try_to_string_vmobject(
     value: GCRef,
     ref_path: Option<Vec<GCRef>>,
 ) -> Result<String, VMVariableError> {
@@ -136,94 +267,86 @@ pub fn try_repr_vmobject(
         Some(vec![value.clone()])
     };
 
-    if value.isinstance::<VMInt>() {
+    // --- 生成基础表示 ---
+    let base_repr = if value.isinstance::<VMInt>() {
         let int = value.as_const_type::<VMInt>();
-        return Ok(int.value.to_string());
+        int.value.to_string()
     } else if value.isinstance::<VMString>() {
         let string = value.as_const_type::<VMString>();
-        return Ok(string.value.clone());
+        string.value.clone() // 直接返回值，不转义不加引号
     } else if value.isinstance::<VMFloat>() {
         let float = value.as_const_type::<VMFloat>();
-        return Ok(float.value.to_string());
+        float.value.to_string()
     } else if value.isinstance::<VMBoolean>() {
         let boolean = value.as_const_type::<VMBoolean>();
-        return Ok(boolean.value.to_string());
+        boolean.value.to_string()
     } else if value.isinstance::<VMNull>() {
-        return Ok("null".to_string());
+        "null".to_string()
     } else if value.isinstance::<VMKeyVal>() {
         let kv = value.as_const_type::<VMKeyVal>();
-        let key = try_repr_vmobject(kv.get_const_key().clone(), new_ref_path.clone())?;
-        let value = try_repr_vmobject(kv.get_const_value().clone(), new_ref_path)?;
-        return Ok(format!("{}: {}", key, value));
+        let key = try_to_string_vmobject(kv.get_const_key().clone(), new_ref_path.clone())?;
+        let val = try_to_string_vmobject(kv.get_const_value().clone(), new_ref_path)?;
+        format!("{}: {}", key, val)
     } else if value.isinstance::<VMNamed>() {
         let named = value.as_const_type::<VMNamed>();
-        let key = try_repr_vmobject(named.get_const_key().clone(), new_ref_path.clone())?;
-        let value = try_repr_vmobject(named.get_const_value().clone(), new_ref_path)?;
-        return Ok(format!("{} => {}", key, value));
+        let key = try_to_string_vmobject(named.get_const_key().clone(), new_ref_path.clone())?;
+        let val = try_to_string_vmobject(named.get_const_value().clone(), new_ref_path)?;
+        format!("{} => {}", key, val)
     } else if value.isinstance::<VMTuple>() {
         let tuple = value.as_const_type::<VMTuple>();
-        let mut repr = String::new();
         if tuple.values.is_empty() {
-            return Ok("()".to_string());
-        }
-        if tuple.values.len() == 1 {
-            return Ok(format!(
-                "({},)",
-                try_repr_vmobject(tuple.values[0].clone(), new_ref_path)?
-            ));
-        }
-        for (i, val) in tuple.values.iter().enumerate() {
-            if i > 0 {
-                repr.push_str(", ");
+            "()".to_string()
+        } else {
+            let mut items_repr = Vec::new();
+            for val in &tuple.values {
+                items_repr.push(try_to_string_vmobject(val.clone(), new_ref_path.clone())?);
             }
-            repr.push_str(&try_repr_vmobject(val.clone(), new_ref_path.clone())?);
+            if tuple.values.len() == 1 {
+                format!("({},)", items_repr[0]) // 单元素元组特殊表示
+            } else {
+                format!("({})", items_repr.join(", "))
+            }
         }
-        return Ok(format!("({})", repr));
     } else if value.isinstance::<VMLambda>() {
         let lambda = value.as_const_type::<VMLambda>();
-        return Ok(format!(
-            "{}::{} -> {}",
-            lambda.signature,
-            try_repr_vmobject(lambda.default_args_tuple.clone(), new_ref_path.clone())?,
-            try_repr_vmobject(lambda.result.clone(), new_ref_path)?
-        ));
+        let default_args =
+            try_to_string_vmobject(lambda.default_args_tuple.clone(), new_ref_path.clone())?;
+        let result_repr = try_to_string_vmobject(lambda.result.clone(), new_ref_path)?;
+        format!("{}::{} -> {}", lambda.signature, default_args, result_repr)
     } else if value.isinstance::<VMInstructions>() {
-        return Ok("VMInstructions".to_string());
+        "VMInstructions".to_string()
     } else if value.isinstance::<VMWrapper>() {
         let wrapper = value.as_const_type::<VMWrapper>();
-        return Ok(format!(
-            "wrap({})",
-            try_repr_vmobject(wrapper.value_ref.clone(), new_ref_path)?
-        ));
+        let inner_repr = try_to_string_vmobject(wrapper.value_ref.clone(), new_ref_path)?;
+        format!("wrap({})", inner_repr)
     } else if value.isinstance::<VMRange>() {
         let range = value.as_const_type::<VMRange>();
-        return Ok(format!("{}..{}", range.start, range.end));
+        format!("{}..{}", range.start, range.end)
     } else if value.isinstance::<VMBytes>() {
         let bytes = value.as_const_type::<VMBytes>();
-        return Ok(format!(
+        // 字节串通常需要一种表示方式，这里保留 base64，但可以根据需要修改
+        format!(
             "$\"{}\"",
-            base64::engine::general_purpose::STANDARD
-                .encode(&bytes.value)
-                .chars()
-                .collect::<String>()
-        ));
+            base64::engine::general_purpose::STANDARD.encode(&bytes.value)
+        )
     } else if value.isinstance::<VMSet>() {
         let set = value.as_const_type::<VMSet>();
-        let collection_repr = try_repr_vmobject(set.collection.clone(), new_ref_path.clone())?;
-        let filter_repr = try_repr_vmobject(set.filter.clone(), new_ref_path.clone())?;
-        return Ok(format!("{{{} | {}}}", collection_repr, filter_repr));
+        let collection_repr = try_to_string_vmobject(set.collection.clone(), new_ref_path.clone())?;
+        let filter_repr = try_to_string_vmobject(set.filter.clone(), new_ref_path)?;
+        format!("{{{} | {}}}", collection_repr, filter_repr)
     } else if value.isinstance::<VMCLambdaInstruction>() {
         let clambda = value.as_const_type::<VMCLambdaInstruction>();
-        return Ok(format!(
-            "CLambda({:?})",
-            clambda.clambda
+        format!("CLambda({:?})", clambda.clambda)
+    } else {
+        return Err(VMVariableError::TypeError(
+            value.clone(),
+            "Cannot convert this type to string".to_string(),
         ));
-    }
-    Err(VMVariableError::TypeError(
-        value.clone(),
-        "Cannot represent a non-representable type".to_string(),
-    ))
+    };
+
+    Ok(base_repr) // 直接返回基础表示
 }
+
 
 pub fn _debug_print_repr(value: GCRef) {
     match try_repr_vmobject(value.clone(), None) {
