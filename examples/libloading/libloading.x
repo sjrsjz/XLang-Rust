@@ -2,6 +2,8 @@ builtins := (() -> dyn import "../builtins.xbc")();
 print := builtins.print;
 
 clambda := () -> dyn @dynamic load_clambda("../../modules/clambda_lib/libvm_ffi.so");
+// wipe 关键字是表示擦除变量的所有别名
+// 一级alias表示函数签名，其余的alias和一般变量一样
 __main__ := libvm_ffi::__main__::wipe clambda; // 最右侧的alias表示lambda函数签名，如果alias为空则默认签名为 `__main__`
 add := libvm_ffi::add::wipe clambda; // 这里的add表示lambda函数签名，具体为 `clambda_add`
 clambda(1, 2, 3);
