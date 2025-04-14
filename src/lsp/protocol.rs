@@ -411,31 +411,60 @@ pub struct CompletionItem {
 /// LSP 自动完成项类型
 #[derive(Serialize, Deserialize, Debug, Clone, Copy)]
 pub enum CompletionItemKind {
-    Text = 1,
-    Method = 2,
-    Function = 3,
-    Constructor = 4,
-    Field = 5,
-    Variable = 6,
-    Class = 7,
-    Interface = 8,
-    Module = 9,
-    Property = 10,
-    Unit = 11,
-    Value = 12,
-    Enum = 13,
-    Keyword = 14,
-    Snippet = 15,
-    Color = 16,
-    File = 17,
-    Reference = 18,
-    Folder = 19,
-    EnumMember = 20,
-    Constant = 21,
-    Struct = 22,
-    Event = 23,
-    Operator = 24,
-    TypeParameter = 25,
+    /// 文本补全项类型
+    Text = 0,
+    /// 方法补全项类型
+    Method = 1,
+    /// 函数补全项类型
+    Function = 2,
+    /// 构造函数补全项类型
+    Constructor = 3,
+    /// 字段补全项类型
+    Field = 4,
+    /// 变量补全项类型
+    Variable = 5,
+    /// 类补全项类型
+    Class = 6,
+    /// 接口补全项类型
+    Interface = 7,
+    /// 模块补全项类型
+    Module = 8,
+    /// 属性补全项类型
+    Property = 9,
+    /// 单元补全项类型
+    Unit = 10,
+    /// 值补全项类型
+    Value = 11,
+    /// 枚举补全项类型
+    Enum = 12,
+    /// 关键字补全项类型
+    Keyword = 13,
+    /// 代码片段补全项类型
+    Snippet = 14,
+    /// 颜色补全项类型
+    Color = 15,
+    /// 文件补全项类型
+    File = 16,
+    /// 引用补全项类型
+    Reference = 17,
+    /// 文件夹补全项类型
+    Folder = 18,
+    /// 枚举成员补全项类型
+    EnumMember = 19,
+    /// 常量补全项类型
+    Constant = 20,
+    /// 结构体补全项类型
+    Struct = 21,
+    /// 事件补全项类型
+    Event = 22,
+    /// 操作符补全项类型
+    Operator = 23,
+    /// 类型参数补全项类型
+    TypeParameter = 24,
+    /// 用户补全项类型
+    User = 25,
+    /// 问题补全项类型
+    Issue = 26,
 }
 
 /// LSP 自动完成响应

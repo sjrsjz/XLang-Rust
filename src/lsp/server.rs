@@ -247,9 +247,9 @@ impl LspServer {
         // 添加XLang关键字
         let keywords = vec![
             "if", "else", "while", "return", "break", "continue", "and", "or", "not", "null",
-            "true", "false", "in", "async", "await", "yield", "deepcopy", "import", "keyof",
-            "valueof", "typeof", "selfof", "dyn", "copy", "ref", "deref", "assert", "wrap", "wipe",
-            "aliasof", "bind", "boundary", "collect", "raise", "xor",
+            "in", "async", "await", "yield", "deepcopy", "import", "keyof", "valueof", "typeof",
+            "selfof", "dyn", "copy", "ref", "deref", "assert", "wrap", "wipe", "aliasof", "bind",
+            "boundary", "collect", "raise", "xor",
         ];
         for keyword in keywords {
             items.push(CompletionItem {
@@ -258,6 +258,31 @@ impl LspServer {
                 detail: Some("XLang keyword".to_string()),
                 documentation: None,
                 insert_text: Some(keyword.to_string()),
+                other: HashMap::new(),
+            });
+        }
+
+        // 添加常量
+        let constants = vec!["true", "false"];
+        for constant in constants {
+            items.push(CompletionItem {
+                label: constant.to_string(),
+                kind: Some(CompletionItemKind::Constant), // 使用 Constant 类型
+                detail: Some("XLang constant".to_string()),
+                documentation: None,
+                insert_text: Some(constant.to_string()),
+                other: HashMap::new(),
+            });
+        }
+
+        let annotations = vec!["dynamic", "static"];
+        for annotation in annotations {
+            items.push(CompletionItem {
+                label: annotation.to_string(),
+                kind: Some(CompletionItemKind::Enum), // 或者使用 Interface/Struct 等更合适的类型
+                detail: Some("XLang annotation".to_string()),
+                documentation: None,
+                insert_text: Some(annotation.to_string()),
                 other: HashMap::new(),
             });
         }
@@ -290,20 +315,36 @@ impl LspServer {
                                             format!("Function: {}", var.name),
                                         ),
                                         analyzer::AssumedType::String => (
-                                            CompletionItemKind::Variable, // 或者 Text?
+                                            CompletionItemKind::Variable,
                                             format!("String: {}", var.name),
                                         ),
                                         analyzer::AssumedType::Number => (
-                                            CompletionItemKind::Variable, // 或者 Number?
+                                            CompletionItemKind::Variable,
                                             format!("Number: {}", var.name),
                                         ),
                                         analyzer::AssumedType::Boolean => (
-                                            CompletionItemKind::Variable, // 或者 Boolean?
+                                            CompletionItemKind::Variable,
                                             format!("Boolean: {}", var.name),
                                         ),
+                                        analyzer::AssumedType::Base64 => (
+                                            CompletionItemKind::Variable,
+                                            format!("Base64: {}", var.name),
+                                        ),
+                                        analyzer::AssumedType::Null => (
+                                            CompletionItemKind::Variable,
+                                            format!("Array: {}", var.name),
+                                        ),
                                         analyzer::AssumedType::Tuple => (
-                                            CompletionItemKind::Class, // 或者 Struct/Class?
+                                            CompletionItemKind::Class,
                                             format!("Tuple: {}", var.name),
+                                        ),
+                                        analyzer::AssumedType::KeyVal => (
+                                            CompletionItemKind::Variable,
+                                            format!("KeyValue: {}", var.name),
+                                        ),
+                                        analyzer::AssumedType::NamedArgument => (
+                                            CompletionItemKind::Interface,
+                                            format!("NamedArgument: {}", var.name),
                                         ),
                                         // 可以为其他类型添加更多分支
                                         _ => (

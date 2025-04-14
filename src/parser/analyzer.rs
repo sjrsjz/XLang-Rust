@@ -13,6 +13,9 @@ pub enum AssumedType {
     Null,
     Range,
     Tuple,
+    Set,
+    KeyVal,
+    NamedArgument,
 }
 
 #[derive(Debug, Clone)]
@@ -37,7 +40,6 @@ impl VariableContext {
     pub fn last_context(&self) -> Option<&Vec<VariableFrame>> {
         self.contexts.last()
     }
-    
 }
 
 #[derive(Debug)]
@@ -144,14 +146,12 @@ impl AnalyzeError<'_> {
     }
 }
 
-
 // New struct to hold analysis results including context at break point
 #[derive(Debug)]
 pub struct AnalysisOutput<'t> {
     pub errors: Vec<AnalyzeError<'t>>,
     pub context_at_break: Option<VariableContext>,
 }
-
 
 impl VariableContext {
     pub fn new() -> Self {
@@ -246,31 +246,70 @@ pub fn analyze_ast<'t>(ast: &'t ASTNode, break_at_position: Option<usize>) -> An
     // 向context里初始化内置函数
     context.push_context();
     context.push_frame();
-    let _ = context.define_variable(&Variable { name: "print".to_string(), assumed_type: AssumedType::Lambda });
-    let _ = context.define_variable(&Variable { name: "input".to_string(), assumed_type: AssumedType::Lambda });
-    let _ = context.define_variable(&Variable { name: "len".to_string(), assumed_type: AssumedType::Lambda });
-    let _ = context.define_variable(&Variable { name: "int".to_string(), assumed_type: AssumedType::Lambda });
-    let _ = context.define_variable(&Variable { name: "float".to_string(), assumed_type: AssumedType::Lambda });
-    let _ = context.define_variable(&Variable { name: "bytes".to_string(), assumed_type: AssumedType::Lambda });
-    let _ = context.define_variable(&Variable { name: "string".to_string(), assumed_type: AssumedType::Lambda });
-    let _ = context.define_variable(&Variable { name: "bool".to_string(), assumed_type: AssumedType::Lambda });
-    let _ = context.define_variable(&Variable { name: "load_clambda".to_string(), assumed_type: AssumedType::Lambda });
+    let _ = context.define_variable(&Variable {
+        name: "print".to_string(),
+        assumed_type: AssumedType::Lambda,
+    });
+    let _ = context.define_variable(&Variable {
+        name: "input".to_string(),
+        assumed_type: AssumedType::Lambda,
+    });
+    let _ = context.define_variable(&Variable {
+        name: "len".to_string(),
+        assumed_type: AssumedType::Lambda,
+    });
+    let _ = context.define_variable(&Variable {
+        name: "int".to_string(),
+        assumed_type: AssumedType::Lambda,
+    });
+    let _ = context.define_variable(&Variable {
+        name: "float".to_string(),
+        assumed_type: AssumedType::Lambda,
+    });
+    let _ = context.define_variable(&Variable {
+        name: "bytes".to_string(),
+        assumed_type: AssumedType::Lambda,
+    });
+    let _ = context.define_variable(&Variable {
+        name: "string".to_string(),
+        assumed_type: AssumedType::Lambda,
+    });
+    let _ = context.define_variable(&Variable {
+        name: "bool".to_string(),
+        assumed_type: AssumedType::Lambda,
+    });
+    let _ = context.define_variable(&Variable {
+        name: "load_clambda".to_string(),
+        assumed_type: AssumedType::Lambda,
+    });
     // let _ = context.define_variable(&Variable { name: "this".to_string(), assumed_type: AssumedType::Lambda });
     // let _ = context.define_variable(&Variable { name: "self".to_string(), assumed_type: AssumedType::Tuple });
 
     let mut warnings = Vec::new();
     let mut context_at_break: Option<VariableContext> = None; // Store context here
 
-    debug!("Starting AST analysis with break at position: {:?}", break_at_position);
+    debug!(
+        "Starting AST analysis with break at position: {:?}",
+        break_at_position
+    );
 
-    analyze_node(ast, &mut context, &mut warnings, false, break_at_position, &mut context_at_break);
+    analyze_node(
+        ast,
+        &mut context,
+        &mut warnings,
+        false,
+        break_at_position,
+        &mut context_at_break,
+    );
     if context.pop_frame().is_err() || context.pop_context().is_err() {
         warn!("Failed to pop frame")
     }
 
-    AnalysisOutput { errors: warnings, context_at_break }
+    AnalysisOutput {
+        errors: warnings,
+        context_at_break,
+    }
 }
-
 
 // Modified function signature
 fn analyze_node<'t>(
@@ -288,7 +327,10 @@ fn analyze_node<'t>(
 
     // 2. Check if the *start* of the current node is at or beyond the break position
     if let Some(break_pos) = break_at_position {
-        debug!("Checking node: {:?} against break position: {}", node, break_pos);
+        debug!(
+            "Checking node: {:?} against break position: {}",
+            node, break_pos
+        );
         if let Some(token) = node.start_token {
             // Use token.position which is the start byte offset
             if token.position + token.origin_token.len() >= break_pos {
@@ -300,7 +342,6 @@ fn analyze_node<'t>(
         }
         // Optional: Handle nodes without start_token if necessary, though most relevant ones should have it.
     }
-
 
     use super::ast::ASTNodeType;
     // Removed old auto_break check
@@ -315,21 +356,31 @@ fn analyze_node<'t>(
                         assumed_type: AssumedType::Lambda,
                     };
                     let _ = context.define_variable(&var);
-                     // Check break *after* potential definition for recursive calls
-                    if context_at_break.is_some() { return AssumedType::Unknown; }
+                    // Check break *after* potential definition for recursive calls
+                    if context_at_break.is_some() {
+                        return AssumedType::Unknown;
+                    }
                 }
 
                 // Analyze the value expression first
-                let assumed_type = analyze_node(value_node, context, warnings, dynamic, break_at_position, context_at_break);
-                if context_at_break.is_some() { return AssumedType::Unknown; } // Check if break occurred during value analysis
+                let assumed_type = analyze_node(
+                    value_node,
+                    context,
+                    warnings,
+                    dynamic,
+                    break_at_position,
+                    context_at_break,
+                );
+                if context_at_break.is_some() {
+                    return AssumedType::Unknown;
+                } // Check if break occurred during value analysis
 
                 // Define/update the variable in the context *after* analyzing the value (unless it was a lambda pre-defined)
-                 let var = Variable {
+                let var = Variable {
                     name: var_name.clone(),
                     assumed_type: assumed_type.clone(),
                 };
                 let _ = context.define_variable(&var);
-
 
                 return assumed_type;
             }
@@ -343,16 +394,24 @@ fn analyze_node<'t>(
                 _ => dynamic, // Inherit dynamic status for other annotations
             };
             for child in &node.children {
-                assumed_type = analyze_node(child, context, warnings, is_dynamic, break_at_position, context_at_break);
-                if context_at_break.is_some() { return AssumedType::Unknown; }
+                assumed_type = analyze_node(
+                    child,
+                    context,
+                    warnings,
+                    is_dynamic,
+                    break_at_position,
+                    context_at_break,
+                );
+                if context_at_break.is_some() {
+                    return AssumedType::Unknown;
+                }
             }
             return assumed_type;
         }
 
         ASTNodeType::Variable(var_name) => {
             // Check definition before potentially breaking
-            if context.get_variable(var_name).is_none()
-            {
+            if context.get_variable(var_name).is_none() {
                 if !dynamic {
                     warnings.push(AnalyzeError::UndefinedVariable(node));
                 }
@@ -369,7 +428,14 @@ fn analyze_node<'t>(
             context.push_frame();
             let mut assumed_type = AssumedType::Unknown;
             for child in &node.children {
-                assumed_type = analyze_node(child, context, warnings, dynamic, break_at_position, context_at_break);
+                assumed_type = analyze_node(
+                    child,
+                    context,
+                    warnings,
+                    dynamic,
+                    break_at_position,
+                    context_at_break,
+                );
                 if context_at_break.is_some() {
                     // Don't pop frame if break happened inside, context needs it
                     return AssumedType::Unknown;
@@ -377,7 +443,7 @@ fn analyze_node<'t>(
             }
             // Only pop frame if break didn't happen inside this scope
             if context_at_break.is_none() {
-                 let _ = context.pop_frame(); // 弹出当前上下文的帧
+                let _ = context.pop_frame(); // 弹出当前上下文的帧
             }
             return assumed_type;
         }
@@ -386,11 +452,18 @@ fn analyze_node<'t>(
             context.push_frame();
             // 在新的上下文中处理参数（参数定义在第一个帧中）
             if let Some(params) = node.children.first() {
-                analyze_tuple_params(params, context, warnings, dynamic, break_at_position, context_at_break);
-                 if context_at_break.is_some() {
-                     // 如果在参数分析中中断，不弹出上下文
-                     return AssumedType::Lambda;
-                 }
+                analyze_tuple_params(
+                    params,
+                    context,
+                    warnings,
+                    dynamic,
+                    break_at_position,
+                    context_at_break,
+                );
+                if context_at_break.is_some() {
+                    // 如果在参数分析中中断，不弹出上下文
+                    return AssumedType::Lambda;
+                }
             }
             let args = context.last_context().unwrap().last().unwrap().clone();
             if context.pop_frame().is_err() {
@@ -402,17 +475,30 @@ fn analyze_node<'t>(
             for arg in args.variables {
                 let _ = context.define_variable(&arg);
             }
-            let _ = context.define_variable(&Variable { name: "this".to_string(), assumed_type: AssumedType::Lambda });
-            let _ = context.define_variable(&Variable { name: "self".to_string(), assumed_type: AssumedType::Tuple });
-            
+            let _ = context.define_variable(&Variable {
+                name: "this".to_string(),
+                assumed_type: AssumedType::Lambda,
+            });
+            let _ = context.define_variable(&Variable {
+                name: "self".to_string(),
+                assumed_type: AssumedType::Tuple,
+            });
+
             // 在新的上下文中分析 Lambda 体
             if node.children.len() > 1 {
                 // Lambda 体可能创建自己的帧 (push_frame/pop_frame)
-                analyze_node(&node.children[1], context, warnings, dynamic, break_at_position, context_at_break);
-                 if context_at_break.is_some() {
-                     // 如果在 Lambda 体分析中中断，不弹出上下文
-                     return AssumedType::Lambda;
-                 }
+                analyze_node(
+                    &node.children[1],
+                    context,
+                    warnings,
+                    dynamic,
+                    break_at_position,
+                    context_at_break,
+                );
+                if context_at_break.is_some() {
+                    // 如果在 Lambda 体分析中中断，不弹出上下文
+                    return AssumedType::Lambda;
+                }
             }
 
             // 只有在没有中断的情况下才弹出 Lambda 的上下文
@@ -424,13 +510,31 @@ fn analyze_node<'t>(
         }
         ASTNodeType::LambdaCall => {
             if let Some(func_node) = node.children.first() {
-                analyze_node(func_node, context, warnings, dynamic, break_at_position, context_at_break);
-                if context_at_break.is_some() { return AssumedType::Unknown; }
+                analyze_node(
+                    func_node,
+                    context,
+                    warnings,
+                    dynamic,
+                    break_at_position,
+                    context_at_break,
+                );
+                if context_at_break.is_some() {
+                    return AssumedType::Unknown;
+                }
             }
 
             if node.children.len() > 1 {
-                analyze_node(&node.children[1], context, warnings, dynamic, break_at_position, context_at_break);
-                if context_at_break.is_some() { return AssumedType::Unknown; }
+                analyze_node(
+                    &node.children[1],
+                    context,
+                    warnings,
+                    dynamic,
+                    break_at_position,
+                    context_at_break,
+                );
+                if context_at_break.is_some() {
+                    return AssumedType::Unknown;
+                }
             }
 
             return AssumedType::Unknown;
@@ -438,20 +542,47 @@ fn analyze_node<'t>(
         ASTNodeType::Expressions => {
             let mut last_type = AssumedType::Unknown;
             for child in &node.children {
-                last_type = analyze_node(child, context, warnings, dynamic, break_at_position, context_at_break);
-                if context_at_break.is_some() { return AssumedType::Unknown; }
+                last_type = analyze_node(
+                    child,
+                    context,
+                    warnings,
+                    dynamic,
+                    break_at_position,
+                    context_at_break,
+                );
+                if context_at_break.is_some() {
+                    return AssumedType::Unknown;
+                }
             }
             return last_type;
         }
         ASTNodeType::Assign => {
             if node.children.len() >= 2 {
                 // Analyze RHS first
-                let assumed_type = analyze_node(&node.children[1], context, warnings, dynamic, break_at_position, context_at_break);
-                if context_at_break.is_some() { return AssumedType::Unknown; }
+                let assumed_type = analyze_node(
+                    &node.children[1],
+                    context,
+                    warnings,
+                    dynamic,
+                    break_at_position,
+                    context_at_break,
+                );
+                if context_at_break.is_some() {
+                    return AssumedType::Unknown;
+                }
 
                 // Analyze LHS (e.g., variable, index, attr) to check for errors, but its type doesn't override RHS
-                analyze_node(&node.children[0], context, warnings, dynamic, break_at_position, context_at_break);
-                if context_at_break.is_some() { return AssumedType::Unknown; }
+                analyze_node(
+                    &node.children[0],
+                    context,
+                    warnings,
+                    dynamic,
+                    break_at_position,
+                    context_at_break,
+                );
+                if context_at_break.is_some() {
+                    return AssumedType::Unknown;
+                }
 
                 // TODO: Potentially update variable type in context if LHS is a simple variable?
                 // This requires LHS analysis to return info about what was assigned to.
@@ -463,66 +594,147 @@ fn analyze_node<'t>(
         }
         ASTNodeType::If => {
             if let Some(condition) = node.children.first() {
-                analyze_node(condition, context, warnings, dynamic, break_at_position, context_at_break);
-                if context_at_break.is_some() { return AssumedType::Unknown; }
+                analyze_node(
+                    condition,
+                    context,
+                    warnings,
+                    dynamic,
+                    break_at_position,
+                    context_at_break,
+                );
+                if context_at_break.is_some() {
+                    return AssumedType::Unknown;
+                }
             }
 
             let mut then_type = AssumedType::Unknown;
             if node.children.len() > 1 {
-                then_type = analyze_node(&node.children[1], context, warnings, dynamic, break_at_position, context_at_break);
-                if context_at_break.is_some() { return AssumedType::Unknown; }
+                then_type = analyze_node(
+                    &node.children[1],
+                    context,
+                    warnings,
+                    dynamic,
+                    break_at_position,
+                    context_at_break,
+                );
+                if context_at_break.is_some() {
+                    return AssumedType::Unknown;
+                }
             }
 
             if node.children.len() > 2 {
-                analyze_node(&node.children[2], context, warnings, dynamic, break_at_position, context_at_break);
-                 if context_at_break.is_some() { return AssumedType::Unknown; }
-                 // TODO: Type could be union of then/else, for now just return then type
+                analyze_node(
+                    &node.children[2],
+                    context,
+                    warnings,
+                    dynamic,
+                    break_at_position,
+                    context_at_break,
+                );
+                if context_at_break.is_some() {
+                    return AssumedType::Unknown;
+                }
+                // TODO: Type could be union of then/else, for now just return then type
             }
 
             return then_type;
         }
         ASTNodeType::While => {
             if let Some(condition) = node.children.first() {
-                analyze_node(condition, context, warnings, dynamic, break_at_position, context_at_break);
-                if context_at_break.is_some() { return AssumedType::Unknown; }
+                analyze_node(
+                    condition,
+                    context,
+                    warnings,
+                    dynamic,
+                    break_at_position,
+                    context_at_break,
+                );
+                if context_at_break.is_some() {
+                    return AssumedType::Unknown;
+                }
             }
 
             let mut body_type = AssumedType::Unknown;
             if node.children.len() > 1 {
-                body_type = analyze_node(&node.children[1], context, warnings, dynamic, break_at_position, context_at_break);
-                if context_at_break.is_some() { return AssumedType::Unknown; }
+                body_type = analyze_node(
+                    &node.children[1],
+                    context,
+                    warnings,
+                    dynamic,
+                    break_at_position,
+                    context_at_break,
+                );
+                if context_at_break.is_some() {
+                    return AssumedType::Unknown;
+                }
             }
 
             return body_type; // Or Null/Unknown?
         }
         ASTNodeType::Return | ASTNodeType::Yield | ASTNodeType::Raise => {
             if let Some(value) = node.children.first() {
-                 let ret_type = analyze_node(value, context, warnings, dynamic, break_at_position, context_at_break);
-                 if context_at_break.is_some() { return AssumedType::Unknown; }
-                 return ret_type;
+                let ret_type = analyze_node(
+                    value,
+                    context,
+                    warnings,
+                    dynamic,
+                    break_at_position,
+                    context_at_break,
+                );
+                if context_at_break.is_some() {
+                    return AssumedType::Unknown;
+                }
+                return ret_type;
             }
             return AssumedType::Unknown; // Or Null?
         }
         ASTNodeType::Operation(_) => {
             let mut last_type = AssumedType::Unknown;
             for child in &node.children {
-                last_type = analyze_node(child, context, warnings, dynamic, break_at_position, context_at_break);
-                 if context_at_break.is_some() { return AssumedType::Unknown; }
+                last_type = analyze_node(
+                    child,
+                    context,
+                    warnings,
+                    dynamic,
+                    break_at_position,
+                    context_at_break,
+                );
+                if context_at_break.is_some() {
+                    return AssumedType::Unknown;
+                }
             }
             // TODO: Infer operation result type based on operator and operand types
             return last_type;
         }
         ASTNodeType::Tuple => {
             for child in &node.children {
-                analyze_node(child, context, warnings, dynamic, break_at_position, context_at_break);
-                if context_at_break.is_some() { return AssumedType::Tuple; } // Return Tuple type even if break occurred inside
+                analyze_node(
+                    child,
+                    context,
+                    warnings,
+                    dynamic,
+                    break_at_position,
+                    context_at_break,
+                );
+                if context_at_break.is_some() {
+                    return AssumedType::Tuple;
+                } // Return Tuple type even if break occurred inside
             }
             return AssumedType::Tuple;
         }
         ASTNodeType::GetAttr => {
             if node.children.len() >= 2 {
-                analyze_node(&node.children[0], context, warnings, dynamic, break_at_position, context_at_break); // Object
-                if context_at_break.is_some() { return AssumedType::Unknown; }
+                analyze_node(
+                    &node.children[0],
+                    context,
+                    warnings,
+                    dynamic,
+                    break_at_position,
+                    context_at_break,
+                ); // Object
+                if context_at_break.is_some() {
+                    return AssumedType::Unknown;
+                }
                 // Don't analyze the attribute name itself as an expression usually
                 // analyze_node(&node.children[1], context, warnings, dynamic, break_at_position, context_at_break); // Attribute
                 // if context_at_break.is_some() { return AssumedType::Unknown; }
@@ -532,21 +744,123 @@ fn analyze_node<'t>(
         }
         ASTNodeType::IndexOf => {
             if node.children.len() >= 2 {
-                analyze_node(&node.children[0], context, warnings, dynamic, break_at_position, context_at_break); // Object
-                if context_at_break.is_some() { return AssumedType::Unknown; }
-                analyze_node(&node.children[1], context, warnings, dynamic, break_at_position, context_at_break); // Index
-                if context_at_break.is_some() { return AssumedType::Unknown; }
+                analyze_node(
+                    &node.children[0],
+                    context,
+                    warnings,
+                    dynamic,
+                    break_at_position,
+                    context_at_break,
+                ); // Object
+                if context_at_break.is_some() {
+                    return AssumedType::Unknown;
+                }
+                analyze_node(
+                    &node.children[1],
+                    context,
+                    warnings,
+                    dynamic,
+                    break_at_position,
+                    context_at_break,
+                ); // Index
+                if context_at_break.is_some() {
+                    return AssumedType::Unknown;
+                }
             }
-             // TODO: Could try to infer element type if object type is known (e.g., Tuple, String)
+            // TODO: Could try to infer element type if object type is known (e.g., Tuple, String)
             return AssumedType::Unknown;
         }
         ASTNodeType::Modifier(_) => {
             if let Some(target) = node.children.first() {
-                 let target_type = analyze_node(target, context, warnings, dynamic, break_at_position, context_at_break);
-                 if context_at_break.is_some() { return AssumedType::Unknown; }
-                 return target_type; // Modifier usually doesn't change the type
+                let target_type = analyze_node(
+                    target,
+                    context,
+                    warnings,
+                    dynamic,
+                    break_at_position,
+                    context_at_break,
+                );
+                if context_at_break.is_some() {
+                    return AssumedType::Unknown;
+                }
+                return target_type; // Modifier usually doesn't change the type
             }
             return AssumedType::Unknown;
+        }
+        ASTNodeType::KeyValue => {
+            let _ = analyze_node(
+                &node.children[0],
+                context,
+                warnings,
+                dynamic,
+                break_at_position,
+                context_at_break,
+            ); // Key
+            if context_at_break.is_some() {
+                return AssumedType::Unknown;
+            }
+            let _ = analyze_node(
+                &node.children[1],
+                context,
+                warnings,
+                dynamic,
+                break_at_position,
+                context_at_break,
+            ); // Value
+            if context_at_break.is_some() {
+                return AssumedType::Unknown;
+            }
+            return AssumedType::KeyVal; // Return KeyVal type
+        }
+        ASTNodeType::Set => {
+            let _ = analyze_node(
+                &node.children[0],
+                context,
+                warnings,
+                dynamic,
+                break_at_position,
+                context_at_break,
+            ); // Set item
+            if context_at_break.is_some() {
+                return AssumedType::Unknown;
+            }
+            let _ = analyze_node(
+                &node.children[1],
+                context,
+                warnings,
+                dynamic,
+                break_at_position,
+                context_at_break,
+            ); // Set item
+            if context_at_break.is_some() {
+                return AssumedType::Unknown;
+            }
+            return AssumedType::Set; // Return Set type
+        }
+        ASTNodeType::NamedTo => {
+            let _ = analyze_node(
+                &node.children[0],
+                context,
+                warnings,
+                dynamic,
+                break_at_position,
+                context_at_break,
+            ); // Set item
+            if context_at_break.is_some() {
+                return AssumedType::Unknown;
+            }
+            let _ = analyze_node(
+                &node.children[1],
+                context,
+                warnings,
+                dynamic,
+                break_at_position,
+                context_at_break,
+            ); // Set item
+            if context_at_break.is_some() {
+                return AssumedType::Unknown;
+            }
+            return AssumedType::NamedArgument; // Return NamedArgument type
         }
         // Simple types don't have children to analyze recursively
         ASTNodeType::String(_) => AssumedType::String,
@@ -559,8 +873,17 @@ fn analyze_node<'t>(
         _ => {
             let mut last_type = AssumedType::Unknown;
             for child in &node.children {
-                last_type = analyze_node(child, context, warnings, dynamic, break_at_position, context_at_break);
-                if context_at_break.is_some() { return AssumedType::Unknown; }
+                last_type = analyze_node(
+                    child,
+                    context,
+                    warnings,
+                    dynamic,
+                    break_at_position,
+                    context_at_break,
+                );
+                if context_at_break.is_some() {
+                    return AssumedType::Unknown;
+                }
             }
             return last_type;
         }
@@ -576,38 +899,51 @@ fn analyze_tuple_params<'t>(
     break_at_position: Option<usize>,
     context_at_break: &mut Option<VariableContext>,
 ) {
-     // Check break condition before processing parameters
-    if context_at_break.is_some() { return; }
+    // Check break condition before processing parameters
+    if context_at_break.is_some() {
+        return;
+    }
     if let Some(break_pos) = break_at_position {
-         if let Some(token) = params.start_token {
-             if token.position >= break_pos {
-                 *context_at_break = Some(context.clone());
-                 return;
-             }
-         }
-     }
+        if let Some(token) = params.start_token {
+            if token.position >= break_pos {
+                *context_at_break = Some(context.clone());
+                return;
+            }
+        }
+    }
 
     use super::ast::ASTNodeType;
 
     if let ASTNodeType::Tuple = params.node_type {
         for param in &params.children {
-             if context_at_break.is_some() { return; } // Check before each param
-             if let Some(break_pos) = break_at_position { // Check start of individual param node
-                 if let Some(token) = param.start_token {
-                     if token.position >= break_pos {
-                         *context_at_break = Some(context.clone());
-                         return;
-                     }
-                 }
-             }
+            if context_at_break.is_some() {
+                return;
+            } // Check before each param
+            if let Some(break_pos) = break_at_position {
+                // Check start of individual param node
+                if let Some(token) = param.start_token {
+                    if token.position >= break_pos {
+                        *context_at_break = Some(context.clone());
+                        return;
+                    }
+                }
+            }
 
             match &param.node_type {
                 ASTNodeType::NamedTo => {
                     if param.children.len() >= 2 {
                         // Analyze default value first
-                        let assumed_type =
-                            analyze_node(&param.children[1], context, warnings, dynamic, break_at_position, context_at_break);
-                        if context_at_break.is_some() { return; }
+                        let assumed_type = analyze_node(
+                            &param.children[1],
+                            context,
+                            warnings,
+                            dynamic,
+                            break_at_position,
+                            context_at_break,
+                        );
+                        if context_at_break.is_some() {
+                            return;
+                        }
 
                         // Define parameter variable
                         if let ASTNodeType::String(var_name) = &param.children[0].node_type {
@@ -618,15 +954,33 @@ fn analyze_tuple_params<'t>(
                             let _ = context.define_variable(&var);
                         } else {
                             // Analyze complex parameter structure (e.g., destructuring) - might need specific handling
-                            analyze_node(&param.children[0], context, warnings, dynamic, break_at_position, context_at_break);
-                             if context_at_break.is_some() { return; }
+                            analyze_node(
+                                &param.children[0],
+                                context,
+                                warnings,
+                                dynamic,
+                                break_at_position,
+                                context_at_break,
+                            );
+                            if context_at_break.is_some() {
+                                return;
+                            }
                         }
                     }
                 }
                 // Handle other param types if necessary
                 _ => {
-                    analyze_node(param, context, warnings, dynamic, break_at_position, context_at_break);
-                     if context_at_break.is_some() { return; }
+                    analyze_node(
+                        param,
+                        context,
+                        warnings,
+                        dynamic,
+                        break_at_position,
+                        context_at_break,
+                    );
+                    if context_at_break.is_some() {
+                        return;
+                    }
                 }
             }
         }
