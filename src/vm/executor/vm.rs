@@ -580,38 +580,116 @@ impl VMExecutor {
                 let code: &Vec<u32> = vm_instruction.vm_instructions_package.get_code();
                 let mut instruction_32 = Instruction32::new(code, &mut ip);
 
-                let decoded = instruction_32.get_processed_opcode();
-                if decoded.is_none() {
-                    return Err(VMError::AssertFailed);
-                }
-                let decoded = decoded.unwrap();
-                self.ip = ip as isize;
-                // if let IR::DebugInfo(_) = instruction {} else{
-                //     println!("{}: {:?}", self.ip, instruction); // debug
-                // }
+                let decoded_option = instruction_32.get_processed_opcode();
+                // Check if decoding failed (should ideally not happen with valid bytecode)
+                if decoded_option.is_none() {
+                    // Store the original error context
+                    let original_error = VMError::DetailedError("Bytecode decoding failed".to_string());
 
-                // println!("");
-                // self.context.debug_print_all_vars();
-                // gc_system.collect(); // debug
-                // self.debug_output_stack();
-                // println!("{}: {}", self.ip, decoded.to_string()); // debug
-                let spawned_coroutine = self
+                    // Attempt to create and raise the error object
+                    let raise_result = (|| -> Result<Option<Vec<SpawnedCoroutine>>, VMError> {
+                        // Create KeyVals for the error tuple
+                        let error_message = "Bytecode decoding failed".to_string();
+                        let mut msg_key_obj = gc_system.new_object(VMString::new("message"));
+                        let mut msg_val_obj = gc_system.new_object(VMString::new(&error_message));
+                        let mut ip_key_obj = gc_system.new_object(VMString::new("ip"));
+                        let mut ip_val_obj = gc_system.new_object(VMInt::new(curr_ip as i64));
+
+                        let mut msg_kv_obj = gc_system.new_object(VMKeyVal::new(&mut msg_key_obj, &mut msg_val_obj));
+                        let mut ip_kv_obj = gc_system.new_object(VMKeyVal::new(&mut ip_key_obj, &mut ip_val_obj));
+
+                        // Create the error tuple
+                        let mut tuple_elements = vec![&mut msg_kv_obj, &mut ip_kv_obj];
+                        let error_tuple_obj =
+                        gc_system.new_object(VMTuple::new_with_alias(&mut tuple_elements,&vec!["VMError".to_string(), "Err".to_string()]));
+
+
+                        self.push_vmobject(error_tuple_obj)?; // Push the error object
+
+                        // Drop local refs as tuple now holds them
+                        msg_key_obj.drop_ref();
+                        msg_val_obj.drop_ref();
+                        ip_key_obj.drop_ref();
+                        ip_val_obj.drop_ref();
+                        msg_kv_obj.drop_ref();
+                        ip_kv_obj.drop_ref();
+
+
+                        // Manually call the raise logic after pushing the error object
+                        let dummy_opcode = ProcessedOpcode {
+                            instruction: 0,
+                            operand1: crate::vm::opcode::OpcodeArgument::None,
+                            operand2: crate::vm::opcode::OpcodeArgument::None,
+                            operand3: crate::vm::opcode::OpcodeArgument::None,
+                        };
+                        vm_instructions::raise(self, &dummy_opcode, gc_system)
+                    })();
+
+                    // If raising failed, return the original decoding error
+                    return raise_result.map_err(|_raise_err| original_error);
+                }
+
+                let decoded = decoded_option.unwrap();
+                self.ip = ip as isize;
+
+                // Execute the instruction
+                // First get the handler function
+                let handler = self
                     .instruction_table
                     .get(decoded.instruction as usize)
-                    .unwrap()(self, &decoded, gc_system);
-                if spawned_coroutine.is_err() {
-                    self.ip = curr_ip;
-                    return Err(spawned_coroutine.err().unwrap());
+                    .ok_or_else(|| VMError::InvalidInstruction(decoded.clone()))?; // Handle invalid instruction index
+
+                // Then execute it separately to avoid borrowing self twice
+                let execution_result = handler(self, &decoded, gc_system);
+
+                // Check for errors during execution
+                match execution_result {
+                    Ok(result) => {
+                        spawned_coroutines = result;
+                    }
+                    Err(vm_error) => {
+                        // Store the original error in case raising fails
+                        let original_vm_error = vm_error;
+
+                        // Restore IP before attempting to raise
+                        self.ip = curr_ip;
+
+                        // Attempt to create and raise the error object
+                        let raise_result = (|| -> Result<Option<Vec<SpawnedCoroutine>>, VMError> {
+                            // Create KeyVals for the error tuple
+                            let error_message = original_vm_error.to_string();
+                            let mut msg_key_obj = gc_system.new_object(VMString::new("message"));
+                            let mut msg_val_obj = gc_system.new_object(VMString::new(&error_message));
+                            let mut ip_key_obj = gc_system.new_object(VMString::new("ip"));
+                            let mut ip_val_obj = gc_system.new_object(VMInt::new(curr_ip as i64));
+
+                            let mut msg_kv_obj = gc_system.new_object(VMKeyVal::new(&mut msg_key_obj, &mut msg_val_obj));
+                            let mut ip_kv_obj = gc_system.new_object(VMKeyVal::new(&mut ip_key_obj, &mut ip_val_obj));
+
+                            // Create the error tuple
+                            let mut tuple_elements = vec![&mut msg_kv_obj, &mut ip_kv_obj];
+                            let error_tuple_obj =
+                                gc_system.new_object(VMTuple::new_with_alias(&mut tuple_elements,&vec!["VMError".to_string(), "Err".to_string()]));
+
+                            self.push_vmobject(error_tuple_obj)?; // Push the error object
+
+                            // Drop local refs as tuple now holds them
+                            msg_key_obj.drop_ref();
+                            msg_val_obj.drop_ref();
+                            ip_key_obj.drop_ref();
+                            ip_val_obj.drop_ref();
+                            msg_kv_obj.drop_ref();
+                            ip_kv_obj.drop_ref();
+
+                            // Manually call the raise logic after pushing the error object
+                            vm_instructions::raise(self, &decoded, gc_system)
+                        })();
+
+                        // If the raise operation itself failed, return the original error
+                        return raise_result.map_err(|_raise_error| original_vm_error);
+                    }
                 }
-                spawned_coroutines = spawned_coroutine.unwrap();
 
-                //self.debug_output_stack(); // debug
-                //println!("");
-
-                //gc_system.collect(); // debug
-                //println!("GC Count: {}", gc_system.count()); // debug
-                //gc_system.print_reference_graph(); // debug
-                //self.ip += 1;
             }
         } else if *coroutine_status != VMCoroutineStatus::Finished {
             let mut result = self.pop_object_and_check()?;

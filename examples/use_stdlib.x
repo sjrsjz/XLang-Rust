@@ -21,6 +21,15 @@ try_catch.try(
     }
 );
 
+result := #(try_catch.try_catch) {
+    () -> "A"[-1]
+} : {
+    (f?, err?) -> {
+        @dynamic print("Error occurred:", err, "in", f);
+    }
+};
+
+
 x := 0;
 
 my_promise := promise.promise(

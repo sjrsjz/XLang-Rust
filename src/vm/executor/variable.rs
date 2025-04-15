@@ -138,7 +138,12 @@ pub fn try_repr_vmobject(
 
     // 获取别名字符串
     let alias = try_const_alias_as_vmobject(&value)?;
-    let alias_str = alias.join("::");
+    let alias_vec = alias
+        .iter()
+        .rev()
+        .map(|v| v.clone())
+        .collect::<Vec<String>>();
+    let alias_str = alias_vec.join("::");
     let alias_prefix = if alias_str.is_empty() {
         "".to_string()
     } else {
@@ -245,7 +250,6 @@ pub fn try_repr_vmobject(
     Ok(format!("{}{}", alias_prefix, base_repr))
 }
 
-
 pub fn try_to_string_vmobject(
     value: GCRef,
     ref_path: Option<Vec<GCRef>>,
@@ -346,7 +350,6 @@ pub fn try_to_string_vmobject(
 
     Ok(base_repr) // 直接返回基础表示
 }
-
 
 pub fn _debug_print_repr(value: GCRef) {
     match try_repr_vmobject(value.clone(), None) {
@@ -2760,7 +2763,6 @@ impl VMLambda {
     pub fn get_key(&mut self) -> &mut GCRef {
         &mut self.default_args_tuple
     }
-
 }
 
 impl GCObject for VMLambda {
@@ -2798,7 +2800,9 @@ impl VMObject for VMLambda {
 
         let mut new_result: GCRef = try_deepcopy_as_vmobject(&mut self.result, gc_system)?;
         let mut new_lambda_body = match self.lambda_body {
-            VMLambdaBody::VMInstruction(ref mut instructions) => VMLambdaBody::VMInstruction(try_deepcopy_as_vmobject(instructions, gc_system)?),
+            VMLambdaBody::VMInstruction(ref mut instructions) => {
+                VMLambdaBody::VMInstruction(try_deepcopy_as_vmobject(instructions, gc_system)?)
+            }
             VMLambdaBody::VMNativeFunction(_) => self.lambda_body.clone(),
         };
 
@@ -2911,7 +2915,6 @@ impl VMCLambdaInstruction {
             alias: alias.clone(),
         }
     }
-
 
     pub fn call(
         &mut self,

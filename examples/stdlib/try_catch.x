@@ -26,9 +26,16 @@ try := (f?, is_err!) -> bind {
     },
 };
 
+try_catch := (pair?, Ok!) -> {
+    return (valueof pair)(keyof pair, boundary {
+        return Ok((keyof pair)());
+    });
+};
+
 return {
     try!,
     is_err!,
     Err!,
     Ok!,
+    try_catch!,
 }

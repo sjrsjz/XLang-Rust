@@ -534,7 +534,7 @@ pub mod native_functions {
         }
         Err(VMVariableError::TypeError(
             tuple.clone(),
-            "to_int function's input should be a int".to_string(),
+            "to_int function's input should be a int-able value".to_string(),
         ))
     }
 
@@ -570,7 +570,7 @@ pub mod native_functions {
         }
         Err(VMVariableError::TypeError(
             tuple.clone(),
-            "to_float function's input should be a float".to_string(),
+            "to_float function's input should be a float-able value".to_string(),
         ))
     }
 
@@ -612,7 +612,7 @@ pub mod native_functions {
         }
         Err(VMVariableError::TypeError(
             tuple.clone(),
-            "to_string function's input should be a string".to_string(),
+            "to_string function's input should be a string-able value".to_string(),
         ))
     }
 
@@ -646,7 +646,7 @@ pub mod native_functions {
         }
         Err(VMVariableError::TypeError(
             tuple.clone(),
-            "to_bool function's input should be a bool".to_string(),
+            "to_bool function's input should be a bool-able value".to_string(),
         ))
     }
     pub fn to_bytes(tuple: GCRef, gc_system: &mut GCSystem) -> Result<GCRef, VMVariableError> {
