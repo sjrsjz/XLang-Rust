@@ -1,4 +1,6 @@
-use log::{debug, warn};
+use log::{debug, info, warn}; // 添加 info
+
+use crate::{compile::{build_code, compile_to_bytecode}, dir_stack::DirStack};
 
 use super::ast::ASTNode;
 
@@ -146,10 +148,109 @@ impl AnalyzeError<'_> {
     }
 }
 
+#[derive(Debug)]
+pub enum AnalyzeWarn<'t> {
+    CompileError(&'t ASTNode<'t>, String),
+}
+
+impl AnalyzeWarn<'_> {
+    pub fn format(&self, source_code: String) -> String {
+        use colored::*;
+        use unicode_segmentation::UnicodeSegmentation;
+
+        // 分割源代码为行
+        let lines: Vec<&str> = source_code.lines().collect();
+
+        // Helper function to find line and column from position (same as in AnalyzeError)
+        let find_position = |byte_pos: usize| -> (usize, usize) {
+            let mut current_byte = 0;
+            for (line_num, line) in lines.iter().enumerate() {
+                let eol_len = if source_code.contains("\r\n") { 2 } else { 1 };
+                let line_bytes = line.len() + eol_len;
+
+                if current_byte + line_bytes > byte_pos {
+                    let line_offset = byte_pos - current_byte;
+                    if line_offset > line.len() {
+                        return (line_num, line.graphemes(true).count());
+                    }
+                    let valid_offset = line
+                        .char_indices()
+                        .map(|(i, _)| i)
+                        .take_while(|&i| i <= line_offset)
+                        .last()
+                        .unwrap_or(0);
+                    let column_text = &line[..valid_offset];
+                    let column = column_text.graphemes(true).count();
+                    return (line_num, column);
+                }
+                current_byte += line_bytes;
+            }
+            (lines.len().saturating_sub(1), 0) // Default to last line
+        };
+
+        match self {
+            AnalyzeWarn::CompileError(node, message) => {
+                let (line_num, col) = find_position(match node.start_token {
+                    Some(token) => token.position,
+                    None => 0,
+                });
+                let line = if line_num < lines.len() {
+                    lines[line_num]
+                } else {
+                    ""
+                };
+
+                // 尝试获取节点文本，如果节点是字符串字面量，则使用其内容
+                let node_text = match &node.node_type {
+                    super::ast::ASTNodeType::String(s) => s.clone(),
+                    _ => {
+                        // 对于其他类型的节点，尝试从原始 token 获取文本
+                        node.start_token.map_or_else(
+                            || "unknown node".to_string(),
+                            |token| token.origin_token.clone(),
+                        )
+                    }
+                };
+
+                let mut warning_msg = format!(
+                    "{}: {}\n\n",
+                    "Analysis Warning".bright_yellow().bold(),
+                    message.yellow() // 使用传入的 message
+                );
+                warning_msg.push_str(&format!(
+                    "{} {}:{}\n",
+                    "Position".bright_blue(),
+                    (line_num + 1).to_string().bright_cyan(),
+                    (col + 1).to_string().bright_cyan()
+                ));
+                warning_msg.push_str(&format!("{}\n", line.white()));
+
+                // 计算节点在源代码中的长度
+                let node_length = node_text.graphemes(true).count(); // 使用 graphemes 确保正确处理多字节字符
+                warning_msg.push_str(&format!(
+                    "{}{}\n",
+                    " ".repeat(col),
+                    "^".repeat(node_length.max(1)).bright_yellow().bold() // 至少一个 ^
+                ));
+
+                // 可以根据需要添加特定的提示
+                // warning_msg.push_str(&format!(
+                //     "\n{} {}\n",
+                //     "Hint:".bright_green().bold(),
+                //     format!("Check the path or content for '@compile' annotation.").bright_white().italic()
+                // ));
+
+                warning_msg
+            }
+        }
+    }
+}
+
 // New struct to hold analysis results including context at break point
 #[derive(Debug)]
 pub struct AnalysisOutput<'t> {
     pub errors: Vec<AnalyzeError<'t>>,
+    pub warnings: Vec<AnalyzeWarn<'t>>,
     pub context_at_break: Option<VariableContext>,
 }
 
@@ -241,7 +342,7 @@ impl VariableContext {
 }
 
 // Modified function signature and return type
-pub fn analyze_ast<'t>(ast: &'t ASTNode, break_at_position: Option<usize>) -> AnalysisOutput<'t> {
+pub fn analyze_ast<'t>(ast: &'t ASTNode, break_at_position: Option<usize>, dir_stack: &mut DirStack) -> AnalysisOutput<'t> {
     let mut context = VariableContext::new();
     // 向context里初始化内置函数
     context.push_context();
@@ -293,7 +394,8 @@ pub fn analyze_ast<'t>(ast: &'t ASTNode, break_at_position: Option<usize>) -> An
     // let _ = context.define_variable(&Variable { name: "this".to_string(), assumed_type: AssumedType::Lambda });
     // let _ = context.define_variable(&Variable { name: "self".to_string(), assumed_type: AssumedType::Tuple });
 
-    let mut warnings = Vec::new();
+    let mut errors = Vec::new(); // 重命名 warnings 为 errors 以匹配 AnalysisOutput 字段
+    let mut warnings = Vec::new(); // 添加一个新的 Vec 用于存储 AnalyzeWarn
     let mut context_at_break: Option<VariableContext> = None; // Store context here
 
     debug!(
@@ -304,17 +406,20 @@ pub fn analyze_ast<'t>(ast: &'t ASTNode, break_at_position: Option<usize>) -> An
     analyze_node(
         ast,
         &mut context,
-        &mut warnings,
+        &mut errors,   // 传递 errors Vec
+        &mut warnings, // 传递 warnings Vec
         false,
         break_at_position,
         &mut context_at_break,
+        dir_stack,
     );
     if context.pop_frame().is_err() || context.pop_context().is_err() {
-        warn!("Failed to pop frame")
+        warn!("Failed to pop frame or context after analysis") // 调整警告信息
     }
 
     AnalysisOutput {
-        errors: warnings,
+        errors,   // 使用更新后的名称
+        warnings, // 添加 warnings 字段
         context_at_break,
     }
 }
@@ -323,10 +428,12 @@ pub fn analyze_ast<'t>(ast: &'t ASTNode, break_at_position: Option<usize>) -> An
 fn analyze_node<'t>(
     node: &'t ASTNode,
     context: &mut VariableContext,
-    warnings: &mut Vec<AnalyzeError<'t>>,
+    errors: &mut Vec<AnalyzeError<'t>>, // 重命名 warnings 为 errors
+    warnings: &mut Vec<AnalyzeWarn<'t>>, // 添加 warnings 参数
     dynamic: bool,
     break_at_position: Option<usize>,
     context_at_break: &mut Option<VariableContext>,
+    dir_stack: &mut DirStack
 ) -> AssumedType {
     // 1. Check if analysis should stop globally (break point already found)
     if context_at_break.is_some() {
@@ -336,19 +443,25 @@ fn analyze_node<'t>(
     // 2. Check if the *start* of the current node is at or beyond the break position
     if let Some(break_pos) = break_at_position {
         debug!(
-            "Checking node: {:?} against break position: {}",
-            node, break_pos
+            "Checking node: {:?} ({:?}) against break position: {}",
+            node.node_type,
+            node.start_token.map(|t| t.position),
+            break_pos
         );
         if let Some(token) = node.start_token {
-            // Use token.position which is the start byte offset
-            if token.position + token.origin_token.len() >= break_pos {
-                // We've reached the target position. Capture the context *before* analyzing this node.
-                debug!("Break point reached at node: {:?}", node);
-                *context_at_break = Some(context.clone()); // Clone the context state
-                return AssumedType::Unknown; // Stop analysis for this branch
+            // 使用 token.position (开始字节偏移)
+            // 检查断点是否在 token 的范围内 [start, end)
+            if token.position >= break_pos {
+                // 我们已经到达或超过了目标位置。在分析此节点之前捕获上下文。
+                debug!(
+                    "Break point reached at or before node: {:?} (pos: {})",
+                    node.node_type, token.position
+                );
+                *context_at_break = Some(context.clone()); // 克隆上下文状态
+                return AssumedType::Unknown; // 停止此分支的分析
             }
         }
-        // Optional: Handle nodes without start_token if necessary, though most relevant ones should have it.
+        // 可选：如果需要，处理没有 start_token 的节点，尽管大多数相关节点应该有它。
     }
 
     use super::ast::ASTNodeType;
@@ -374,10 +487,12 @@ fn analyze_node<'t>(
                 let assumed_type = analyze_node(
                     value_node,
                     context,
-                    warnings,
+                    errors,   // Pass errors
+                    warnings, // Pass warnings
                     dynamic,
                     break_at_position,
                     context_at_break,
+                    dir_stack,
                 );
                 if context_at_break.is_some() {
                     return AssumedType::Unknown;
@@ -399,16 +514,118 @@ fn analyze_node<'t>(
             let is_dynamic = match annotation.as_str() {
                 "dynamic" => true,
                 "static" => false,
+                "compile" if break_at_position.is_none() => {
+                    // 特殊处理 @compile 注解 (当非断点分析时)
+                    for child in &node.children {
+                        // 检查子节点是否为字符串
+                        if let ASTNodeType::String(file_path) = &child.node_type {
+                            info!("@compile: Trigger compilation for file: {}", file_path);
+
+                            let read_file = std::fs::read_to_string(file_path);
+                            if let Err(e) = read_file {
+                                // 使用 AnalyzeWarn::CompileError 记录读取错误
+                                let error_message =
+                                    format!("Failed to read file '{}': {}", file_path, e);
+                                warnings.push(AnalyzeWarn::CompileError(child, error_message));
+                            // 使用 child 作为错误关联的节点
+                            } else {
+                                let code = read_file.unwrap();
+                                // 调用 build_code 函数编译代码
+                                let compile_result = build_code(&code, dir_stack);
+                                match compile_result {
+                                    Ok(ir_package) => {
+                                        // 替换文件扩展名为xbc
+                                        let xbc_file_path = if let Some(pos) = file_path.rfind('.')
+                                        {
+                                            format!("{}.xbc", &file_path[..pos])
+                                        } else {
+                                            format!("{}.xbc", file_path)
+                                        };
+                                        let byte_code = compile_to_bytecode(&ir_package);
+                                        match byte_code {
+                                            Ok(byte_code) => {
+                                                // 将字节码写入文件
+                                                if let Err(e) =
+                                                    byte_code.write_to_file(&xbc_file_path)
+                                                {
+                                                    // 使用 AnalyzeWarn::CompileError 记录写入错误
+                                                    let error_message = format!(
+                                                        "Failed to write bytecode to file '{}': {}",
+                                                        xbc_file_path, e
+                                                    );
+                                                    warnings.push(AnalyzeWarn::CompileError(
+                                                        child,
+                                                        error_message,
+                                                    )); // 使用 child 作为错误关联的节点
+                                                } else {
+                                                    info!(
+                                                        "Bytecode written to '{}'",
+                                                        xbc_file_path
+                                                    );
+                                                }
+                                            }
+                                            Err(e) => {
+                                                // 使用 AnalyzeWarn::CompileError 记录编译错误
+                                                let error_message = format!(
+                                                    "Compilation failed for file '{}': {}",
+                                                    file_path, e
+                                                );
+                                                warnings.push(AnalyzeWarn::CompileError(
+                                                    child,
+                                                    error_message,
+                                                )); // 使用 child 作为错误关联的节点
+                                            }
+                                        }
+                                    }
+                                    Err(e) => {
+                                        // 使用 AnalyzeWarn::CompileError 记录编译错误
+                                        let error_message = format!(
+                                            "Compilation failed for file '{}': {}",
+                                            file_path, e
+                                        );
+                                        warnings
+                                            .push(AnalyzeWarn::CompileError(child, error_message));
+                                        // 使用 child 作为错误关联的节点
+                                    }
+                                }
+                            }
+                        } else {
+                            // @compile 后面应该跟一个字符串字面量
+                            let error_message = format!("@compile annotation expects a string literal file path, found: {:?}", child.node_type);
+                            warnings.push(AnalyzeWarn::CompileError(child, error_message));
+                            // 使用 child 作为错误关联的节点
+                        }
+                        // 仍然分析子节点本身，即使它是 @compile 的参数
+                        analyze_node(
+                            child,
+                            context,
+                            errors,   // Pass errors
+                            warnings, // Pass warnings
+                            dynamic,  // 继承 dynamic 状态或根据需要调整
+                            break_at_position,
+                            context_at_break,
+                            dir_stack,
+                        );
+                        if context_at_break.is_some() {
+                            return AssumedType::Unknown;
+                        }
+                    }
+                    // @compile 注解本身不贡献类型
+                    return AssumedType::Unknown;
+                }
                 _ => dynamic, // Inherit dynamic status for other annotations
             };
+            // 对非 @compile 注解或在断点分析时的 @compile 注解执行常规分析
             for child in &node.children {
                 assumed_type = analyze_node(
                     child,
                     context,
-                    warnings,
-                    is_dynamic,
+                    errors,     // Pass errors
+                    warnings,   // Pass warnings
+                    is_dynamic, // 使用计算出的 dynamic 状态
                     break_at_position,
                     context_at_break,
+                    dir_stack,
                 );
                 if context_at_break.is_some() {
                     return AssumedType::Unknown;
@@ -421,7 +638,7 @@ fn analyze_node<'t>(
             // Check definition before potentially breaking
             if context.get_variable(var_name).is_none() {
                 if !dynamic {
-                    warnings.push(AnalyzeError::UndefinedVariable(node));
+                    errors.push(AnalyzeError::UndefinedVariable(node)); // 使用 errors Vec
                 }
             }
             // Return variable type or Unknown
@@ -439,10 +656,12 @@ fn analyze_node<'t>(
                 assumed_type = analyze_node(
                     child,
                     context,
-                    warnings,
+                    errors,   // Pass errors
+                    warnings, // Pass warnings
                     dynamic,
                     break_at_position,
                     context_at_break,
+                    dir_stack,
                 );
                 if context_at_break.is_some() {
                     // Don't pop frame if break happened inside, context needs it
@@ -463,10 +682,12 @@ fn analyze_node<'t>(
                 analyze_tuple_params(
                     params,
                     context,
-                    warnings,
+                    errors,   // Pass errors
+                    warnings, // Pass warnings
                     dynamic,
                     break_at_position,
                     context_at_break,
+                    dir_stack,
                 );
                 if context_at_break.is_some() {
                     // 如果在参数分析中中断，不弹出上下文
@@ -483,10 +704,12 @@ fn analyze_node<'t>(
                 analyze_node(
                     &node.children[1],
                     context,
-                    warnings,
+                    errors,   // Pass errors
+                    warnings, // Pass warnings
                     dynamic,
                     break_at_position,
                     context_at_break,
+                    dir_stack,
                 );
                 if context_at_break.is_some() {
                     // 如果在 Lambda 体分析中中断，不弹出上下文
@@ -518,10 +741,12 @@ fn analyze_node<'t>(
                     analyze_node(
                         &node.children[1],
                         context,
-                        warnings,
+                        errors,   // Pass errors
+                        warnings, // Pass warnings
                         dynamic,
                         break_at_position,
                         context_at_break,
+                        dir_stack,
                     );
                     if context_at_break.is_some() {
                         // 如果在 Lambda 体分析中中断，不弹出上下文
@@ -542,10 +767,12 @@ fn analyze_node<'t>(
                 analyze_node(
                     func_node,
                     context,
-                    warnings,
+                    errors,   // Pass errors
+                    warnings, // Pass warnings
                     dynamic,
                     break_at_position,
                     context_at_break,
+                    dir_stack,
                 );
                 if context_at_break.is_some() {
                     return AssumedType::Unknown;
@@ -556,10 +783,12 @@ fn analyze_node<'t>(
                 analyze_node(
                     &node.children[1],
                     context,
-                    warnings,
+                    errors,   // Pass errors
+                    warnings, // Pass warnings
                     dynamic,
                     break_at_position,
                     context_at_break,
+                    dir_stack,
                 );
                 if context_at_break.is_some() {
                     return AssumedType::Unknown;
@@ -574,10 +803,12 @@ fn analyze_node<'t>(
                 last_type = analyze_node(
                     child,
                     context,
-                    warnings,
+                    errors,   // Pass errors
+                    warnings, // Pass warnings
                     dynamic,
                     break_at_position,
                     context_at_break,
+                    dir_stack,
                 );
                 if context_at_break.is_some() {
                     return AssumedType::Unknown;
@@ -591,10 +822,12 @@ fn analyze_node<'t>(
                 let assumed_type = analyze_node(
                     &node.children[1],
                     context,
-                    warnings,
+                    errors,   // Pass errors
+                    warnings, // Pass warnings
                     dynamic,
                     break_at_position,
                     context_at_break,
+                    dir_stack,
                 );
                 if context_at_break.is_some() {
                     return AssumedType::Unknown;
@@ -604,10 +837,12 @@ fn analyze_node<'t>(
                 analyze_node(
                     &node.children[0],
                     context,
-                    warnings,
+                    errors,   // Pass errors
+                    warnings, // Pass warnings
                     dynamic,
                     break_at_position,
                     context_at_break,
+                    dir_stack,
                 );
                 if context_at_break.is_some() {
                     return AssumedType::Unknown;
@@ -626,10 +861,12 @@ fn analyze_node<'t>(
                 analyze_node(
                     condition,
                     context,
-                    warnings,
+                    errors,   // Pass errors
+                    warnings, // Pass warnings
                     dynamic,
                     break_at_position,
                     context_at_break,
+                    dir_stack,
                 );
                 if context_at_break.is_some() {
                     return AssumedType::Unknown;
@@ -641,10 +878,12 @@ fn analyze_node<'t>(
                 then_type = analyze_node(
                     &node.children[1],
                     context,
-                    warnings,
+                    errors,   // Pass errors
+                    warnings, // Pass warnings
                     dynamic,
                     break_at_position,
                     context_at_break,
+                    dir_stack,
                 );
                 if context_at_break.is_some() {
                     return AssumedType::Unknown;
@@ -655,10 +894,12 @@ fn analyze_node<'t>(
                 analyze_node(
                     &node.children[2],
                     context,
-                    warnings,
+                    errors,   // Pass errors
+                    warnings, // Pass warnings
                     dynamic,
                     break_at_position,
                     context_at_break,
+                    dir_stack,
                 );
                 if context_at_break.is_some() {
                     return AssumedType::Unknown;
@@ -673,10 +914,12 @@ fn analyze_node<'t>(
                 analyze_node(
                     condition,
                     context,
-                    warnings,
+                    errors,   // Pass errors
+                    warnings, // Pass warnings
                     dynamic,
                     break_at_position,
                     context_at_break,
+                    dir_stack,
                 );
                 if context_at_break.is_some() {
                     return AssumedType::Unknown;
@@ -688,10 +931,12 @@ fn analyze_node<'t>(
                 body_type = analyze_node(
                     &node.children[1],
                     context,
-                    warnings,
+                    errors,   // Pass errors
+                    warnings, // Pass warnings
                     dynamic,
                     break_at_position,
                     context_at_break,
+                    dir_stack,
                 );
                 if context_at_break.is_some() {
                     return AssumedType::Unknown;
@@ -705,10 +950,12 @@ fn analyze_node<'t>(
                 let ret_type = analyze_node(
                     value,
                     context,
-                    warnings,
+                    errors,   // Pass errors
+                    warnings, // Pass warnings
                     dynamic,
                     break_at_position,
                     context_at_break,
+                    dir_stack,
                 );
                 if context_at_break.is_some() {
                     return AssumedType::Unknown;
@@ -723,10 +970,12 @@ fn analyze_node<'t>(
                 last_type = analyze_node(
                     child,
                     context,
-                    warnings,
+                    errors,   // Pass errors
+                    warnings, // Pass warnings
                     dynamic,
                     break_at_position,
                     context_at_break,
+                    dir_stack,
                 );
                 if context_at_break.is_some() {
                     return AssumedType::Unknown;
@@ -740,10 +989,12 @@ fn analyze_node<'t>(
                 analyze_node(
                     child,
                     context,
-                    warnings,
+                    errors,   // Pass errors
+                    warnings, // Pass warnings
                     dynamic,
                     break_at_position,
                     context_at_break,
+                    dir_stack,
                 );
                 if context_at_break.is_some() {
                     return AssumedType::Tuple;
@@ -756,16 +1007,18 @@ fn analyze_node<'t>(
                 analyze_node(
                     &node.children[0],
                     context,
-                    warnings,
+                    errors,   // Pass errors
+                    warnings, // Pass warnings
                     dynamic,
                     break_at_position,
                     context_at_break,
+                    dir_stack,
                 ); // Object
                 if context_at_break.is_some() {
                     return AssumedType::Unknown;
                 }
                 // Don't analyze the attribute name itself as an expression usually
-                // analyze_node(&node.children[1], context, warnings, dynamic, break_at_position, context_at_break); // Attribute
+                // analyze_node(&node.children[1], context, errors, warnings, dynamic, break_at_position, context_at_break); // Attribute
                 // if context_at_break.is_some() { return AssumedType::Unknown; }
             }
             // TODO: Could try to infer attribute type if object type is known
@@ -776,10 +1029,12 @@ fn analyze_node<'t>(
                 analyze_node(
                     &node.children[0],
                     context,
-                    warnings,
+                    errors,   // Pass errors
+                    warnings, // Pass warnings
                     dynamic,
                     break_at_position,
                     context_at_break,
+                    dir_stack,
                 ); // Object
                 if context_at_break.is_some() {
                     return AssumedType::Unknown;
@@ -787,10 +1042,12 @@ fn analyze_node<'t>(
                 analyze_node(
                     &node.children[1],
                     context,
-                    warnings,
+                    errors,   // Pass errors
+                    warnings, // Pass warnings
                     dynamic,
                     break_at_position,
                     context_at_break,
+                    dir_stack,
                 ); // Index
                 if context_at_break.is_some() {
                     return AssumedType::Unknown;
@@ -804,10 +1061,12 @@ fn analyze_node<'t>(
                 let target_type = analyze_node(
                     target,
                     context,
-                    warnings,
+                    errors,   // Pass errors
+                    warnings, // Pass warnings
                     dynamic,
                     break_at_position,
                     context_at_break,
+                    dir_stack,
                 );
                 if context_at_break.is_some() {
                     return AssumedType::Unknown;
@@ -820,49 +1079,47 @@ fn analyze_node<'t>(
             let _ = analyze_node(
                 &node.children[0],
                 context,
-                warnings,
+                errors,   // Pass errors
+                warnings, // Pass warnings
                 dynamic,
                 break_at_position,
                 context_at_break,
+                dir_stack,
             ); // Key
             if context_at_break.is_some() {
-                return AssumedType::Unknown;
+                return AssumedType::KeyVal; // Return KeyVal even if break occurred inside
             }
             let _ = analyze_node(
                 &node.children[1],
                 context,
-                warnings,
+                errors,   // Pass errors
+                warnings, // Pass warnings
                 dynamic,
                 break_at_position,
                 context_at_break,
+                dir_stack,
             ); // Value
             if context_at_break.is_some() {
-                return AssumedType::Unknown;
+                return AssumedType::KeyVal; // Return KeyVal even if break occurred inside
             }
             return AssumedType::KeyVal; // Return KeyVal type
         }
         ASTNodeType::Set => {
-            let _ = analyze_node(
-                &node.children[0],
-                context,
-                warnings,
-                dynamic,
-                break_at_position,
-                context_at_break,
-            ); // Set item
-            if context_at_break.is_some() {
-                return AssumedType::Unknown;
-            }
-            let _ = analyze_node(
-                &node.children[1],
-                context,
-                warnings,
-                dynamic,
-                break_at_position,
-                context_at_break,
-            ); // Set item
-            if context_at_break.is_some() {
-                return AssumedType::Unknown;
+            for child in &node.children {
+                // Iterate through all children for Set
+                analyze_node(
+                    child,
+                    context,
+                    errors,   // Pass errors
+                    warnings, // Pass warnings
+                    dynamic,
+                    break_at_position,
+                    context_at_break,
+                    dir_stack,
+                );
+                if context_at_break.is_some() {
+                    return AssumedType::Set; // Return Set even if break occurred inside
+                }
             }
             return AssumedType::Set; // Return Set type
         }
@@ -870,24 +1127,28 @@ fn analyze_node<'t>(
             let _ = analyze_node(
                 &node.children[0],
                 context,
-                warnings,
+                errors,   // Pass errors
+                warnings, // Pass warnings
                 dynamic,
                 break_at_position,
                 context_at_break,
-            ); // Set item
+                dir_stack,
+            ); // Name (usually string/identifier, not analyzed as variable)
             if context_at_break.is_some() {
-                return AssumedType::Unknown;
+                return AssumedType::NamedArgument; // Return NamedArgument even if break occurred inside
             }
             let _ = analyze_node(
                 &node.children[1],
                 context,
-                warnings,
+                errors,   // Pass errors
+                warnings, // Pass warnings
                 dynamic,
                 break_at_position,
                 context_at_break,
-            ); // Set item
+                dir_stack,
+            ); // Value
             if context_at_break.is_some() {
-                return AssumedType::Unknown;
+                return AssumedType::NamedArgument; // Return NamedArgument even if break occurred inside
             }
             return AssumedType::NamedArgument; // Return NamedArgument type
         }
@@ -905,10 +1166,12 @@ fn analyze_node<'t>(
                 last_type = analyze_node(
                     child,
                     context,
-                    warnings,
+                    errors,   // Pass errors
+                    warnings, // Pass warnings
                     dynamic,
                     break_at_position,
                     context_at_break,
+                    dir_stack,
                 );
                 if context_at_break.is_some() {
                     return AssumedType::Unknown;
@@ -923,10 +1186,12 @@ fn analyze_node<'t>(
 fn analyze_tuple_params<'t>(
     params: &'t ASTNode,
     context: &mut VariableContext,
-    warnings: &mut Vec<AnalyzeError<'t>>,
+    errors: &mut Vec<AnalyzeError<'t>>,  // Renamed
+    warnings: &mut Vec<AnalyzeWarn<'t>>, // Added
     dynamic: bool,
     break_at_position: Option<usize>,
     context_at_break: &mut Option<VariableContext>,
+    dir_stack: &mut DirStack
 ) {
     // Check break condition before processing parameters
     if context_at_break.is_some() {
@@ -965,10 +1230,12 @@ fn analyze_tuple_params<'t>(
                         let assumed_type = analyze_node(
                             &param.children[1],
                             context,
-                            warnings,
+                            errors,   // Pass errors
+                            warnings, // Pass warnings
                             dynamic,
                             break_at_position,
                             context_at_break,
+                            dir_stack,
                         );
                         if context_at_break.is_some() {
                             return;
@@ -986,10 +1253,12 @@ fn analyze_tuple_params<'t>(
                             analyze_node(
                                 &param.children[0],
                                 context,
-                                warnings,
+                                errors,   // Pass errors
+                                warnings, // Pass warnings
                                 dynamic,
                                 break_at_position,
                                 context_at_break,
+                                dir_stack,
                             );
                             if context_at_break.is_some() {
                                 return;
@@ -1002,10 +1271,12 @@ fn analyze_tuple_params<'t>(
                     analyze_node(
                         param,
                         context,
-                        warnings,
+                        errors,   // Pass errors
+                        warnings, // Pass warnings
                         dynamic,
                         break_at_position,
                         context_at_break,
+                        dir_stack,
                     );
                     if context_at_break.is_some() {
                         return;

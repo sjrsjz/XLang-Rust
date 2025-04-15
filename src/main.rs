@@ -2,7 +2,7 @@ mod parser;
 mod lsp;
 mod vm;
 use colored::Colorize;
-use parser::analyzer::analyze_ast;
+use dir_stack::DirStack;
 use rustyline::highlight::CmdKind;
 use vm::executor::variable::VMInstructions;
 use vm::executor::variable::VMLambda;
@@ -10,25 +10,25 @@ use vm::executor::variable::VMTuple;
 
 use vm::gc::gc::GCRef;
 use vm::instruction_set::VMInstructionPackage;
-use vm::ir::DebugInfo;
 use vm::ir::IRPackage;
-use vm::ir::IR;
 use vm::ir_translator::IRTranslator;
 
-use self::parser::ast::ast_token_stream;
-use self::parser::ast::build_ast;
+
 use self::parser::lexer::{lexer, Token, TokenType};
 
 use self::vm::gc::gc::GCSystem;
 
 use self::vm::executor::variable::*;
 use self::vm::executor::vm::*;
-use self::vm::ir::Functions;
-use self::vm::ir_generator::ir_generator;
 
 use clap::{Parser, Subcommand};
 use std::fs;
+use std::path::Path;
 use std::path::PathBuf;
+
+mod compile;
+mod dir_stack;
+use compile::{build_code, compile_to_bytecode};
 
 #[derive(Parser)]
 #[command(author, version, about, long_about = None)]
@@ -89,55 +89,10 @@ enum Commands {
     },
 }
 
-// Compile code and generate intermediate representation
-fn build_code(code: &str) -> Result<IRPackage, String> {
-    let tokens = lexer::tokenize(code);
-    let tokens = lexer::reject_comment(&tokens);
-    let gathered = ast_token_stream::from_stream(&tokens);
-    let ast = match build_ast(gathered) {
-        Ok(ast) => ast,
-        Err(err_token) => {
-            return Err(err_token.format(&tokens, code.to_string()).to_string());
-        }
-    };
 
-    let analyse_result = analyze_ast(&ast, None);
-    for error in &analyse_result.errors {
-        println!("{}", error.format(code.to_string()).bright_red());
-    }
-    if !analyse_result.errors.is_empty() {
-        return Err("AST analysis failed".to_string());
-    }
-
-    let namespace = ir_generator::NameSpace::new("Main".to_string(), None);
-    let mut functions = Functions::new();
-    let mut ir_generator = ir_generator::IRGenerator::new(&mut functions, namespace);
-
-    let ir = match ir_generator.generate(&ast) {
-        Ok(ir) => ir,
-        Err(err) => {
-            return Err(format!("Error: {:?}", err));
-        }
-    };
-
-    let mut ir = ir;
-    ir.push((DebugInfo { code_position: 0 }, IR::Return));
-    functions.append("__main__".to_string(), ir);
-
-    Ok(functions.build_instructions(Some(code.to_string())))
-}
-
-// Compile IR to bytecode
-fn compile_to_bytecode(package: &IRPackage) -> Result<VMInstructionPackage, String> {
-    let mut translator = IRTranslator::new(package);
-    match translator.translate() {
-        Ok(_) => Ok(translator.get_result()),
-        Err(e) => Err(format!("IR translation failed: {:?}", e)),
-    }
-}
 
 // Execute compiled code
-fn execute_ir(package: VMInstructionPackage) -> Result<(), VMError> {
+fn execute_ir(package: VMInstructionPackage, _dir_stack: &mut DirStack) -> Result<(), VMError> {
     let mut coroutine_pool = VMCoroutinePool::new(true);
     let mut gc_system = GCSystem::new(None);
 
@@ -251,7 +206,7 @@ impl VMInstructionPackage {
 
 fn run_file(path: &PathBuf) -> Result<(), String> {
     let extension = path.extension().and_then(|e| e.to_str()).unwrap_or("");
-
+    let mut dir_stack = DirStack::new(Some(&path.parent().unwrap_or_else(|| Path::new(".")).to_path_buf())).unwrap();
     match extension {
         "xir" => {
             // Execute IR file
@@ -270,7 +225,7 @@ fn run_file(path: &PathBuf) -> Result<(), String> {
                         .to_string());
                     };
 
-                    match execute_ir(result) {
+                    match execute_ir(result, &mut dir_stack) {
                         Ok(_) => Ok(()),
                         Err(e) => Err(format!("Execution error: {}", e.to_string())
                             .bright_red()
@@ -285,7 +240,7 @@ fn run_file(path: &PathBuf) -> Result<(), String> {
         "xbc" => {
             // Execute bytecode file directly
             match VMInstructionPackage::read_from_file(path.to_str().unwrap()) {
-                Ok(bytecode) => match execute_ir(bytecode) {
+                Ok(bytecode) => match execute_ir(bytecode, &mut dir_stack) {
                     Ok(_) => Ok(()),
                     Err(e) => Err(format!("Execution error: {}", e.to_string())
                         .bright_red()
@@ -299,7 +254,7 @@ fn run_file(path: &PathBuf) -> Result<(), String> {
         _ => {
             // Assume it's a source file, compile and execute
             match fs::read_to_string(path) {
-                Ok(code) => match build_code(&code) {
+                Ok(code) => match build_code(&code, &mut dir_stack) {
                     Ok(package) => {
                         let mut translator = IRTranslator::new(&package);
                         let translate_result = translator.translate();
@@ -313,7 +268,7 @@ fn run_file(path: &PathBuf) -> Result<(), String> {
                             .bright_red()
                             .to_string());
                         };
-                        match execute_ir(result) {
+                        match execute_ir(result, &mut dir_stack) {
                             Ok(_) => Ok(()),
                             Err(e) => Err(format!("Execution error: {}", e.to_string())
                                 .bright_red()
@@ -381,6 +336,8 @@ fn ir_to_bytecode_file(input: &PathBuf, output: Option<PathBuf>) -> Result<(), S
 }
 
 fn compile_file(input: &PathBuf, output: Option<PathBuf>, bytecode: bool) -> Result<(), String> {
+
+    let mut dir_stack = DirStack::new(Some(&input.parent().unwrap_or_else(|| Path::new(".")).to_path_buf())).unwrap();
     // Read source code
     let code = match fs::read_to_string(input) {
         Ok(content) => content,
@@ -392,7 +349,7 @@ fn compile_file(input: &PathBuf, output: Option<PathBuf>, bytecode: bool) -> Res
     };
 
     // Compile source code to IR
-    let ir_package = match build_code(&code) {
+    let ir_package = match build_code(&code, &mut dir_stack) {
         Ok(p) => p,
         Err(e) => return Err(format!("Compilation error: {}", e).bright_red().to_string()),
     };
@@ -722,6 +679,7 @@ fn run_repl() -> Result<(), String> {
     let mut input_arguments = gc_system.new_object(VMTuple::new(&mut vec![]));
 
     let mut line_count = 0;
+    let mut dir_stack = DirStack::new(None).unwrap();
 
     loop {
         // 开始一个新的多行输入
@@ -797,7 +755,7 @@ fn run_repl() -> Result<(), String> {
                 }
 
                 // 处理完整输入
-                match build_code(&input_buffer) {
+                match build_code(&input_buffer, &mut dir_stack) {
                     Ok(package) => {
                         let mut translator = IRTranslator::new(&package);
                         if translator.translate().is_ok() {

@@ -1,11 +1,13 @@
 use std::collections::{HashMap, HashSet}; // 添加 HashSet
 use std::io::{BufRead, Write};
+use std::path::PathBuf;
 use std::sync::{Arc, Mutex};
 use std::panic; // 添加 panic 模块
 
 use log::{debug, error, info, warn};
 use serde_json::Value;
 
+use crate::dir_stack::DirStack;
 use crate::lsp::semantic::encode_semantic_tokens;
 use crate::parser::analyzer;
 use crate::parser::ast::build_ast;
@@ -297,8 +299,11 @@ impl LspServer {
             // 2. 将 LSP Position 转换为字节偏移
             if let Some(byte_offset) = position_to_byte_offset(&document.content, position.clone())
             {
+                let file_path = document.uri.clone();
+                let pathbuf = PathBuf::from(file_path);
+                let mut dir_stack = DirStack::new(Some(&pathbuf)).unwrap();
                 // 3. 调用分析器获取特定位置的上下文
-                let analysis_output = analyzer::analyze_ast(&ast, Some(byte_offset));
+                let analysis_output = analyzer::analyze_ast(&ast, Some(byte_offset), &mut dir_stack);
 
                 // 4. 如果分析器在断点处捕获了上下文，则提取变量
                 if let Some(context) = analysis_output.context_at_break {

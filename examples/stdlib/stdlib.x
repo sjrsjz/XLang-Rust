@@ -8,6 +8,7 @@ try_catch := (@dynamic (__stdlib_root!) -> dyn import(__stdlib_root + "/try_catc
 promise := (@dynamic (__stdlib_root!) -> dyn import(__stdlib_root + "/promise.xbc"))();
 colored_text := (@dynamic (__stdlib_root!) -> dyn import(__stdlib_root + "/colored_text.xbc"))();
 interface := (@dynamic (__stdlib_root!) -> dyn import(__stdlib_root + "/interface.xbc"))();
+match := (@dynamic (__stdlib_root!) -> dyn import(__stdlib_root + "/match.xbc"))();
 
 return {
     builtins!,
@@ -15,4 +16,5 @@ return {
     promise!,
     colored_text!,
     interface!,
+    match!,
 }

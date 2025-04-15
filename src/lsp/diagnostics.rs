@@ -1,8 +1,11 @@
+use std::path::PathBuf;
+
 use log::{debug, error, info};
 
 use super::document::TextDocument;
 use super::protocol::*;
 use super::semantic::SemanticTokenTypes;
+use crate::dir_stack::DirStack;
 use crate::lsp::semantic::do_semantic;
 use crate::parser::analyzer::analyze_ast;
 use crate::parser::ast::ast_token_stream;
@@ -82,7 +85,24 @@ pub fn validate_document(document: &TextDocument) -> (Vec<Diagnostic>, Option<Ve
             // 解析成功，没有错误
             info!("文档解析成功: {}", document.uri);
             info!("分析变量定义: {}", document.uri);
-            let result = analyze_ast(&ast, None);
+            let pathbuf = PathBuf::from(document.uri.clone());
+            let dir_stack = DirStack::new(Some(&pathbuf));
+            if dir_stack.is_err() {
+                error!("目录栈初始化失败: {}", dir_stack.err().unwrap());
+                return (vec![Diagnostic {
+                    range: Range {
+                        start: Position { line: 0, character: 0 },
+                        end: Position { line: 0, character: 1 },
+                    },
+                    severity: Some(DiagnosticSeverity::Error),
+                    code: None,
+                    source: Some("xlang-lsp".to_string()),
+                    message: "目录栈初始化失败".to_string(),
+                    related_information: None,
+                }], None);
+            }
+            let mut dir_stack = dir_stack.unwrap();
+            let result = analyze_ast(&ast, None, &mut dir_stack);
             for error in result.errors{
                 match error {
                     crate::parser::analyzer::AnalyzeError::UndefinedVariable(var) => {

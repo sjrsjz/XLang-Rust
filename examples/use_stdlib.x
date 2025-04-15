@@ -63,3 +63,15 @@ object_A := bind ObjectA::{
 
 binded := #interface_A object_A;
 binded.say();
+
+
+match := #(stdlib.match.match_alias) cases => {
+    A => (x?) -> {
+        @dynamic builtins.print("Matched case A with value:", x);
+    },
+    B => (x?) -> {
+        @dynamic builtins.print("Matched case B with value:", x);
+    },
+};
+
+match(B::1)
