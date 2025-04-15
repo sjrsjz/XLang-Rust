@@ -41,6 +41,7 @@ pub struct ResponseMessage {
 pub enum RequestId {
     Number(i64),
     String(String),
+    Null,
 }
 
 /// LSP 响应错误
@@ -59,7 +60,7 @@ pub mod error_codes {
     pub const INVALID_REQUEST: i32 = -32600;
     pub const METHOD_NOT_FOUND: i32 = -32601;
     pub const INVALID_PARAMS: i32 = -32602;
-    pub const _INTERNAL_ERROR: i32 = -32603;
+    pub const INTERNAL_ERROR: i32 = -32603;
     // LSP 特定错误代码
     pub const _SERVER_NOT_INITIALIZED: i32 = -32002;
     pub const _UNKNOWN_ERROR_CODE: i32 = -32001;

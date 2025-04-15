@@ -138,28 +138,84 @@ fn process_node(
             ASTNodeType::Let(_) => {
                 // 标记当前token为variable
                 let start = node.start_token.as_ref().map_or(0, |t| t.position);
-                let end = start + node.start_token.as_ref().map_or(0, |t| t.origin_token.len());
+                let end = start
+                    + node
+                        .start_token
+                        .as_ref()
+                        .map_or(0, |t| t.origin_token.len());
                 for i in start..end {
                     if i < tokens.len() {
                         tokens[i] = SemanticTokenTypes::Variable;
                     }
                 }
             }
-            // ASTNodeType::Annotation(annotation) => {
-            //     let start = node.start_token.as_ref().map_or(0, |t| t.position);
-            //     let end = start + node.start_token.as_ref().map_or(0, |t| t.origin_token.len()) + annotation.len();
-            //     for i in start..end {
-            //         if i < tokens.len() {
-            //             tokens[i] = SemanticTokenTypes::Annotation;
-            //         }
-            //     }
-            // }
             _ => {}
         };
     }
 
     for child in &node.children {
         process_node(child, tokens, code)?;
+    }
+
+    match &node.node_type {
+        ASTNodeType::LambdaCall => {
+            // 如果子节点是简单的变量，标记为LambdaCall
+            if let ASTNodeType::Variable(_) = node.children[0].node_type {
+                let start = node.children[0]
+                    .start_token
+                    .as_ref()
+                    .map_or(0, |t| t.position);
+                let end = start
+                    + node.children[0]
+                        .end_token
+                        .as_ref()
+                        .map_or(0, |t| t.origin_token.len());
+                for i in start..end {
+                    if i < tokens.len() {
+                        tokens[i] = SemanticTokenTypes::LambdaCall;
+                    }
+                }
+            }
+        }
+        ASTNodeType::AsyncLambdaCall => {
+            // 如果子节点是简单的变量，标记为AsyncLambdaCall
+            if let ASTNodeType::Variable(_) = node.children[0].node_type {
+                let start = node.children[0]
+                    .start_token
+                    .as_ref()
+                    .map_or(0, |t| t.position);
+                let end = start
+                    + node.children[0]
+                        .end_token
+                        .as_ref()
+                        .map_or(0, |t| t.origin_token.len());
+                for i in start..end {
+                    if i < tokens.len() {
+                        tokens[i] = SemanticTokenTypes::AsyncLambdaCall;
+                    }
+                }
+            }
+        }
+        ASTNodeType::GetAttr => {
+            // 如果属性是简单的string，标记为GetAttr
+            if let ASTNodeType::String(_) = node.children[1].node_type {
+                let start = node.children[1]
+                    .start_token
+                    .as_ref()
+                    .map_or(0, |t| t.position);
+                let end = start
+                    + node.children[1]
+                        .end_token
+                        .as_ref()
+                        .map_or(0, |t| t.origin_token.len());
+                for i in start..end {
+                    if i < tokens.len() {
+                        tokens[i] = SemanticTokenTypes::GetAttr;
+                    }
+                }
+            }
+        }
+        _ => {}
     }
 
     Ok(())
@@ -245,7 +301,7 @@ pub(super) fn encode_semantic_tokens(tokens: &[SemanticTokenTypes], text: &str) 
             SemanticTokenTypes::Raise => Some(40),
             SemanticTokenTypes::If => Some(41),
             SemanticTokenTypes::While => Some(42),
-            SemanticTokenTypes::Modifier => Some(16),
+            SemanticTokenTypes::Modifier => Some(15),
             SemanticTokenTypes::NamedTo => Some(43),
             SemanticTokenTypes::Break => Some(44),
             SemanticTokenTypes::Continue => Some(45),
@@ -256,7 +312,8 @@ pub(super) fn encode_semantic_tokens(tokens: &[SemanticTokenTypes], text: &str) 
             SemanticTokenTypes::Set => Some(50),
             SemanticTokenTypes::Map => Some(51),
             SemanticTokenTypes::Comment => Some(17),
-            SemanticTokenTypes::Annotation => Some(14),}
+            SemanticTokenTypes::Annotation => Some(14),
+        }
     };
 
     #[allow(dead_code)]
@@ -283,7 +340,7 @@ pub(super) fn encode_semantic_tokens(tokens: &[SemanticTokenTypes], text: &str) 
     const MOD_DEFAULT: u32 = 1 << 9;
 
     let get_token_modifiers = |token_type: &SemanticTokenTypes| -> u32 {
-       match token_type {
+        match token_type {
             SemanticTokenTypes::KeyValue => MOD_DEFINITION | MOD_DECLARATION, // KeyValue 通常是定义
             SemanticTokenTypes::Let => MOD_DECLARATION | MOD_DEFINITION,
             SemanticTokenTypes::Variable => MOD_NONE, // 变量使用可能没有，声明时可能有
@@ -292,10 +349,10 @@ pub(super) fn encode_semantic_tokens(tokens: &[SemanticTokenTypes], text: &str) 
             SemanticTokenTypes::Yield => MOD_ASYNC,
             SemanticTokenTypes::Assign => MOD_MODIFICATION,
             SemanticTokenTypes::Operation => MOD_MODIFICATION, // 不确定，看具体操作
-            SemanticTokenTypes::Modifier => MOD_NONE, // 修饰符本身通常不带修饰符
-            SemanticTokenTypes::GetAttr => MOD_READONLY, // 通常是读取
-            SemanticTokenTypes::IndexOf => MOD_READONLY, // 通常是读取
-            SemanticTokenTypes::Range => MOD_READONLY, // 范围通常是只读的
+            SemanticTokenTypes::Modifier => MOD_NONE,          // 修饰符本身通常不带修饰符
+            SemanticTokenTypes::GetAttr => MOD_READONLY,       // 通常是读取
+            SemanticTokenTypes::IndexOf => MOD_READONLY,       // 通常是读取
+            SemanticTokenTypes::Range => MOD_READONLY,         // 范围通常是只读的
             _ => MOD_NONE,
         }
     };
@@ -314,17 +371,15 @@ pub(super) fn encode_semantic_tokens(tokens: &[SemanticTokenTypes], text: &str) 
     let mut current_token_len_utf16 = 0;
 
     // Helper closure to finalize and push a token
-    let finalize_token = |
-        result: &mut Vec<u32>,
-        token_type_opt: Option<SemanticTokenTypes>,
-        start_line: u32,
-        start_char: u32,
-        len: u32,
-        prev_line: &mut u32,
-        prev_char: &mut u32,
-    | {
+    let finalize_token = |result: &mut Vec<u32>,
+                          token_type_opt: Option<SemanticTokenTypes>,
+                          start_line: u32,
+                          start_char: u32,
+                          len: u32,
+                          prev_line: &mut u32,
+                          prev_char: &mut u32| {
         if let Some(token_type) = token_type_opt {
-             // 仅当 token 类型有效（非Null且有映射）时才生成
+            // 仅当 token 类型有效（非Null且有映射）时才生成
             if let Some(lsp_token_index) = get_token_type_index(&token_type) {
                 let delta_line = start_line - *prev_line;
                 let delta_start_char = if delta_line == 0 {
@@ -347,7 +402,6 @@ pub(super) fn encode_semantic_tokens(tokens: &[SemanticTokenTypes], text: &str) 
             }
         }
     };
-
 
     // --- Iterate through characters ---
     for (byte_idx, ch) in text.char_indices() {
@@ -391,7 +445,7 @@ pub(super) fn encode_semantic_tokens(tokens: &[SemanticTokenTypes], text: &str) 
 
         if type_changed {
             // Finalize the *previous* token (if one exists)
-             finalize_token(
+            finalize_token(
                 &mut result,
                 current_original_token_type,
                 token_start_line,
@@ -414,11 +468,11 @@ pub(super) fn encode_semantic_tokens(tokens: &[SemanticTokenTypes], text: &str) 
         }
 
         // --- Advance character position (only for non-newline chars) ---
-         current_char_utf16 += char_len_utf16;
+        current_char_utf16 += char_len_utf16;
     }
 
     // --- Finalize the very last token after the loop ---
-     finalize_token(
+    finalize_token(
         &mut result,
         current_original_token_type,
         token_start_line,

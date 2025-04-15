@@ -1,6 +1,7 @@
 use std::collections::{HashMap, HashSet}; // 添加 HashSet
 use std::io::{BufRead, Write};
 use std::sync::{Arc, Mutex};
+use std::panic; // 添加 panic 模块
 
 use log::{debug, error, info, warn};
 use serde_json::Value;
@@ -492,22 +493,62 @@ pub fn run_lsp_server<R: BufRead, W: Write>(
             // 请求
             match serde_json::from_str::<RequestMessage>(&message) {
                 Ok(request) => {
-                    let response = handle_request(server.clone(), request.clone());
-                    send_message(&mut writer, &response)?;
+                    // 使用 catch_unwind 包裹请求处理
+                    let result = panic::catch_unwind(panic::AssertUnwindSafe(|| {
+                        handle_request(server.clone(), request.clone())
+                    }));
 
-                    // 如果是退出请求并且服务器状态是关闭，则退出循环
-                    if request.method == "exit" {
-                        let server = server.lock().unwrap();
-                        if server.state == ServerState::ShutDown {
-                            return Ok(());
+                    match result {
+                        Ok(response) => {
+                            if let Err(e) = send_message(&mut writer, &response) {
+                                error!("Failed to send response: {}", e);
+                                // Consider breaking or returning error if sending fails critically
+                            }
+
+                            // 如果是退出请求并且服务器状态是关闭，则退出循环
+                            if request.method == "exit" {
+                                let server_guard = server.lock().unwrap();
+                                if server_guard.state == ServerState::ShutDown {
+                                    info!("Exit request received and server is shutdown. Exiting.");
+                                    return Ok(());
+                                }
+                            }
+                        }
+                        Err(panic_payload) => {
+                            error!(
+                                "Panic occurred while handling request (ID: {:?} Method: {}): {:?}",
+                                request.id, request.method, panic_payload
+                            );
+                            // 发送内部错误响应
+                            let error_response = ResponseMessage {
+                                jsonrpc: "2.0".to_string(),
+                                id: request.id.clone(),
+                                result: None,
+                                error: Some(ResponseError {
+                                    code: error_codes::INTERNAL_ERROR,
+                                    message: "Internal server error during request handling."
+                                        .to_string(),
+                                    data: None,
+                                }),
+                            };
+                            if let Err(e) = send_message(&mut writer, &error_response) {
+                                error!("Failed to send internal error response: {}", e);
+                            }
                         }
                     }
                 }
                 Err(e) => {
                     error!("Failed to parse request: {}", e);
+                    // 尝试从原始 JSON 中提取 ID
+                    let id = serde_json::from_str::<Value>(&message)
+                        .ok()
+                        .and_then(|v| v.get("id").cloned())
+                        .and_then(|id_val| serde_json::from_value::<RequestId>(id_val).ok())
+                        .unwrap_or(RequestId::Null); // 如果无法解析ID，则使用 Null
+
                     let error_response = ResponseMessage {
                         jsonrpc: "2.0".to_string(),
-                        id: RequestId::Number(-1),
+                        id, // 使用提取的或默认的 ID
                         result: None,
                         error: Some(ResponseError {
                             code: error_codes::PARSE_ERROR,
@@ -515,21 +556,55 @@ pub fn run_lsp_server<R: BufRead, W: Write>(
                             data: None,
                         }),
                     };
-                    send_message(&mut writer, &error_response)?;
+                    if let Err(e) = send_message(&mut writer, &error_response) {
+                        error!("Failed to send parse error response: {}", e);
+                    }
                 }
             }
         } else {
             // 通知
             match serde_json::from_str::<NotificationMessage>(&message) {
                 Ok(notification) => {
-                    handle_notification(server.clone(), notification, &mut writer)?;
+                    // 使用 catch_unwind 包裹通知处理
+                    let result = panic::catch_unwind(panic::AssertUnwindSafe(|| {
+                        // 需要传递 writer 的可变引用，但 catch_unwind 要求闭包是 FnOnce
+                        // 解决方案：克隆 Arc<Mutex<LspServer>>，但在闭包外部处理 writer
+                        // 或者，如果 handle_notification 不需要 writer，则移除它
+                        // 假设 handle_notification 可能需要 writer 发送诊断等，我们需要一种方法
+                        // 暂时将 writer 移出闭包，如果 handle_notification 确实需要，需要重构
+                        handle_notification(server.clone(), notification.clone(), &mut writer)
+                    }));
+
+                    match result {
+                        Ok(Ok(())) => {
+                            // 通知处理成功
+                        }
+                        Ok(Err(e)) => {
+                            // 通知处理函数返回错误
+                            error!(
+                                "Error handling notification (Method: {}): {}",
+                                notification.method, e
+                            );
+                        }
+                        Err(panic_payload) => {
+                            // 通知处理函数发生 Panic
+                            error!(
+                                "Panic occurred while handling notification (Method: {}): {:?}",
+                                notification.method, panic_payload
+                            );
+                            // 通知没有响应，所以只记录错误
+                        }
+                    }
                 }
                 Err(e) => {
                     error!("Failed to parse notification: {}", e);
+                    // 通知解析失败，只记录日志
                 }
             }
         }
     }
+    // 注意：原始代码的 loop 永不退出，除非 read_line 返回 0 或 exit 请求被正确处理。
+    // 添加 catch_unwind 后，即使发生 panic，循环也会继续。
 }
 
 /// 处理LSP请求
