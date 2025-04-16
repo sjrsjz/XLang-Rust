@@ -1,11 +1,11 @@
 use std::collections::{HashMap, HashSet}; // 添加 HashSet
 use std::io::{BufRead, Write};
-use std::path::PathBuf;
-use std::sync::{Arc, Mutex};
-use std::panic; // 添加 panic 模块
+use std::panic;
+use std::sync::{Arc, Mutex}; // 添加 panic 模块
 
 use log::{debug, error, info, warn};
 use serde_json::Value;
+use url::Url;
 
 use crate::dir_stack::DirStack;
 use crate::lsp::semantic::encode_semantic_tokens;
@@ -249,8 +249,8 @@ impl LspServer {
 
         // 添加XLang关键字
         let keywords = vec![
-            "if", "else", "while", "return", "break", "continue", "and", "or", "not", "null",
-            "in", "async", "await", "yield", "deepcopy", "import", "keyof", "valueof", "typeof",
+            "if", "else", "while", "return", "break", "continue", "and", "or", "not", "null", "in",
+            "async", "await", "yield", "deepcopy", "import", "keyof", "valueof", "typeof",
             "selfof", "dyn", "copy", "ref", "deref", "assert", "wrap", "wipe", "aliasof", "bind",
             "boundary", "collect", "raise", "xor",
         ];
@@ -278,11 +278,11 @@ impl LspServer {
             });
         }
 
-        let annotations = vec!["dynamic", "static"];
+        let annotations = vec!["dynamic", "static", "compile"];
         for annotation in annotations {
             items.push(CompletionItem {
                 label: annotation.to_string(),
-                kind: Some(CompletionItemKind::Enum), // 或者使用 Interface/Struct 等更合适的类型
+                kind: Some(CompletionItemKind::Enum),
                 detail: Some("XLang annotation".to_string()),
                 documentation: None,
                 insert_text: Some(annotation.to_string()),
@@ -299,11 +299,38 @@ impl LspServer {
             // 2. 将 LSP Position 转换为字节偏移
             if let Some(byte_offset) = position_to_byte_offset(&document.content, position.clone())
             {
-                let file_path = document.uri.clone();
-                let pathbuf = PathBuf::from(file_path);
-                let mut dir_stack = DirStack::new(Some(&pathbuf)).unwrap();
+                // 1. 解析 URI
+                let file_path = match Url::parse(&document.uri) {
+                    Ok(url) if url.scheme() == "file" => {
+                        match url.to_file_path() {
+                            Ok(path) => path,
+                            Err(_) => {
+                                error!("Failed to convert URI to file path: {}", document.uri);
+                                return vec![]; // 返回空列表
+                            }
+                        }
+                    }
+                    _ => {
+                        error!("Invalid URI scheme: {}", document.uri);
+                        return vec![]; // 返回空列表
+                    }
+                };
+
+                // 2. 获取父目录
+                let parent_dir = match file_path.parent() {
+                    Some(dir) => dir.to_path_buf(),
+                    None => {
+                        error!(
+                            "Failed to get parent directory for file: {}",
+                            file_path.display()
+                        );
+                        return vec![]; // 返回空列表
+                    }
+                };
+                let mut dir_stack = DirStack::new(Some(&parent_dir)).unwrap();
                 // 3. 调用分析器获取特定位置的上下文
-                let analysis_output = analyzer::analyze_ast(&ast, Some(byte_offset), &mut dir_stack);
+                let analysis_output =
+                    analyzer::analyze_ast(&ast, Some(byte_offset), &mut dir_stack);
 
                 // 4. 如果分析器在断点处捕获了上下文，则提取变量
                 if let Some(context) = analysis_output.context_at_break {

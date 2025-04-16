@@ -1,6 +1,5 @@
-use std::path::PathBuf;
-
 use log::{debug, error, info};
+use url::Url;
 
 use super::document::TextDocument;
 use super::protocol::*;
@@ -85,10 +84,38 @@ pub fn validate_document(document: &TextDocument) -> (Vec<Diagnostic>, Option<Ve
             // 解析成功，没有错误
             info!("文档解析成功: {}", document.uri);
             info!("分析变量定义: {}", document.uri);
-            let pathbuf = PathBuf::from(document.uri.clone());
-            let dir_stack = DirStack::new(Some(&pathbuf));
-            if dir_stack.is_err() {
-                error!("目录栈初始化失败: {}", dir_stack.err().unwrap());
+                // 1. 解析 URI
+                let file_path = match Url::parse(&document.uri) {
+                    Ok(url) if url.scheme() == "file" => {
+                        match url.to_file_path() {
+                            Ok(path) => path,
+                            Err(_) => {
+                                error!("Failed to convert URI to file path: {}", document.uri);
+                                return (vec![], None);
+                            }
+                        }
+                    }
+                    _ => {
+                        error!("Invalid URI scheme: {}", document.uri);
+                        return (vec![], None);
+                    }
+                };
+
+                // 2. 获取父目录
+                let parent_dir = match file_path.parent() {
+                    Some(dir) => dir.to_path_buf(),
+                    None => {
+                        error!(
+                            "Failed to get parent directory for file: {}",
+                            file_path.display()
+                        );
+                        return (vec![], None);
+                    }
+                };
+            let dir_stack = DirStack::new(Some(&parent_dir));
+            if let Err(err) = &dir_stack {
+                let err_msg = err.to_string();
+                error!("目录栈初始化失败: {}", err_msg);
                 return (vec![Diagnostic {
                     range: Range {
                         start: Position { line: 0, character: 0 },
@@ -97,13 +124,13 @@ pub fn validate_document(document: &TextDocument) -> (Vec<Diagnostic>, Option<Ve
                     severity: Some(DiagnosticSeverity::Error),
                     code: None,
                     source: Some("xlang-lsp".to_string()),
-                    message: "目录栈初始化失败".to_string(),
+                    message: format!("目录栈初始化失败: {}", err_msg),
                     related_information: None,
                 }], None);
             }
             let mut dir_stack = dir_stack.unwrap();
             let result = analyze_ast(&ast, None, &mut dir_stack);
-            for error in result.errors{
+            for error in result.errors {
                 match error {
                     crate::parser::analyzer::AnalyzeError::UndefinedVariable(var) => {
                         if var.start_token.is_none() {
@@ -121,8 +148,24 @@ pub fn validate_document(document: &TextDocument) -> (Vec<Diagnostic>, Option<Ve
                     },                    
                 }
             }
-
-            
+            for warn in result.warnings {
+                match warn {
+                    crate::parser::analyzer::AnalyzeWarn::CompileError(node, warn) => {
+                        if node.start_token.is_none() {
+                            continue;
+                        }
+                        let range = get_token_range(node.start_token.unwrap(), &document.content);
+                        diagnostics.push(Diagnostic {
+                            range,
+                            severity: Some(DiagnosticSeverity::Warning),
+                            code: Some(serde_json::Value::String("COMP-W001".to_string())),
+                            source: Some("xlang-lsp".to_string()),
+                            message: format!("@compile: {}", warn),
+                            related_information: None,
+                        });
+                    },
+                }
+            }
 
             // 进行语义着色处理
             info!("开始进行语义着色分析");

@@ -1,3 +1,4 @@
+@compile "./stdlib/stdlib.x";
 __stdlib_root := "./stdlib";
 stdlib := boundary ((__stdlib_root!) -> dyn import (__stdlib_root + "/stdlib.xbc"))();
 builtins := stdlib.builtins;

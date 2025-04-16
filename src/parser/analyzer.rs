@@ -1,6 +1,9 @@
 use log::{debug, info, warn}; // 添加 info
 
-use crate::{compile::{build_code, compile_to_bytecode}, dir_stack::DirStack};
+use crate::{
+    compile::{build_code, compile_to_bytecode},
+    dir_stack::DirStack,
+};
 
 use super::ast::ASTNode;
 
@@ -201,15 +204,9 @@ impl AnalyzeWarn<'_> {
                 };
 
                 // 尝试获取节点文本，如果节点是字符串字面量，则使用其内容
-                let node_text = match &node.node_type {
-                    super::ast::ASTNodeType::String(s) => s.clone(),
-                    _ => {
-                        // 对于其他类型的节点，尝试从原始 token 获取文本
-                        node.start_token.map_or_else(
-                            || "unknown node".to_string(),
-                            |token| token.origin_token.clone(),
-                        )
-                    }
+                let node_text = match node.start_token {
+                    Some(token) => token.origin_token.clone(),
+                    None => "".to_string(),
                 };
 
                 let mut warning_msg = format!(
@@ -342,7 +339,11 @@ impl VariableContext {
 }
 
 // Modified function signature and return type
-pub fn analyze_ast<'t>(ast: &'t ASTNode, break_at_position: Option<usize>, dir_stack: &mut DirStack) -> AnalysisOutput<'t> {
+pub fn analyze_ast<'t>(
+    ast: &'t ASTNode,
+    break_at_position: Option<usize>,
+    dir_stack: &mut DirStack,
+) -> AnalysisOutput<'t> {
     let mut context = VariableContext::new();
     // 向context里初始化内置函数
     context.push_context();
@@ -433,7 +434,7 @@ fn analyze_node<'t>(
     dynamic: bool,
     break_at_position: Option<usize>,
     context_at_break: &mut Option<VariableContext>,
-    dir_stack: &mut DirStack
+    dir_stack: &mut DirStack,
 ) -> AssumedType {
     // 1. Check if analysis should stop globally (break point already found)
     if context_at_break.is_some() {
@@ -451,7 +452,7 @@ fn analyze_node<'t>(
         if let Some(token) = node.start_token {
             // 使用 token.position (开始字节偏移)
             // 检查断点是否在 token 的范围内 [start, end)
-            if token.position >= break_pos {
+            if token.position + token.origin_token.len() >= break_pos {
                 // 我们已经到达或超过了目标位置。在分析此节点之前捕获上下文。
                 debug!(
                     "Break point reached at or before node: {:?} (pos: {})",
@@ -514,13 +515,12 @@ fn analyze_node<'t>(
             let is_dynamic = match annotation.as_str() {
                 "dynamic" => true,
                 "static" => false,
-                "compile" if break_at_position.is_none() => {
+                "compile" => if break_at_position.is_none() {
                     // 特殊处理 @compile 注解 (当非断点分析时)
                     for child in &node.children {
                         // 检查子节点是否为字符串
                         if let ASTNodeType::String(file_path) = &child.node_type {
                             info!("@compile: Trigger compilation for file: {}", file_path);
-
                             let read_file = std::fs::read_to_string(file_path);
                             if let Err(e) = read_file {
                                 // 使用 AnalyzeWarn::CompileError 记录读取错误
@@ -529,9 +529,19 @@ fn analyze_node<'t>(
                                 warnings.push(AnalyzeWarn::CompileError(child, error_message));
                             // 使用 child 作为错误关联的节点
                             } else {
+                                let parent_dir = std::path::Path::new(file_path)
+                                    .parent()
+                                    .unwrap_or_else(|| std::path::Path::new("."))
+                                    .to_str()
+                                    .unwrap_or("");
+                                let _ = dir_stack.push(&parent_dir);
+
                                 let code = read_file.unwrap();
                                 // 调用 build_code 函数编译代码
                                 let compile_result = build_code(&code, dir_stack);
+                                // 弹出目录栈
+                                let _ = dir_stack.pop();
+
                                 match compile_result {
                                     Ok(ir_package) => {
                                         // 替换文件扩展名为xbc
@@ -611,6 +621,38 @@ fn analyze_node<'t>(
                         }
                     }
                     // @compile 注解本身不贡献类型
+                    return AssumedType::Unknown;
+                } else {
+                    // 仅检查文件是否存在 (断点分析模式)
+                    for child in &node.children {
+                        if let ASTNodeType::String(file_path) = &child.node_type {
+                            if !std::path::Path::new(file_path).exists() {
+                                let error_message = format!("File specified in @compile not found: '{}'", file_path);
+                                warnings.push(AnalyzeWarn::CompileError(child, error_message));
+                                // 使用 child 作为错误关联的节点
+                            }
+                        } else {
+                            // @compile 后面应该跟一个字符串字面量
+                            let error_message = format!("@compile annotation expects a string literal file path, found: {:?}", child.node_type);
+                            warnings.push(AnalyzeWarn::CompileError(child, error_message));
+                            // 使用 child 作为错误关联的节点
+                        }
+                        // 仍然分析子节点，以允许在路径字符串内部设置断点
+                        analyze_node(
+                            child,
+                            context,
+                            errors,
+                            warnings,
+                            dynamic, // 继承 dynamic 状态
+                            break_at_position,
+                            context_at_break,
+                            dir_stack,
+                        );
+                        if context_at_break.is_some() {
+                            return AssumedType::Unknown;
+                        }
+                    }
+                    // 在断点模式下，@compile 也不贡献类型
                     return AssumedType::Unknown;
                 }
                 _ => dynamic, // Inherit dynamic status for other annotations
@@ -1191,7 +1233,7 @@ fn analyze_tuple_params<'t>(
     dynamic: bool,
     break_at_position: Option<usize>,
     context_at_break: &mut Option<VariableContext>,
-    dir_stack: &mut DirStack
+    dir_stack: &mut DirStack,
 ) {
     // Check break condition before processing parameters
     if context_at_break.is_some() {
