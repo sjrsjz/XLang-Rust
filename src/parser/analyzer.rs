@@ -799,7 +799,7 @@ fn analyze_node<'t>(
                 if node.children.len() > 1 {
                     // Lambda 体可能创建自己的帧 (push_frame/pop_frame)
                     analyze_node(
-                        &node.children[1],
+                        &node.children.last().unwrap(),
                         context,
                         errors,   // Pass errors
                         warnings, // Pass warnings

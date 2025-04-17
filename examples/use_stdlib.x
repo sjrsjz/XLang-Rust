@@ -56,20 +56,6 @@ my_promise := promise.promise(
 async my_promise();
 await my_promise;
 
-interface_A := InterfaceA::#(stdlib.interface.interface_builder) impls => ['say',]; // 这里的 impls 是一个字符串数组，表示接口中需要实现的方法名
-
-object_A := bind ObjectA::{
-    'value' : 42,
-};
-
-#(stdlib.interface.impl) object_A : say => () -> {
-    @dynamic builtins.print("Hello from ObjectA!, value:", self.value);
-};
-
-binded := #interface_A object_A;
-binded.say();
-
-
 match := #(stdlib.match.match_alias) cases => {
     A => (x?) -> {
         @dynamic builtins.print("Matched case A with value:", x);

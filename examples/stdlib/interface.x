@@ -9,7 +9,8 @@ interface_builder := Interface::(impls => ()) -> (obj?, impls!) -> bind {
             'obj' : wrap obj,
             replace => (obj?) -> {
                 self.obj = obj
-            }
+            },
+            value => () -> valueof self.obj
         },
     ) + (
         impls |> (name?, impl!) -> impl(name) // 映射
@@ -18,10 +19,13 @@ interface_builder := Interface::(impls => ()) -> (obj?, impls!) -> bind {
 
 
 impl := Interface::(impl_method?) -> {
-    keyof impl_method = keyof impl_method + (
-        {keyof valueof impl_method} => valueof valueof impl_method,
-    );
-    bind keyof impl_method
+    builder := keyof impl_method;
+    method := valueof impl_method;
+    builder_arg := keyof builder;
+    return (...builder_arg) -> &(builder!, method!) {
+        obj := $this.builder(...(keyof this));
+        return bind(obj + (deepcopy $this.method,))
+    }
 };
 
 return {

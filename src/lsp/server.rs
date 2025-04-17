@@ -252,7 +252,7 @@ impl LspServer {
             "if", "else", "while", "return", "break", "continue", "and", "or", "not", "null", "in",
             "async", "await", "yield", "deepcopy", "import", "keyof", "valueof", "typeof",
             "selfof", "dyn", "copy", "ref", "deref", "assert", "wrap", "wipe", "aliasof", "bind",
-            "boundary", "collect", "raise", "xor",
+            "boundary", "collect", "raise", "xor", "captureof"
         ];
         for keyword in keywords {
             items.push(CompletionItem {

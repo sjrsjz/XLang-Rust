@@ -59,7 +59,6 @@ impl ParserError<'_> {
             (lines.len().saturating_sub(1), 0) // Default to last line
         };
 
-
         match self {
             ParserError::UnexpectedToken(token) => {
                 let (line_num, col) = find_position(token.position);
@@ -460,17 +459,17 @@ pub enum ASTNodeType {
     Body,                        // {...}
     Boundary,                    // boundary {...}
     Assign,                      // x = expression
-    LambdaDef(bool, bool),       // tuple -> body or tuple -> dyn expression or tuple -> &capture body ...
-    Expressions,                 // expression1; expression2; ...
-    LambdaCall,                  // x (tuple)
+    LambdaDef(bool, bool), // tuple -> body or tuple -> dyn expression or tuple -> &capture body ...
+    Expressions,           // expression1; expression2; ...
+    LambdaCall,            // x (tuple)
     Operation(ASTNodeOperation), // x + y, x - y, x * y, x / y ...
-    Tuple,                       // x, y, z, ...
-    AssumeTuple,                 // ...value
-    KeyValue,                    // x: y
-    IndexOf,                     // x[y]
-    GetAttr,                     // x.y
-    Return,                      // return expression
-    Raise,                       // raise expression
+    Tuple,                 // x, y, z, ...
+    AssumeTuple,           // ...value
+    KeyValue,              // x: y
+    IndexOf,               // x[y]
+    GetAttr,               // x.y
+    Return,                // return expression
+    Raise,                 // raise expression
     If,    // if expression truecondition || if expression truecondition else falsecondition
     While, // while expression body
     Modifier(ASTNodeModifier), // modifier expression
@@ -532,10 +531,10 @@ pub enum ASTNodeModifier {
 
 #[derive(Debug)]
 pub struct ASTNode<'t> {
-    pub node_type: ASTNodeType,       // Type of the node
+    pub node_type: ASTNodeType,             // Type of the node
     pub start_token: Option<&'t Token<'t>>, // Start Token associated with the node
     pub end_token: Option<&'t Token<'t>>,   // End token associated with the node
-    pub children: Vec<ASTNode<'t>>,   // Children of the node
+    pub children: Vec<ASTNode<'t>>,         // Children of the node
 }
 
 impl ASTNode<'_> {
@@ -776,7 +775,7 @@ fn match_all<'t>(
             match_quick_call(tokens, current)
         },
     ));
-    
+
     node_matcher.add_matcher(Box::new(
         |tokens, current| -> Result<(Option<ASTNode<'t>>, usize), ParserError<'t>> {
             match_lambda_def(tokens, current)
@@ -885,7 +884,6 @@ fn match_all<'t>(
         },
     ));
 
-
     node_matcher.add_matcher(Box::new(
         |tokens, current| -> Result<(Option<ASTNode<'t>>, usize), ParserError<'t>> {
             match_modifier(tokens, current)
@@ -973,7 +971,11 @@ fn match_expressions<'t>(
         Some(ASTNode::new(
             ASTNodeType::Expressions,
             Some(&tokens[current].first().unwrap()),
-            Some(&tokens[current + last_offset + node_offset - 1].last().unwrap()),
+            Some(
+                &tokens[current + last_offset + node_offset - 1]
+                    .last()
+                    .unwrap(),
+            ),
             Some(separated),
         )),
         last_offset + node_offset,
@@ -1115,7 +1117,11 @@ fn match_tuple<'t>(
         Some(ASTNode::new(
             ASTNodeType::Tuple,
             Some(&tokens[current].first().unwrap()),
-            Some(&tokens[current + last_offset + node_offset - 1].last().unwrap()),
+            Some(
+                &tokens[current + last_offset + node_offset - 1]
+                    .last()
+                    .unwrap(),
+            ),
             Some(separated),
         )),
         last_offset + node_offset,
@@ -1267,7 +1273,12 @@ fn match_named_to<'t>(
     let mut left = left.unwrap();
 
     if let ASTNodeType::Variable(name) = left.node_type {
-        left = ASTNode::new(ASTNodeType::String(name), left.start_token, left.start_token, Some(left.children));
+        left = ASTNode::new(
+            ASTNodeType::String(name),
+            left.start_token,
+            left.start_token,
+            Some(left.children),
+        );
     }
 
     let (right, right_offset) = match_all(tokens, current + 2)?;
@@ -2273,26 +2284,27 @@ fn match_lambda_def<'t>(
         }
 
         // Parse the capture list (single token group expected after &)
-        let capture_tokens_group = &tokens[capture_list_index..capture_list_index + 1].to_vec(); // Treat the next token group as the capture list
-        let (captures, captures_parsed_len) = match_all(capture_tokens_group, 0)?;
+        let capture_tokens_group = gather(tokens[capture_list_index])?;
+        let (captures, captures_parsed_len) = match_all(&capture_tokens_group, 0)?;
 
-        if captures.is_none() || captures_parsed_len != 1 {
-             return Err(ParserError::ErrorStructure(
-                 &tokens[capture_list_index][0],
-                 "Failed to parse capture list after '&'".to_string(),
-             ));
+        if captures.is_none() {
+            return Err(ParserError::ErrorStructure(
+                &tokens[capture_list_index][0],
+                "Failed to parse capture value after '&'".to_string(),
+            ));
         }
-        // Ensure captures are treated as a tuple if not already
-        let mut captures = captures.unwrap();
-        if captures.node_type != ASTNodeType::Tuple && captures.node_type != ASTNodeType::AssumeTuple {
-            captures = ASTNode::new(ASTNodeType::Tuple, captures.start_token, captures.end_token, Some(vec![captures]));
+        let captures = captures.unwrap();
+        if captures_parsed_len != capture_tokens_group.len() {
+            return Err(ParserError::NotFullyMatched(
+                capture_tokens_group.first().unwrap().first().unwrap(),
+                capture_tokens_group.last().unwrap().last().unwrap(),
+            ));
         }
         captures_node = Some(captures);
 
         // Update body_start_index to point after & and the capture list token group
         body_start_index += 2;
     }
-
 
     // Check for 'dyn' keyword
     let is_dyn = body_start_index < tokens.len() && is_identifier(&tokens[body_start_index], "dyn");
@@ -2302,10 +2314,10 @@ fn match_lambda_def<'t>(
 
     // Check if there's anything left for the body
     if body_start_index >= tokens.len() {
-         return Err(ParserError::MissingStructure(
-             tokens.last().unwrap().last().unwrap(), // Point to the last token
-             "Lambda body".to_string(),
-         ));
+        return Err(ParserError::MissingStructure(
+            tokens.last().unwrap().last().unwrap(), // Point to the last token
+            "Lambda body".to_string(),
+        ));
     }
 
     // Parse the lambda body (right part)
@@ -2315,19 +2327,18 @@ fn match_lambda_def<'t>(
         // This might indicate an empty body, which could be valid depending on language rules.
         // If an empty body isn't allowed after ->[&captures][dyn], return error.
         // For now, assume it might be valid or handled by match_all returning None correctly.
-         return Err(ParserError::MissingStructure(
-             &tokens[body_start_index-1].last().unwrap(), // Point to token before body start
-             "Lambda body expression".to_string(),
-         ));
+        return Err(ParserError::MissingStructure(
+            &tokens[body_start_index - 1].last().unwrap(), // Point to token before body start
+            "Lambda body expression".to_string(),
+        ));
     }
-     if right_offset != body_tokens.len() {
-         return Err(ParserError::NotFullyMatched(
-             body_tokens.first().unwrap().first().unwrap(),
-             body_tokens.last().unwrap().last().unwrap(),
-         ));
-     }
+    if right_offset != body_tokens.len() {
+        return Err(ParserError::NotFullyMatched(
+            body_tokens.first().unwrap().first().unwrap(),
+            body_tokens.last().unwrap().last().unwrap(),
+        ));
+    }
     let right = right.unwrap();
-
 
     // Construct the AST node
     let mut children = vec![left];
@@ -2417,8 +2428,24 @@ fn match_modifier<'t>(
     }
     if tokens[current].len() == 1
         && vec![
-            "deepcopy", "copy", "ref", "deref", "keyof", "valueof", "selfof", "assert", "import",
-            "wrap", "typeof", "await", "wipe", "aliasof", "bind", "boundary", "collect", "captureof"
+            "deepcopy",
+            "copy",
+            "ref",
+            "deref",
+            "keyof",
+            "valueof",
+            "selfof",
+            "assert",
+            "import",
+            "wrap",
+            "typeof",
+            "await",
+            "wipe",
+            "aliasof",
+            "bind",
+            "boundary",
+            "collect",
+            "captureof",
         ]
         .contains(&tokens[current].first().unwrap().token)
     {
@@ -2495,14 +2522,22 @@ fn match_quick_named_to<'t>(
         }
         let mut node = node.unwrap();
         if let ASTNodeType::Variable(name) = node.node_type {
-            node = ASTNode::new(ASTNodeType::String(name), node.start_token, node.end_token, Some(node.children));
+            node = ASTNode::new(
+                ASTNodeType::String(name),
+                node.start_token,
+                node.end_token,
+                Some(node.children),
+            );
         }
         return Ok((
             Some(ASTNode::new(
                 ASTNodeType::NamedTo,
                 Some(&tokens[current].first().unwrap()),
                 Some(&tokens.last().unwrap().last().unwrap()),
-                Some(vec![node, ASTNode::new(ASTNodeType::Null, None, None, None)]),
+                Some(vec![
+                    node,
+                    ASTNode::new(ASTNodeType::Null, None, None, None),
+                ]),
             )),
             node_offset + 1,
         ));
@@ -2528,8 +2563,18 @@ fn match_quick_named_to<'t>(
                 Some(&tokens[current].first().unwrap()),
                 Some(&tokens.last().unwrap().last().unwrap()),
                 Some(vec![
-                    ASTNode::new(ASTNodeType::String(name.clone()), node.start_token, node.start_token, None),
-                    ASTNode::new(ASTNodeType::Variable(name), node.start_token, node.end_token, None),
+                    ASTNode::new(
+                        ASTNodeType::String(name.clone()),
+                        node.start_token,
+                        node.start_token,
+                        None,
+                    ),
+                    ASTNode::new(
+                        ASTNodeType::Variable(name),
+                        node.start_token,
+                        node.end_token,
+                        None,
+                    ),
                 ]),
             )),
             node_offset + 1,
@@ -2948,17 +2993,17 @@ fn match_capture_of<'t>(
 
     if value_node.is_none() {
         return Err(ParserError::ErrorStructure(
-             &tokens[current][0],
-             "Invalid or missing expression after '$'".to_string(),
-         ));
+            &tokens[current][0],
+            "Invalid or missing expression after '$'".to_string(),
+        ));
     }
 
     if value_offset != value_tokens.len() {
-         return Err(ParserError::NotFullyMatched(
-             value_tokens.first().unwrap().first().unwrap(),
-             value_tokens.last().unwrap().last().unwrap(),
-         ));
-     }
+        return Err(ParserError::NotFullyMatched(
+            value_tokens.first().unwrap().first().unwrap(),
+            value_tokens.last().unwrap().last().unwrap(),
+        ));
+    }
 
     let value_node = value_node.unwrap();
 
@@ -3016,7 +3061,7 @@ fn match_variable<'t>(
             Some(ASTNode::new(
                 ASTNodeType::Body,
                 Some(&tokens[current].first().unwrap()),
-                Some(&tokens[current].last().unwrap()),                
+                Some(&tokens[current].last().unwrap()),
                 body.map(|b| vec![b]),
             )),
             1,

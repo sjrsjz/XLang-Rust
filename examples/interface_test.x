@@ -1,4 +1,4 @@
-// 加载标准库 (假设 stdlib.xbc 可用)
+// 加载标准库
 @compile "./stdlib/stdlib.x";
 __stdlib_root := "./stdlib";
 stdlib := boundary ((__stdlib_root!) -> dyn import (__stdlib_root + "/stdlib.xbc"))();
@@ -22,16 +22,16 @@ circle_builder := (radius?) -> bind Circle::{
 };
 
 // 实现圆形接口方法
-#(interface.impl) circle_builder : area => () -> {
+circle_builder := #(interface.impl) circle_builder : area => () -> {
     // 简单使用 3.14159 作为 pi
     return 3.14159 * self.radius * self.radius;
 };
 
-#(interface.impl) circle_builder : description => () -> {
+circle_builder := #(interface.impl) circle_builder : description => () -> {
     return "A circle with radius " + @dynamic builtins.string(self.radius);
 };
 
-#(interface.impl) circle_builder : get_type => () -> {
+circle_builder := #(interface.impl) circle_builder : get_type => () -> {
     return 'Circle'; // 返回类型标识符
 };
 
@@ -42,7 +42,7 @@ rectangle_builder := (width?, height?) -> bind Rectangle::{
 };
 
 // 实现矩形接口方法
-#(interface.impl) rectangle_builder : area => () -> {
+rectangle_builder := #(interface.impl) rectangle_builder : area => () -> {
     if ((self.width <= 0) or (self.height <= 0)) {
         // 使用 try_catch 提供的 Err 类型来抛出错误
         raise @dynamic try_catch.Err("Invalid dimensions for rectangle: width=" + builtins.string(self.width) + ", height=" + builtins.string(self.height));
@@ -50,11 +50,11 @@ rectangle_builder := (width?, height?) -> bind Rectangle::{
     return self.width * self.height;
 };
 
-#(interface.impl) rectangle_builder : description => () -> @dynamic {
+rectangle_builder := #(interface.impl) rectangle_builder : description => () -> @dynamic {
     return "A rectangle with width " + builtins.string(self.width) + " and height " + builtins.string(self.height);
 };
 
-#(interface.impl) rectangle_builder : get_type => () -> {
+rectangle_builder := #(interface.impl) rectangle_builder : get_type => () -> {
     return 'Rectangle'; // 返回类型标识符
 };
 
@@ -63,9 +63,11 @@ circle := circle_builder(5);
 rectangle := rectangle_builder(4, 6);
 invalid_rectangle := rectangle_builder(-2, 3); // 用于测试错误处理
 
+builtins.print("Circle instance created:", circle.description());
+builtins.print("Rectangle instance created:", rectangle.description());
+builtins.print("Invalid Rectangle instance created:", invalid_rectangle.description());
+
 // --- 使用接口绑定对象 ---
-// 假设存在列表或数组类型，并且可以存储接口对象
-// 注意：XLang 的列表字面量语法未知，这里用伪代码表示
 shapes := [
     #shape_interface circle,
     #shape_interface rectangle,
@@ -88,11 +90,11 @@ process_shape := (shape?) -> @dynamic {
 
     // 检查面积计算结果
     if (area_result != null) {
-         builtins.print(colored_text.colorize("  Area: " + builtins.string(area_result), "green"));
+         builtins.print(colored_text.colorize("  Area: " + builtins.string(area_result.value()), "green"));
     };
 
     // 使用 match 根据 get_type 返回的类型进行分支处理
-    shape_matcher := #(match.match_alias) cases => {
+    shape_matcher := #(match.match_value) cases => {
         Circle => () -> { // 匹配 'Circle' 类型
              builtins.print(colored_text.colorize("  Identified as Circle", "blue"));
              // 可以添加特定于圆形的逻辑
@@ -101,27 +103,18 @@ process_shape := (shape?) -> @dynamic {
              builtins.print(colored_text.colorize("  Identified as Rectangle", "cyan"));
              // 可以添加特定于矩形的逻辑
         },
-        _ => () -> { // 默认情况，处理未知类型
+        default::_ => () -> { // 默认情况，处理未知类型
              builtins.print(colored_text.colorize("  Identified as Unknown Shape", "yellow"));
         }
     };
 
     // 获取形状类型并执行匹配
-    shape_type := shape.get_type();
-    if (shape_type == 'Circle') {
-        shape_matcher(Circle::()); // 使用 Circle 标签进行匹配
-    } else if (shape_type == 'Rectangle') {
-        shape_matcher(Rectangle::()); // 使用 Rectangle 标签进行匹配
-    } else {
-        shape_matcher(_::()); // 使用默认标签进行匹配
-    };
+    shape_matcher(shape.get_type());
 
     builtins.print("---"); // 分隔符
 };
 
 // --- 迭代处理形状 ---
-// 由于 XLang 的迭代语法未知，这里手动处理列表中的每个元素
-// 假设列表索引从 0 开始
 builtins.print("Starting shape processing...");
 process_shape(shapes[0]); // 处理圆形
 process_shape(shapes[1]); // 处理矩形

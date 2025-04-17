@@ -144,7 +144,7 @@ impl<'t> IRGenerator<'t> {
 
                 if *is_dyn {
                     let expr_instructions =
-                        self.generate_without_redirect(&ast_node.children[1])?;
+                        self.generate_without_redirect(&ast_node.children.last().unwrap())?;
                     instructions.extend(args_instructions);
                     if *is_capture {
                         instructions.extend(self.generate_without_redirect(&ast_node.children[1])?);
@@ -163,7 +163,7 @@ impl<'t> IRGenerator<'t> {
                         NameSpace::new(signature.clone(), Some(&self.namespace)),
                     );
 
-                    let mut body_instructions = generator.generate(&ast_node.children[1])?; // body, compute redirect jump directly
+                    let mut body_instructions = generator.generate(&ast_node.children.last().unwrap())?; // body, compute redirect jump directly
                     body_instructions.push((self.generate_debug_info(ast_node), IR::Return));
 
                     self.functions
