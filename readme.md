@@ -2,6 +2,15 @@
 
 XLang-Rust 为 XLang 的 Rust 语言实现，完全支持 Python 版本的 XLang 的所有语法。采用虚拟机的方式执行脚本，支持协程。
 
+## 编译指令
+
+XLang-Rust 支持在脚本文件任意AST分析可达位置使用 `@compile` 指令来指示编译器预先编译依赖的文件。
+
+```xlang
+@compile "./stdlib/stdlib.x"; // 编译 stdlib.x 文件
+// ... rest of the code
+```
+
 ## 语法
 
 XLang-Rust 是基于表达式的脚本语言，没有标准的函数入口，VM默认从代码的第一行开始执行
@@ -23,8 +32,8 @@ a = 1; b = 2; c = a + b;
 
 上面的代码的返回值是 `null`。
 
-### 返回和Yield
-`return` 语句用于返回函数的值。`yield` 语句用于协程返回中间结果。
+### 返回、Yield 和 Raise
+`return` 语句用于返回函数的值。`yield` 语句用于协程返回中间结果。`raise` 语句用于抛出错误，通常与别名结合使用。
 
 ```xlang
 foo := () -> {
@@ -35,6 +44,18 @@ foo := () -> {
 };
 
 print(foo()); // 3
+
+error_func := (x?) -> {
+    if (x < 0) {
+        raise Err::"Input cannot be negative"; // 抛出带有 Err 别名的错误
+    };
+    return x;
+};
+
+result := boundary error_func(-1); // 使用 boundary 捕获错误
+if ("Err" in (aliasof result | () -> true)) { // 检查别名判断是否为错误
+    print("Caught error:", result);
+}
 ```
 
 ### 元组(列表)
@@ -73,7 +94,12 @@ a := 1; // 定义变量 a
 
 默认情况下，获取变量会从本作用域开始检查，如果没有找到，则会从上级作用域开始检查，直到找到或者因不存在而报错。
 
-*注意*: XLang-Rust使用动态作用域而非词法作用域，这意味着它允许被调用者访问调用者的作用域内的变量。 这使得 XLang-Rust 的作用域更灵活，但也可能导致一些意想不到的结果。
+*注意*: XLang-Rust 默认使用动态作用域而非词法作用域，这意味着它允许被调用者访问调用者的作用域内的变量。 这使得 XLang-Rust 的作用域更灵活，但也可能导致一些意想不到的结果。可以使用 `@dynamic` 和 `@static` 关键字显式控制查找行为。
+
+```xlang
+// 示例待补充，说明 @dynamic 和 @static 的具体用法
+```
+
 
 变量赋值使用 `=` 语法，变量赋值强制要求类型一致，变量赋值的返回值是赋值后的值。
 
@@ -83,7 +109,7 @@ b = 2; // 赋值变量 b
 // a = true; // 错误，类型不一致
 ```
 
-如果想要**变体**容器，可以用 `wrap expr` 关键字包裹值
+如果想要**变体**容器，可以用 `wrap expr` 关键字包裹值。使用 `valueof wrap_obj` 获取内部的值。
 
 ```xlang
 a := wrap 1; // 定义变体，默认值为 1
@@ -217,11 +243,19 @@ XLang-Rust 支持以下运算符：
 - `<=`：小于等于运算符
 - `==`：等于运算符（不可转换类型被认为不相等）
 - `!=`：不等于运算符（不可转换类型被认为不相等）
+- `|>`：映射运算符 (通常用于元组)
+
+```xlang
+// 映射示例
+data := (1, 2, 3);
+squared := data |> (x?) -> x * x;
+print(squared); // (1, 4, 9)
+```
 
 ### Lambda表达式
 XLang-Rust 完全丢弃传统的函数定义语法，完全使用 Lambda 表达式来定义函数。Lambda 表达式的语法为 `param_tuple -> body`，其中 `param_tuple` 是参数元组或一般值，`body` 是函数体。函数体可以是任意类型的值，包括函数、协程、类等。函数的返回值是函数体的值。
 
-其中 `param_tuple` 必须完全由纯命名参数组成，解析为 `param_name => default_value` 的形式
+其中 `param_tuple` 必须完全由纯命名参数组成，解析为 `param_name => default_value` 的形式。可以使用 `param_name!` 形式注解参数，等价为 `param_name => param_name`。
 
 如果 `param_tuple` 不是元组，则解析器会强制将其包装成元组
 
@@ -256,7 +290,28 @@ print(keyof a); // (x => 0)
 print(valueof a); // 2
 ```
 
-### 作用域
+#### Lambda 捕获
+可以使用 `&capture_obj` 语法让 Lambda 捕获一个外部对象（通常是元组），并在 Lambda 内部通过 `$this` 访问被捕获的对象。
+
+```xlang
+capture := {
+    'A' : 1,
+    'B' : 2,
+    'C' : 3,
+};
+
+// foo 捕获 capture 对象
+foo := (x?) -> &capture @dynamic print(x + $this.A);
+
+foo(1); // 输出 2 (1 + capture.A)
+
+print($foo); // 输出捕获的对象: (A: 1, B: 2, C: 3)
+print(captureof foo); // 同上: (A: 1, B: 2, C: 3)
+```
+
+### 作用域与边界
+
+#### 作用域
 XLang-Rust 支持多层作用域，作用域的定义使用 `{}` 语法，作用域的返回值是作用域内的值。
 
 ```xlang
@@ -270,7 +325,41 @@ print(a); // 1
 // print(b); // 错误，变量 b 不在作用域内
 ```
 
-如果采用 `dyn` 语法，则指定lambda对象的字节码由程序动态生成而非在编译期指定
+#### 边界 (Boundary)
+`boundary expr` 用于隔离表达式执行，主要用于捕获 `raise` 抛出的错误。如果 `expr` 内部发生 `raise`，`boundary` 会捕获这个错误值并返回，而不是让程序终止。
+
+```xlang
+f := (x?) -> {
+    if (x == 0) {
+        raise Err::"Error occurred"; // 抛出错误
+    };
+    return x;
+};
+
+// 使用 boundary 调用 f(0)
+result := boundary f(0);
+
+// 检查返回结果的别名是否包含 "Err"
+if ("Err" in ((aliasof result) | () -> true)) {
+    print("Error:", result); // 输出 Error: Error occurred
+} else {
+    print("Result:", result);
+};
+
+result_ok := boundary f(1);
+if ("Err" in ((aliasof result) | () -> true)) {
+    print("Error:", result_ok);
+} else {
+    print("Result:", result_ok); // 输出 Result: 1
+};
+```
+
+#### 动态与静态查找 (`@dynamic`, `@static`)
+默认情况下，变量查找是动态的，但是静态分析会尝试阻止这种行为（静态分析要求所有函数为静态纯函数）。可以使用 `@dynamic` 和 `@static` 关键字来显式控制 Lambda 内部对外部变量的查找方式。
++   `@dynamic`: 强制使用动态作用域查找（VM默认行为，但是静态分析会阻止直接使用）。
++   `@static`: 强制使用静态的词法作用域的查找（查找定义时的环境，而非调用时的环境，相当于启用静态分析，VM实际上仍然使用动态作用域）。
+
+如果采用 `dyn` 语法，则指定lambda对象的字节码由程序动态生成而非在编译期指定。这通常与 `import` 或 FFI (`load_clambda`) 结合使用。
 
 ### 改变优先级
 
@@ -295,17 +384,17 @@ print(a.key); // value
 print(a.key2); // value2
 ```
 
-可以使用一个极其trick的方法来动态访问不同成员
+可以使用花括号 `{}` 进行动态成员访问：
 
 ```xlang
 a := {
     'key' : 'value',
     'key2' : 'value2'
 };
-key := 'key';
-print(
-    a.{key} // value2，这个花括号避免了语法解析器将变量类型解释成字符串，如果用小括号和中括号会被解析成字符串
-);
+key_name := 'key';
+print(a.{key_name}); // value
+// 注意：这里不能用 a.key_name，那会查找名为 'key_name' 的成员
+// 使用 a.{key_name} 会先计算 key_name 的值 ('key')，然后查找名为 'key' 的成员
 ```
 
 ### 协程
@@ -351,22 +440,29 @@ while(n = n + 1; n < 1000000){
 
 ### 模块
 
-XLang-Rust 支持模块化编程，每一个程序都可以被当作一个模块，并使用 `compile` 选项编译成字节码
+XLang-Rust 支持模块化编程，每一个程序都可以被当作一个模块，并使用 `compile -b` 选项编译成字节码 (`.xbc`)。
 
-使用 `param_tuple -> dyn import module_file` 语法导入模块，`module_file` 是模块文件名（字节码），`param_tuple` 是参数元组或一般值，如果 `param_tuple` 不是元组，则解析器会强制将其包装成元组。加载后的结果返回一个包装后的lambda对象，
+使用 `param_tuple -> dyn import module_file` 语法导入模块，`module_file` 是模块文件名（字节码），`param_tuple` 是参数元组或一般值，用于向模块传递参数。如果 `param_tuple` 不是元组，则解析器会强制将其包装成元组。加载后的结果返回一个包装后的lambda对象。
 
 ```xlang
-moduleA := (param1 => null, param2 => null) -> dyn import "moduleA.xir";
-loaded := moduleA();
-print(loaded);
+// 假设 moduleA.xbc 需要一个名为 config 的参数
+// moduleA.x:
+// (config!) -> { ... return module_api; }
+
+// main.x:
+moduleA_loader := (config!) -> dyn import "moduleA.xbc";
+config_obj := {'setting': true};
+loaded_module_A := moduleA_loader(config_obj); // 传入参数
+api := loaded_module_A(); // 执行模块初始化逻辑
+print(api);
 ```
 
-其中 `import` 语句导入指定文件的字节码 (`VMInstruction`)，`dyn` 表示lambda对象指向的字节码是由程序动态生成的
+其中 `import` 语句导入指定文件的字节码 (`VMInstruction`)，`dyn` 表示lambda对象指向的字节码是由程序动态生成的。
 
 ### bind
-XLang-Rust 支持 `bind` 语法，`bind` 语法用于将一个元组内被命名参数包裹的lambda的self引用绑定到元组上
+XLang-Rust 支持 `bind` 语法，`bind` 语法用于将一个元组内被命名参数包裹的lambda的 `self` 引用绑定到元组上。
 
-一旦绑定，函数就可以使用 `self` 关键字来引用元组本身
+一旦绑定，函数就可以使用 `self` 关键字来引用元组本身。
 
 ```xlang
 obj1 := bind {
@@ -377,11 +473,11 @@ obj1 := bind {
         "E" : 2,
     },
     getB => () -> {
-        return self.B;
+        return self.B; // self 指向 obj1
     },
 };
 print(obj1.getB()); // This is B
-obj1.getB() = "Hello World";
+obj1.getB() = "Hello World"; // 修改 obj1.B 的值
 print(obj1.getB()); // Hello World
 ```
 
@@ -403,7 +499,7 @@ extend := (obj => null, methods => (,)) -> {
         new_obj = new_obj + (methods[n],);
         n = n + 1;
     };
-    return bind new_obj;
+    return bind new_obj; // 返回绑定后的新对象
 };
 
 obj1 := bind {
@@ -430,46 +526,52 @@ extended_obj := extend(obj1, {
     },
 });
 
-print(extended_obj.getA());
-print(extended_obj.getB());
+print(extended_obj.getA()); // This is A
+print(extended_obj.getB()); // This is B
 extended_obj.setA("This is obj1.A");
 extended_obj.setB("This is obj1.B");
-print(extended_obj.getA());
-print(extended_obj.getB());
+print(extended_obj.getA()); // This is obj1.A
+print(extended_obj.getB()); // This is obj1.B
 ```
 
 ### alias
-XLang-Rust 支持别名机制，通过 `alias::value` 将一个 `alias` 加入到 `value` 的别名列表内
+XLang-Rust 支持别名机制，通过 `alias::value` 将一个 `alias` (通常是标识符) 加入到 `value` 的别名列表内。别名提供了一种标记或分类值的方式，常用于错误处理和模式匹配。
 
-使用 `aliasof` 语法获取别名元组
+使用 `aliasof value` 语法获取值的别名元组。
 
 ```xlang
-aliased := myalias::1;
-print(aliased); // 1
-print(aliasof aliased); // (myalias)
-print(aliasof (myalias_2::aliased)); // (myalias, myalias_2)
+aliased := myalias::1; // 将 myalias 别名附加到值 1 上
+print(aliased); // 1 (别名不影响原始值)
+print(aliasof aliased); // (myalias,)
+
+// 可以附加多个别名
+multi_aliased := myalias_2::aliased;
+print(aliasof multi_aliased); // (myalias, myalias_2)
+
+// 错误处理示例
+error_val := Err::"Something went wrong";
+print(aliasof error_val); // (Err,)
 ```
 
-使用 `wipe` 擦除所有别名
+使用 `wipe value` 擦除值的所有别名。
 
 ```xlang
 aliased := myalias::1;
-print(aliased); // 1
-print(aliasof aliased); // (myalias)
+print(aliasof aliased); // (myalias,)
 wiped := wipe aliased;
 print(wiped); // 1
 print(aliasof wiped); // ()
 ```
 
-*注意*: `alias::value` 会浅拷贝对象，因此如果对象是一个lambda对象，则会丢失 `self` 引用
+*注意*: `alias::value` 会浅拷贝对象，因此如果对象是一个lambda对象，则会丢失 `self` 引用。`wipe` 也是浅拷贝。
 
 ### range
 
-使用 `left..right` 语法创建一个范围，范围的返回值是一个元组，包含范围内的所有值
+使用 `left..right` 语法创建一个范围，范围的返回值是一个元组，包含范围内的所有值。常用于字符串或元组的切片。
 
 ```xlang
-a := 1..10; // 创建一个范围
-print("1234567890abcdefg"[a]); // 1234567890
+a := 1..5; // 创建一个范围 (1, 2, 3, 4)
+print("abcdefg"[a]); // bcde (索引从 1 到 4)
 ```
 
 range加法为结果两端等于参数两端和
@@ -477,3 +579,83 @@ range加法为结果两端等于参数两端和
 ```xlang
 print(1..10 + 1..10); // 2..20
 ```
+
+### FFI (Foreign Function Interface)
+
+XLang-Rust 可以通过特定的加载器与动态链接库（如 `.so`, `.dll` 文件）进行交互。`@dynamic load_clambda` 是一个示例加载器。
+
+加载时通常结合别名来指定函数签名。
+
+```xlang
+// 定义加载器 lambda
+clambda_loader := () -> dyn @dynamic load_clambda("../../modules/clambda_lib/libvm_ffi.so");
+
+// 加载并指定别名作为函数签名
+// __main__ 是库中的函数名，libvm_ffi 是库的标识 (可选)，__main__ (最右侧) 是 XLang 中的函数签名
+main_func := libvm_ffi::__main__::wipe clambda_loader;
+
+// add 是库中的函数名，libvm_ffi 是库标识，add (最右侧) 是 XLang 中的函数签名
+add_func := libvm_ffi::add::wipe clambda_loader;
+
+// 调用 FFI 函数
+main_func(1, 2, 3);
+print(add_func(1, 2)); // 调用 C 函数 add(1, 2)
+```
+
+### 快速调用 (`#`)
+
+`#` 用来快速调用一个空参/单参的lambda对象，可以用来模拟一些特殊操作
+
+```xlang
+// 定义接口构建器 (使用了 Interface:: 别名)
+shape_interface := InterfaceShape::#(interface.interface_builder) impls => ['area', 'description', 'get_type',];
+
+// ... 定义 circle_builder ...
+
+// 将实现附加到构建器 (使用了 interface.impl)
+circle_builder := #(interface.impl) circle_builder : area => () -> { ... };
+circle_builder := #(interface.impl) circle_builder : description => () -> { ... };
+circle_builder := #(interface.impl) circle_builder : get_type => () -> { ... };
+
+// ... 创建实例 ...
+circle := circle_builder(5);
+
+// 将对象绑定到接口
+shape_instance := #shape_interface circle;
+
+// 通过接口调用方法
+print(shape_instance.area());
+```
+
+### 错误处理模式
+
+XLang-Rust 常用的错误处理模式是结合 `boundary`, `raise`, 和别名 (`Err::`, `Ok::`)。
+
+```xlang
+// stdlib/try_catch.x 风格
+Err := (v?) -> bind Err::{ 'result' : v, value => () -> self.result };
+Ok := (v?) -> bind Ok::{ 'result' : v, value => () -> self.result };
+is_err := (v?) -> "Err" in {aliasof v | () -> true};
+
+try_func := (f?) -> {
+    result := boundary f(); // 捕获可能的 raise
+    if (is_err(result)) {
+        return result; // 返回 Err::value
+    } else {
+        return Ok(result); // 包装成 Ok::value
+    }
+};
+
+dangerous_op := (x?) -> {
+    if (x < 0) { raise Err::"Negative input"; };
+    return x * 2;
+};
+
+result1 := try_func(() -> dangerous_op(5));
+if (not is_err(result1)) { print("Success:", result1.value()); }; // Success: 10
+
+result2 := try_func(() -> dangerous_op(-1));
+if (is_err(result2)) { print("Error:", result2.value()); }; // Error: Negative input
+```
+
+标准库 `try_catch` 提供了更结构化的 `try().catch().finally()` 模式。
