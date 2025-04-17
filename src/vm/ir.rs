@@ -36,7 +36,7 @@ pub enum IR{
     LoadString(String), // load string to stack
     LoadBytes(Vec<u8>), // load bytes to stack
     LoadBool(bool), // load bool to stack
-    LoadLambda(String, usize), // signature, code position
+    LoadLambda(String, usize, bool), // signature, code position, should capture
     ForkInstruction, // "fork" instruction and push the forked instruction gcref to stack
     BuildTuple(usize), // number of elements
     BuildKeyValue, // pop key and value from stack and build key value pair
@@ -90,6 +90,7 @@ pub enum IR{
     Swap(usize, usize), // swap two values in stack
     ForkStackObjectRef(usize), // fork stack object
     PushValueIntoTuple(usize), // push value into tuple on stack
+    CaptureOf, // capture value
 }
 
 #[derive(Serialize, Deserialize, Debug, Clone)]

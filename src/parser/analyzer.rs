@@ -470,7 +470,7 @@ fn analyze_node<'t>(
     match &node.node_type {
         ASTNodeType::Let(var_name) => {
             if let Some(value_node) = node.children.first() {
-                let is_lambda = matches!(value_node.node_type, ASTNodeType::LambdaDef(_));
+                let is_lambda = matches!(value_node.node_type, ASTNodeType::LambdaDef(_, _));
 
                 if is_lambda {
                     let var = Variable {
@@ -716,7 +716,25 @@ fn analyze_node<'t>(
             }
             return assumed_type;
         }
-        ASTNodeType::LambdaDef(is_dynamic_gen) => {
+        ASTNodeType::LambdaDef(is_dynamic_gen, is_capture) => {
+            if *is_capture {
+                // 检查 child[1]
+                if let Some(func_node) = node.children.get(1) {
+                    analyze_node(
+                        func_node,
+                        context,
+                        errors,   // Pass errors
+                        warnings, // Pass warnings
+                        dynamic,
+                        break_at_position,
+                        context_at_break,
+                        dir_stack,
+                    );
+                    if context_at_break.is_some() {
+                        return AssumedType::Unknown;
+                    }
+                }
+            }
             // 进入 Lambda 定义，创建一个全新的、隔离的上下文
             context.push_frame();
             // 在新的上下文中处理参数（参数定义在第一个帧中）
@@ -744,7 +762,7 @@ fn analyze_node<'t>(
             if *is_dynamic_gen {
                 context.push_frame();
                 analyze_node(
-                    &node.children[1],
+                    &node.children.last().unwrap(),
                     context,
                     errors,   // Pass errors
                     warnings, // Pass warnings

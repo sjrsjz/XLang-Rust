@@ -372,6 +372,8 @@ impl VMExecutor {
         instruction_table[VMInstruction::WipeAlias as usize] = vm_instructions::wipe_alias;
         instruction_table[VMInstruction::AliasOf as usize] = vm_instructions::alias_of;
 
+        instruction_table[VMInstruction::CaptureOf as usize] = vm_instructions::get_lambda_capture;
+
         VMExecutor {
             context: Context::new(),
             stack: Vec::new(),

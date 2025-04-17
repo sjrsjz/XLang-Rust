@@ -91,7 +91,7 @@ fn process_node(
             ASTNodeType::Body => SemanticTokenTypes::Body,
             ASTNodeType::Boundary => SemanticTokenTypes::Boundary,
             ASTNodeType::Assign => SemanticTokenTypes::Assign,
-            ASTNodeType::LambdaDef(_) => SemanticTokenTypes::LambdaDef,
+            ASTNodeType::LambdaDef(_, _) => SemanticTokenTypes::LambdaDef,
             ASTNodeType::Expressions => SemanticTokenTypes::Expressions,
             ASTNodeType::LambdaCall => SemanticTokenTypes::LambdaCall,
             ASTNodeType::AsyncLambdaCall => SemanticTokenTypes::AsyncLambdaCall,

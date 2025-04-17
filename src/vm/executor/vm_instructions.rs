@@ -114,6 +114,12 @@ pub mod vm_instructions {
                         "LoadLambda requires a VMInstructions or VMCLambdaInstruction".to_string(),
                     ));
                 }
+                let mut capture = None;
+                if let OpcodeArgument::Int32(should_capture) = opcode.operand3 {
+                    if should_capture != 0 {
+                        capture = Some(vm.pop_object_and_check()?);
+                    }
+                }
                 let default_args_tuple = &mut vm.pop_object_and_check()?;
                 if !default_args_tuple.isinstance::<VMTuple>() {
                     return Err(VMError::ArgumentIsNotTuple(default_args_tuple.clone()));
@@ -132,6 +138,7 @@ pub mod vm_instructions {
                     code_position as usize,
                     signature.clone(),
                     default_args_tuple,
+                    capture.as_mut(),
                     None,
                     &mut VMLambdaBody::VMInstruction(instruction.clone()),
                     &mut lambda_result,
@@ -1512,6 +1519,33 @@ pub mod vm_instructions {
             ));
         }
 
+        Ok(None)
+    }
+    pub fn get_lambda_capture(
+        vm: &mut VMExecutor,
+        _opcode: &ProcessedOpcode,
+        gc_system: &mut GCSystem,
+    ) -> Result<Option<Vec<SpawnedCoroutine>>, VMError> {
+        let mut obj = vm.pop_object_and_check()?;
+        if !obj.isinstance::<VMLambda>() {
+            return Err(VMError::InvalidArgument(
+                obj.clone(),
+                "GetLambdaCapture: Not a VMLambda".to_string(),
+            ));
+        }
+        let lambda = obj.as_type::<VMLambda>();
+        let result = lambda.get_capture();
+        match result {
+            Some(result) => {
+                vm.push_vmobject(result.clone_ref())?;
+            }
+            None => {
+                vm.stack
+                    .push(VMStackObject::VMObject(gc_system.new_object(VMNull::new())));
+            }
+            
+        }
+        obj.drop_ref();
         Ok(None)
     }
 }

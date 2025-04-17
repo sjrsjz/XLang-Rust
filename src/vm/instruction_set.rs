@@ -101,6 +101,8 @@ pub enum VMInstruction {
     WipeAlias = 111, // 清除别名
     AliasOf = 112,   // 获取别名
 
+    CaptureOf = 120, // 获取捕获的值
+
     // 其他
     Nop = 255, // 空操作
 }
@@ -194,6 +196,8 @@ impl VMInstruction {
             Self::WipeAlias => "WipeAlias",
             Self::AliasOf => "AliasOf",
 
+            Self::CaptureOf => "CaptureOf",
+
             Self::Nop => "Nop",
         }
     }
@@ -286,6 +290,8 @@ impl VMInstruction {
             111 => Some(Self::WipeAlias),
             112 => Some(Self::AliasOf),
 
+            120 => Some(Self::CaptureOf),
+
             255 => Some(Self::Nop),
 
             _ => None,
@@ -351,6 +357,7 @@ impl VMInstruction {
             | Self::UnaryAbs
             | Self::UnaryNeg
             | Self::ResetIter
+            | Self::CaptureOf
             | Self::BuildSet => false,
 
             // 有参数的指令
@@ -436,6 +443,7 @@ impl VMInstruction {
             | Self::UnaryAbs
             | Self::UnaryNeg
             | Self::ResetIter
+            | Self::CaptureOf
             | Self::BuildSet => 0,
 
             // 单参数指令

@@ -2628,6 +2628,7 @@ pub struct VMLambda {
     pub code_position: usize,
     pub signature: String,
     pub default_args_tuple: GCRef,
+    pub capture: Option<GCRef>, // 附加的捕获对象
     pub self_object: Option<GCRef>,
     pub lambda_body: VMLambdaBody,
     pub result: GCRef,
@@ -2641,6 +2642,7 @@ impl VMLambda {
         code_position: usize,
         signature: String,
         default_args_tuple: &mut GCRef,
+        capture: Option<&mut GCRef>,
         self_object: Option<&mut GCRef>,
         lambda_body: &mut VMLambdaBody,
         result: &mut GCRef,
@@ -2664,11 +2666,21 @@ impl VMLambda {
             }
         };
         let mut cloned_obj;
-        let cloned = match self_object {
+        let cloned_self_obj = match self_object {
             Some(obj) => {
                 cloned_obj = obj.clone();
                 let new = cloned_obj.clone();
                 refs_vec.push(&mut cloned_obj);
+                Some(new)
+            }
+            None => None,
+        };
+        let mut capture_obj;
+        let cloned_capture = match capture {
+            Some(obj) => {
+                capture_obj = obj.clone();
+                let new = capture_obj.clone();
+                refs_vec.push(&mut capture_obj);
                 Some(new)
             }
             None => None,
@@ -2678,7 +2690,8 @@ impl VMLambda {
             code_position,
             signature,
             default_args_tuple: default_args_tuple.clone(),
-            self_object: cloned,
+            capture: cloned_capture,
+            self_object: cloned_self_obj,
             lambda_body: lambda_body.clone(),
             traceable: GCTraceable::new::<VMLambda>(Some(&mut refs_vec)),
             result: result.clone(),
@@ -2691,6 +2704,7 @@ impl VMLambda {
         code_position: usize,
         signature: String,
         default_args_tuple: &mut GCRef,
+        capture: Option<&mut GCRef>,
         self_object: Option<&mut GCRef>,
         lambda_body: &mut VMLambdaBody,
         result: &mut GCRef,
@@ -2715,11 +2729,21 @@ impl VMLambda {
             }
         };
         let mut cloned_obj;
-        let cloned = match self_object {
+        let cloned_self_obj = match self_object {
             Some(obj) => {
                 cloned_obj = obj.clone();
                 let new = cloned_obj.clone();
                 refs_vec.push(&mut cloned_obj);
+                Some(new)
+            }
+            None => None,
+        };
+        let mut capture_obj;
+        let cloned_capture = match capture {
+            Some(obj) => {
+                capture_obj = obj.clone();
+                let new = capture_obj.clone();
+                refs_vec.push(&mut capture_obj);
                 Some(new)
             }
             None => None,
@@ -2729,7 +2753,8 @@ impl VMLambda {
             code_position,
             signature,
             default_args_tuple: default_args_tuple.clone(),
-            self_object: cloned,
+            capture: cloned_capture,
+            self_object: cloned_self_obj,
             lambda_body: lambda_body.clone(),
             traceable: GCTraceable::new::<VMLambda>(Some(&mut refs_vec)),
             result: result.clone(),
@@ -2756,6 +2781,10 @@ impl VMLambda {
             .add_reference(self.self_object.as_mut().unwrap());
     }
 
+    pub fn get_capture(&mut self) -> Option<&mut GCRef> {
+        self.capture.as_mut()
+    }
+
     pub fn get_value(&mut self) -> &mut GCRef {
         &mut self.result
     }
@@ -2779,6 +2808,10 @@ impl GCObject for VMLambda {
         if self.self_object.is_some() {
             self.traceable
                 .remove_reference(self.self_object.as_mut().unwrap());
+        }
+        if self.capture.is_some() {
+            self.traceable
+                .remove_reference(self.capture.as_mut().unwrap());
         }
     }
 
@@ -2810,6 +2843,7 @@ impl VMObject for VMLambda {
             self.code_position,
             self.signature.clone(),
             &mut new_default_args_tuple,
+            self.capture.as_mut(), // 捕获对象不会被复制
             None,
             &mut new_lambda_body,
             &mut new_result,
@@ -2838,6 +2872,7 @@ impl VMObject for VMLambda {
             self.code_position,
             self.signature.clone(),
             &mut new_default_args_tuple,
+            self.capture.as_mut(), // 捕获对象不会被复制
             None,
             &mut self.lambda_body,
             &mut new_result,

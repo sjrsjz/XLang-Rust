@@ -137,7 +137,7 @@ impl<'t> IRGenerator<'t> {
                 }
                 Ok(instructions)
             }
-            ASTNodeType::LambdaDef(is_dyn) => {
+            ASTNodeType::LambdaDef(is_dyn, is_capture) => {
                 let mut instructions = Vec::new();
                 let args = &ast_node.children[0];
                 let args_instructions = self.generate_without_redirect(args)?;
@@ -146,11 +146,14 @@ impl<'t> IRGenerator<'t> {
                     let expr_instructions =
                         self.generate_without_redirect(&ast_node.children[1])?;
                     instructions.extend(args_instructions);
+                    if *is_capture {
+                        instructions.extend(self.generate_without_redirect(&ast_node.children[1])?);
+                    }
                     instructions.extend(expr_instructions);
 
                     instructions.push((
                         self.generate_debug_info(ast_node),
-                        IR::LoadLambda("__main__".to_string(), ast_node.start_token.unwrap().position),
+                        IR::LoadLambda("__main__".to_string(), ast_node.start_token.unwrap().position, *is_capture),
                     ));
                 } else {
                     let (full_signature, signature) = self.new_function_signature();
@@ -167,10 +170,13 @@ impl<'t> IRGenerator<'t> {
                         .append(full_signature.clone(), body_instructions);
 
                     instructions.extend(args_instructions);
+                    if *is_capture {
+                        instructions.extend(self.generate_without_redirect(&ast_node.children[1])?);
+                    }
                     instructions.push((self.generate_debug_info(ast_node), IR::ForkInstruction));
                     instructions.push((
                         self.generate_debug_info(ast_node),
-                        IR::LoadLambda(full_signature, ast_node.start_token.unwrap().position),
+                        IR::LoadLambda(full_signature, ast_node.start_token.unwrap().position, *is_capture),
                     ));
                 }
                 Ok(instructions)
@@ -688,6 +694,10 @@ impl<'t> IRGenerator<'t> {
                     ASTNodeModifier::BindSelf => {
                         instructions.extend(self.generate_without_redirect(&ast_node.children[0])?);
                         instructions.push((self.generate_debug_info(ast_node), IR::BindSelf));
+                    }
+                    ASTNodeModifier::CaptureOf => {
+                        instructions.extend(self.generate_without_redirect(&ast_node.children[0])?);
+                        instructions.push((self.generate_debug_info(ast_node), IR::CaptureOf));
                     }
                     ASTNodeModifier::Collect => {
                         let (label1, _) = self.new_label();

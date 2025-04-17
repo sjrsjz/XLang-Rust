@@ -129,13 +129,13 @@ impl IRTranslator {
                     );
                     self.code.push(value as u32);
                 }
-                IR::LoadLambda(signature, code_position) => {
+                IR::LoadLambda(signature, code_position, should_capture) => {
                     self.code.push(
                         Opcode32::build_opcode(
                             VMInstruction::LoadLambda as u8,
                             OperandFlag::Valid | OperandFlag::ArgSize64 | OperandFlag::UseConstPool,
                             OperandFlag::Valid | OperandFlag::ArgSize64,
-                            0,
+                            OperandFlag::Valid as u8,
                         )
                         .get_opcode(),
                     );
@@ -144,6 +144,7 @@ impl IRTranslator {
                     self.code.push(Opcode32::upper32(index as u64));
                     self.code.push(Opcode32::lower32(code_position as u64));
                     self.code.push(Opcode32::upper32(code_position as u64));
+                    self.code.push(should_capture as u32);
                 }
                 IR::ForkInstruction => {
                     self.code.push(
@@ -737,6 +738,17 @@ impl IRTranslator {
                     );
                     self.code.push(Opcode32::lower32(offset as u64));
                     self.code.push(Opcode32::upper32(offset as u64));
+                }
+                IR::CaptureOf => {
+                    self.code.push(
+                        Opcode32::build_opcode(
+                            VMInstruction::CaptureOf as u8,
+                            0,
+                            0,
+                            0,
+                        )
+                        .get_opcode(),
+                    );
                 }
                 _ => {
                     return Err(IRTranslatorError::InvalidInstruction(ir));
