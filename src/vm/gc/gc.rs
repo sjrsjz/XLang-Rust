@@ -34,6 +34,7 @@ impl std::fmt::Display for GCRef {
     }
 }
 
+#[allow(dead_code)]
 impl GCRef {
     pub fn new(reference: *mut dyn GCObject) -> Self {
         if reference.is_null() {
@@ -124,7 +125,7 @@ impl GCRef {
         }
     }
 
-    pub fn _wrap_mut<T: GCObject + 'static>(obj: &mut T) -> GCRef {
+    pub fn wrap_mut<T: GCObject + 'static>(obj: &mut T) -> GCRef {
         let obj = obj as *mut T as *mut dyn GCObject;
         if obj.is_null() {
             panic!("Failed to wrap object!");
@@ -134,14 +135,14 @@ impl GCRef {
         }
     }
 
-    pub fn _lock(&self) {
+    pub fn lock(&self) {
         unsafe {
             let obj = self.reference as *mut dyn GCObject;
             (*obj).get_traceable().lock = true;
         }
     }
 
-    pub fn _unlock(&self) {
+    pub fn unlock(&self) {
         unsafe {
             let obj = self.reference as *mut dyn GCObject;
             (*obj).get_traceable().lock = false;

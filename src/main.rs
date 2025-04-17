@@ -1,5 +1,5 @@
-mod parser;
 mod lsp;
+mod parser;
 mod vm;
 use colored::Colorize;
 use dir_stack::DirStack;
@@ -12,7 +12,6 @@ use vm::gc::gc::GCRef;
 use vm::instruction_set::VMInstructionPackage;
 use vm::ir::IRPackage;
 use vm::ir_translator::IRTranslator;
-
 
 use self::parser::lexer::{lexer, Token, TokenType};
 
@@ -89,8 +88,6 @@ enum Commands {
     },
 }
 
-
-
 // Execute compiled code
 fn execute_ir(package: VMInstructionPackage, _dir_stack: &mut DirStack) -> Result<(), VMError> {
     let mut coroutine_pool = VMCoroutinePool::new(true);
@@ -112,7 +109,6 @@ fn execute_ir(package: VMInstructionPackage, _dir_stack: &mut DirStack) -> Resul
     lambda_result.drop_ref();
 
     main_lambda.clone_ref();
-
 
     let _coro_id = coroutine_pool.new_coroutine(&mut main_lambda, &mut gc_system)?;
     let result = coroutine_pool.run_until_finished(&mut gc_system);
@@ -185,28 +181,21 @@ fn execute_ir_repl(
 // Implement bytecode file saving and loading for VMInstructionPackage
 impl VMInstructionPackage {
     pub fn write_to_file(&self, path: &str) -> Result<(), std::io::Error> {
-        let serialized = bincode::serialize(self).map_err(|e| {
-            std::io::Error::other(
-                format!("Serialization error: {}", e),
-            )
-        })?;
+        let serialized = bincode::serialize(self)
+            .map_err(|e| std::io::Error::other(format!("Serialization error: {}", e)))?;
 
         fs::write(path, serialized)
     }
 
     pub fn read_from_file(path: &str) -> Result<Self, std::io::Error> {
         let bytes = fs::read(path)?;
-        bincode::deserialize(&bytes).map_err(|e| {
-            std::io::Error::other(
-                format!("Deserialization error: {}", e),
-            )
-        })
+        bincode::deserialize(&bytes)
+            .map_err(|e| std::io::Error::other(format!("Deserialization error: {}", e)))
     }
 }
 
 fn run_file(path: &PathBuf) -> Result<(), String> {
     let extension = path.extension().and_then(|e| e.to_str()).unwrap_or("");
-    let mut dir_stack = DirStack::new(Some(&path.parent().unwrap_or_else(|| Path::new(".")).to_path_buf())).unwrap();
     match extension {
         "xir" => {
             // Execute IR file
@@ -224,6 +213,13 @@ fn run_file(path: &PathBuf) -> Result<(), String> {
                         .bright_red()
                         .to_string());
                     };
+                    let mut dir_stack = DirStack::new(Some(
+                        &path
+                            .parent()
+                            .unwrap_or_else(|| Path::new("."))
+                            .to_path_buf(),
+                    ))
+                    .unwrap();
 
                     match execute_ir(result, &mut dir_stack) {
                         Ok(_) => Ok(()),
@@ -240,12 +236,21 @@ fn run_file(path: &PathBuf) -> Result<(), String> {
         "xbc" => {
             // Execute bytecode file directly
             match VMInstructionPackage::read_from_file(path.to_str().unwrap()) {
-                Ok(bytecode) => match execute_ir(bytecode, &mut dir_stack) {
-                    Ok(_) => Ok(()),
-                    Err(e) => Err(format!("Execution error: {}", e.to_string())
-                        .bright_red()
-                        .to_string()),
-                },
+                Ok(bytecode) => {
+                    let mut dir_stack = DirStack::new(Some(
+                        &path
+                            .parent()
+                            .unwrap_or_else(|| Path::new("."))
+                            .to_path_buf(),
+                    ))
+                    .unwrap();
+                    match execute_ir(bytecode, &mut dir_stack) {
+                        Ok(_) => Ok(()),
+                        Err(e) => Err(format!("Execution error: {}", e.to_string())
+                            .bright_red()
+                            .to_string()),
+                    }
+                }
                 Err(e) => Err(format!("Error reading bytecode file: {}", e)
                     .bright_red()
                     .to_string()),
@@ -254,29 +259,38 @@ fn run_file(path: &PathBuf) -> Result<(), String> {
         _ => {
             // Assume it's a source file, compile and execute
             match fs::read_to_string(path) {
-                Ok(code) => match build_code(&code, &mut dir_stack) {
-                    Ok(package) => {
-                        let mut translator = IRTranslator::new(&package);
-                        let translate_result = translator.translate();
-                        let result = if translate_result.is_ok() {
-                            translator.get_result()
-                        } else {
-                            return Err(format!(
-                                "IR translation failed: {:?}",
-                                translate_result.err().unwrap()
-                            )
-                            .bright_red()
-                            .to_string());
-                        };
-                        match execute_ir(result, &mut dir_stack) {
-                            Ok(_) => Ok(()),
-                            Err(e) => Err(format!("Execution error: {}", e.to_string())
+                Ok(code) => {
+                    let mut dir_stack = DirStack::new(Some(
+                        &path
+                            .parent()
+                            .unwrap_or_else(|| Path::new("."))
+                            .to_path_buf(),
+                    ))
+                    .unwrap();
+                    match build_code(&code, &mut dir_stack) {
+                        Ok(package) => {
+                            let mut translator = IRTranslator::new(&package);
+                            let translate_result = translator.translate();
+                            let result = if translate_result.is_ok() {
+                                translator.get_result()
+                            } else {
+                                return Err(format!(
+                                    "IR translation failed: {:?}",
+                                    translate_result.err().unwrap()
+                                )
                                 .bright_red()
-                                .to_string()),
+                                .to_string());
+                            };
+                            match execute_ir(result, &mut dir_stack) {
+                                Ok(_) => Ok(()),
+                                Err(e) => Err(format!("Execution error: {}", e.to_string())
+                                    .bright_red()
+                                    .to_string()),
+                            }
                         }
+                        Err(e) => Err(format!("Compilation error: {}", e).bright_red().to_string()),
                     }
-                    Err(e) => Err(format!("Compilation error: {}", e).bright_red().to_string()),
-                },
+                }
                 Err(e) => Err(format!("File reading error: {}", e)
                     .bright_red()
                     .to_string()),
@@ -336,8 +350,13 @@ fn ir_to_bytecode_file(input: &PathBuf, output: Option<PathBuf>) -> Result<(), S
 }
 
 fn compile_file(input: &PathBuf, output: Option<PathBuf>, bytecode: bool) -> Result<(), String> {
-
-    let mut dir_stack = DirStack::new(Some(&input.parent().unwrap_or_else(|| Path::new(".")).to_path_buf())).unwrap();
+    let mut dir_stack = DirStack::new(Some(
+        &input
+            .parent()
+            .unwrap_or_else(|| Path::new("."))
+            .to_path_buf(),
+    ))
+    .unwrap();
     // Read source code
     let code = match fs::read_to_string(input) {
         Ok(content) => content,
@@ -827,7 +846,7 @@ fn run_repl() -> Result<(), String> {
                 break;
             }
             Err(err) => {
-                println!("{}", format!("Input error: {}", err).red());
+                println!("{}", format!("{}", err).red());
                 break;
             }
         }
@@ -845,12 +864,10 @@ fn run_repl() -> Result<(), String> {
 }
 // Function to check if input is complete
 fn is_input_complete(input: &str) -> bool {
-    // Simple bracket matching
+    // 1. Check for unbalanced brackets/braces/parens and unterminated strings
     let mut brace_count = 0; // { }
     let mut bracket_count = 0; // [ ]
     let mut paren_count = 0; // ( )
-
-    // Track string literals to ignore brackets inside them
     let mut in_string = false;
     let mut escape_next = false;
 
@@ -863,40 +880,82 @@ fn is_input_complete(input: &str) -> bool {
             } else if c == '"' {
                 in_string = false;
             }
-            continue;
-        }
-
-        match c {
-            '"' => in_string = true,
-            '{' => brace_count += 1,
-            '}' => brace_count -= 1,
-            '[' => bracket_count += 1,
-            ']' => bracket_count -= 1,
-            '(' => paren_count += 1,
-            ')' => paren_count -= 1,
-            _ => {}
+        } else {
+            match c {
+                '"' => in_string = true,
+                '{' => brace_count += 1,
+                '}' => brace_count -= 1,
+                '[' => bracket_count += 1,
+                ']' => bracket_count -= 1,
+                '(' => paren_count += 1,
+                ')' => paren_count -= 1,
+                _ => {}
+            }
         }
     }
 
-    // Also try to tokenize the input using the lexer
-    let tokens = lexer::tokenize(input);
-    let tokens = lexer::reject_comment(&tokens);
+    // Incomplete if brackets are open or inside a string
+    if brace_count > 0 || bracket_count > 0 || paren_count > 0 || in_string {
+        return false;
+    }
+    // Note: A negative count means too many closing brackets, which is a syntax error,
+    // but for the purpose of REPL continuation, we consider it "complete" (or rather, ready for parsing).
 
-    // Input is incomplete if:
-    // 1. Any bracket count is unbalanced
-    // 2. We're still in a string
-    // 3. The input ends with an operator or other continuation indicator
-    let balanced = brace_count == 0 && bracket_count == 0 && paren_count == 0 && !in_string;
+    // 2. Check if the input ends with a token that requires more input
+    let trimmed_input = input.trim();
+    if trimmed_input.is_empty() {
+        return true; // Empty or whitespace-only input is complete
+    }
 
-    // Check for trailing operators that indicate continuation
-    let last_token = tokens.last().map(|t| t.token).unwrap_or("");
-    let is_trailing_operator = ["+", "-", "*", "/", "=", ":=", ".", "->"].contains(&last_token);
+    // Use the lexer to find the last significant token
+    let tokens = lexer::tokenize(trimmed_input);
+    let tokens = lexer::reject_comment(&tokens); // Ignore comments
 
-    // Check for trailing semicolon
-    let trimmed = input.trim();
-    let ends_with_semicolon = trimmed.ends_with(';');
+    if let Some(last_token) = tokens.last() {
+        let token_str = last_token.token;
 
-    balanced && !is_trailing_operator && (ends_with_semicolon || !trimmed.contains(';'))
+        // Check for operators that usually expect a right-hand side or subsequent input
+        let is_trailing_operator = matches!(token_str,
+            // Arithmetic, Comparison, Logical, Assignment, Access, Bitwise
+            "+" | "-" | "*" | "/" | "%" | "**" |
+            "==" | "!=" | "<" | ">" | "<=" | ">=" |
+            "and" | "or" |
+            "=" | ":=" | "+=" | "-=" | "*=" | "/=" | "%=" | "**=" | // Include compound assignments
+            "|" | "&" | "^" | "<<" | ">>" | // Bitwise/Set operators
+            "." | "->"
+        );
+
+        if is_trailing_operator {
+            return false;
+        }
+
+        // Check for keywords that expect a following expression or block
+        let is_trailing_keyword = matches!(token_str,
+            "if" | "else" | "while" | "bind" | "return" | "yield" | "in" | "async" | "await"
+        );
+
+        if is_trailing_keyword {
+            // Special case: `else` might appear alone temporarily but needs more
+            return false;
+        }
+
+        // Check for trailing comma (usually indicates more items in lists, tuples, args)
+        if token_str == "," {
+            return false;
+        }
+
+        // Check for keywords that might *start* a block implicitly if followed by newline/indent
+        // Example: `bind my_func =` should be incomplete. The operator check handles this.
+        // Example: `if condition` should be incomplete. The keyword check handles this.
+
+    } else {
+        // If there are no tokens after trimming and removing comments, it's complete.
+        return true;
+    }
+
+    // If brackets are balanced, not in a string, and the last token doesn't
+    // indicate necessary continuation, consider the input complete.
+    true
 }
 fn main() {
     let cli = Cli::parse();
