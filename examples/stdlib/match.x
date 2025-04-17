@@ -1,46 +1,46 @@
 try_catch := boundary (@dynamic (__stdlib_root!) -> dyn import (__stdlib_root + "/try_catch.xbc"))();
 builtins := boundary (@dynamic (__stdlib_root!) -> dyn import (__stdlib_root + "/builtins.xbc"))();
 
-match_alias := (cases?, __builtins__ => builtins, __try_catch__ => try_catch) -> {
-    return (x?, __cases__ => cases, __builtins__!, __try_catch__!) -> {
+match_alias := (cases?) -> &(builtins!, try_catch!) {
+    return (x?) -> &(cases!, builtins => $this.builtins, try_catch => $this.try_catch) {
         n := 0;
         alias := aliasof x;
-        while (n < __builtins__.len(__cases__)) {
-            if ((keyof __cases__[n]) in (alias | () -> true)) {
-                return (valueof __cases__[n])(x);
+        while (n < $this.builtins.len($this.cases)) {
+            if ((keyof $this.cases[n]) in (alias | () -> true)) {
+                return (valueof $this.cases[n])(x);
             };
             n = n + 1;
         };
 
         n := 0;
-        while (n < __builtins__.len(__cases__)) {
-            if ((keyof __cases__[n]) == "_") {
-                return (valueof __cases__[n])(x);
+        while (n < $this.builtins.len($this.cases)) {
+            if ((keyof $this.cases[n]) == "_") {
+                return (valueof $this.cases[n])(x);
             };
             n = n + 1;
         };
-        raise __try_catch__.Err("No match found for " + alias);
+        raise $this.try_catch.Err("No match found for " + alias);
     }
 };
 
-match_value := (cases?, __builtins__ => builtins, __try_catch__ => try_catch) -> {
-    return (x?, __cases__ => cases, __builtins__!, __try_catch__!) -> {
+match_value := (cases?) -> &(builtins!, try_catch!) {
+    return (x?) -> &(cases!, builtins => $this.builtins, try_catch => $this.try_catch) {
         n := 0;
-        while (n < __builtins__.len(__cases__)) {
-            if ((keyof __cases__[n]) == x) {
-                return (valueof __cases__[n])(x);
+        while (n < $this.builtins.len($this.cases)) {
+            if ((keyof $this.cases[n]) == x) {
+                return (valueof $this.cases[n])(x);
             };
             n = n + 1;
         };
 
         n := 0;
-        while (n < __builtins__.len(__cases__)) {
-            if (aliasof (__cases__[n]) == ("default", )) {
-                return (valueof __cases__[n])(x);
+        while (n < $this.builtins.len($this.cases)) {
+            if (aliasof ($this.cases[n]) == ("default", )) {
+                return (valueof $this.cases[n])(x);
             };
             n = n + 1;
         };
-        raise __try_catch__.Err("No match found for " + __builtins__.string(x));
+        raise $this.try_catch.Err("No match found for " + $this.builtins.string(x));
     }
 };
 
