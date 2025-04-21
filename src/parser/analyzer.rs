@@ -1005,7 +1005,7 @@ fn analyze_node<'t>(
 
             return body_type; // Or Null/Unknown?
         }
-        ASTNodeType::Return | ASTNodeType::Yield | ASTNodeType::Raise => {
+        ASTNodeType::Return | ASTNodeType::Emit | ASTNodeType::Raise => {
             if let Some(value) = node.children.first() {
                 let ret_type = analyze_node(
                     value,

@@ -502,7 +502,7 @@ fn run_repl() -> Result<(), String> {
             // 添加语言关键字
             for kw in [
                 "if", "else", "while", "in", "return", "break", "continue", "null", "true",
-                "false", "and", "or", "not", "bind", "self", "async", "await", "yield", "wrap",
+                "false", "and", "or", "not", "bind", "self", "async", "await", "emit", "wrap",
                 "selfof", "import", "typeof", "copy", "deepcopy", "wipe", "aliasof", "keyof",
                 "valueof",
             ] {
@@ -933,7 +933,7 @@ fn is_input_complete(input: &str) -> bool {
 
         // Check for keywords that expect a following expression or block
         let is_trailing_keyword = matches!(token_str,
-            "if" | "else" | "while" | "bind" | "return" | "yield" | "in" | "async" | "await"
+            "if" | "else" | "while" | "bind" | "return" | "emit" | "in" | "async" | "await"
         );
 
         if is_trailing_keyword {

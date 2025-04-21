@@ -378,7 +378,7 @@ impl<'t> IRGenerator<'t> {
                 instructions.push((self.generate_debug_info(ast_node), IR::Raise));
                 Ok(instructions)
             }
-            ASTNodeType::Yield => {
+            ASTNodeType::Emit => {
                 let mut instructions = Vec::new();
                 instructions.extend(self.generate_without_redirect(&ast_node.children[0])?);
                 instructions.push((self.generate_debug_info(ast_node), IR::Emit));
