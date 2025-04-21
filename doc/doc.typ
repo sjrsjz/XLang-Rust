@@ -603,7 +603,7 @@ XLang-Rust 支持在 Lambda 函数中捕获外部变量。使用 `&` 符号来�
 ```xlang
 a := 1; // 定义一个变量 a
 foo := () -> &a {
-    print($this.a); // 打印本函数捕获的变量 a 的值
+    print($this); // 打印本函数捕获的变量 a 的值
 };
 foo(); // 调用函数 foo，输出 1
 print(captureof foo); // 打印捕获的变量 a 的值，输出 1。也可以写为 `print($foo)`。
