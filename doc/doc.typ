@@ -1,6 +1,6 @@
 #import "@preview/zebraw:0.5.2": *
 #show raw: it => zebraw(text(font: ("JetBrains Mono", "Microsoft YaHei UI"), it), numbering-separator:true)
-
+#show raw.where(block: false): it => box(fill:luma(240), outset: (y: 0.5em), inset: (x:0.5em), it) 
 #set text(font: "Microsoft YaHei UI")
 
 = XLang-Rust 文档
@@ -11,6 +11,22 @@
 
 = 概述
 XLang-Rust 是一个使用 Rust 语言编写的跨平台的实验性编程语言，旨在提供一种简洁而强大的编程体验。它融合了命令式和函数式编程范式的特性，致力于通过精简的语法实现复杂的功能。
+
+= 编译器使用
+XLang-Rust 的编译器通过命令行接口 `xlang-rust`（或其他编译后的可执行文件名）提供服务，支持以下子命令：
+
+- `repl`: 启动交互式命令行模式（Read-Eval-Print Loop），类似 `Mathematica`，用于即时执行代码片段。
+- `run <input>`: 直接运行指定的代码文件。`<input>` 可以是 XLang 源代码文件（如 `.x`）、中间代码文件 (`.xir`) 或字节码文件 (`.xbc`)。
+- `compile <input> [-o <output>] [-b|--bytecode]`: 将源代码文件 (`<input>`) 编译为中间代码 (`.xir`) 或字节码 (`.xbc`)。
+  - 默认编译为 `.xir` 文件。
+  - 使用 `-b` 或 `--bytecode` 选项可直接编译为字节码 (`.xbc`) 文件。
+  - 可通过 `-o <output>` 或 `--output <output>` 选项指定输出文件的路径。如果未指定，输出文件名将基于输入文件名，并使用相应的扩展名 (`.xir` 或 `.xbc`)。
+- `display-ir <input>`: 读取并以可读格式打印指定的中间代码文件 (`.xir`) 的内容，包括指令、函数入口点和调试信息。
+- `translate <input> [-o <output>]`: 将指定的中间代码文件 (`<input>.xir`) 翻译成字节码文件 (`.xbc`)。
+  - 可通过 `-o <output>` 或 `--output <output>` 选项指定输出字节码文件的路径。如果未指定，输出文件名将基于输入文件名，并使用 `.xbc` 扩展名。
+- `lsp [-p <port>]`: 启动 Language Server Protocol (LSP) 服务器，用于与集成开发环境（IDE）如 VS Code 进行交互，提供代码补全、诊断等功能。
+  - 可通过 `-p <port>` 或 `--port <port>` 选项指定服务器监听的端口号（默认为 2087）。
+
 
 = 表达式/语句
 XLang-Rust 的语句结构与 Rust 类似，使用分号 `;` 作为表达式序列的分隔符。当存在多个表达式时，它们将按顺序求值，序列中最后一个表达式的求值结果将作为整个语句的值。
@@ -170,7 +186,7 @@ A := boundary { // 创建边界作用域
 assert(A == 1); // A 被赋值为 raise 的值 1
 ```
 
-*重要说明*: `boundary` 和 `raise` 并非设计为传统的异常处理机制（尽管可以模拟类似行为）。它们的主要目的是提供一种比 `return` 更强大的非局部控制转移机制，允许从深层嵌套的结构中提前返回值。
+*注意*: `boundary` 和 `raise` 并非设计为传统的异常处理机制（尽管可以模拟类似行为）。它们的主要目的是提供一种比 `return` 更强大的非局部控制转移机制，允许从深层嵌套的结构中提前返回值。
 
 ```xlang
 A := boundary if true { // boundary 包裹 if 语句
@@ -229,6 +245,8 @@ XLang-Rust 支持多种运算符，包括算术运算符、比较运算符、逻
 
 XLang-Rust 提供了多种内建数据类型。所有类型都是对象，变量存储的是对象的引用。
 （下述所有的 `!=` 运算均为 `==` 的反向操作因此不做介绍）
+
+可以使用 `typeof value` 来获取变量的类型字符串。
 
 == 整数 (int)
 - *描述*: 存储 64 位有符号整数 (`i64`)。
@@ -318,15 +336,43 @@ XLang-Rust 提供了多种内建数据类型。所有类型都是对象，变量
   - 比较: `==` 比较源容器和筛选 Lambda 是否都相等。
   - 求值：`collect set_obj` 返回一个新的元组，包含源容器中所有满足筛选 Lambda 条件的元素。
 
+*注意*: 由于XLangVM的一些机制，`in` 关键字只能对惰性筛选器进行使用，对元组等容器对象使用 `in` 关键字会导致虚拟机抛出异常。如果需要判断一个值是否在元组中，可以使用如下方法：
+```xlang
+tuple := (1, 2, 3);
+set := tuple | (x?) -> true; // 筛选条件永远为真
+assert(1 in set); // 这行代码会正常执行
+// assert(1 in tuple); // 这行代码会抛出异常
+```
+
 == 指令集 (instructions)
 - *描述*: 存储由 XLang-Rust 编译器生成的虚拟机指令包。
 - *创建*: 通常由 `import "path/to/compiled.xbc"` 语句创建并赋值给变量。
 - *操作*: 主要供虚拟机内部使用，作为 `lambda` 函数的执行体。用户通常不直接操作其内容。
 
+下面是一个示例：
+
+```xlang
+module_instructions := import "path/to/compiled.xbc"; // 导入编译后的指令集
+module_lambda := () -> dyn module_instructions; // 定义一个 lambda 函数，使用导入的指令集作为函数体
+result := module_lambda(); // 调用 lambda 函数，执行导入的指令集
+print(result); // 输出结果
+```
+
 == C Lambda 指令 (clambda)
 - *描述*: 表示一个已加载的外部 C 动态链接库（DLL/SO）的接口。
 - *创建*: 由 `load_clambda("path/to/library")` 语句创建并赋值给变量。
 - *操作*: 主要供虚拟机内部使用，允许 `lambda` 函数调用 C 库中定义的函数。用户通常不直接操作其内容。
+
+使用 C Lambda 的方式和使用普通的指令集类似。唯一区别在于其调用时会将Lambda的第一个别名当作函数签名并调用C库中的 `clambda_{signature}` 函数。
+
+
+下面是一个示例：
+```xlang
+module_clambda := load_clambda("path/to/library"); // 加载 C 动态链接库
+module_lambda := myfunction::() -> dyn module_clambda; // 定义一个 lambda 函数，使用加载的 C 库作为函数体，函数签名是 `myfunction`
+result := module_lambda(); // 调用 lambda 函数，执行加载的 C 库
+print(result); // 输出结果
+```
 
 = 元组
 
@@ -575,3 +621,232 @@ foo(); // 调用函数 foo，输出 1
 区别在于：
 - 使用 `&` 捕获的变量是一个纯引用，一旦构建不可能对其类型进行修改。
 - 使用参数捕获的变量和一般的变量一样，可以使用 `:=` 来遮蔽掉原有的变量。
+- `copy` 和 `deepcopy` 不能保证复制的参数的引用指向原值，但其一定不会影响捕获的变量并且保证Lambda复制后的捕获变量是一致的
+
+== 内置函数
+XLang-Rust 提供了一些内置函数来操作和处理数据。以下是一些常用的内置函数：
+- `print(value)`：打印值到标准输出。
+- `len(value)`：返回值的长度或大小。
+- `int(value)`：将值转换为整数。
+- `float(value)`：将值转换为浮点数。
+- `string(value)`：将值转换为字符串。
+- `bool(value)`：将值转换为布尔值。
+- `bytes(value)`：将值转换为字节序列。
+- `input(value)`：从标准输入读取值。先输出提示信息，然后等待用户输入。输入的值会被转换为字符串。
+- `load_clambda(path)`：加载一个 C 动态链接库（DLL/SO），并返回一个 clambda 对象。
+- `json_encode(value)`：将值编码为 JSON 字符串。
+- `json_decode(value)`：将 JSON 字符串解码为值。
+
+*注意*：所有内置函数都是Lambda对象，其只在一个协程被创建时绑定在初始的作用域上。因此可以被遮蔽。
+
+考虑到Lambda实现的特殊性（参数缓存），建议用以下代码包装一个自动擦除参数的Lambda对象防止参数出现类型错误
+
+```xlang
+builtins := bind {
+    'builtin_print' : print,
+    'builtin_int' : int,
+    'builtin_float' : float,
+    'builtin_string' : string,
+    'builtin_bool' : bool,
+    'builtin_bytes' : bytes,
+    'builtin_input' : input,
+    'builtin_len' : len,
+    'builtin_load_clambda' : load_clambda,
+    'builtin_json_decode' : json_decode,
+    'builtin_json_encode' : json_encode,
+    print => () -> {
+        result := self.builtin_print(...keyof this);
+        keyof this = (); // 清空参数
+        keyof self.builtin_print = (); // 清空参数
+        return result;
+    },
+    int => () -> {
+        result := self.builtin_int(...keyof this);
+        keyof this = ();
+        keyof self.builtin_int = ();
+        return result;
+    },
+    float => () -> {
+        result := self.builtin_float(...keyof this);
+        keyof this = ();
+        keyof self.builtin_float = ();
+        return result;
+    },
+    string => () -> {
+        result := self.builtin_string(...keyof this);
+        keyof this = ();
+        keyof self.builtin_string = ();
+        return result;
+    },
+    bool => () -> {
+        result := self.builtin_bool(...keyof this);
+        keyof this = ();
+        keyof self.builtin_bool = ();
+        return result;
+    },
+    bytes => () -> {
+        result := self.builtin_bytes(...keyof this);
+        keyof this = ();
+        keyof self.builtin_bytes = ();
+        return result;
+    },
+    len => () -> {
+        result := self.builtin_len(...keyof this);
+        keyof this = ();
+        keyof self.builtin_len = ();
+        return result;
+    },
+    input => () -> {
+        result := self.builtin_input(...keyof this);
+        keyof this = ();
+        keyof self.builtin_input = ();
+        return result;
+    },
+    load_clambda => () -> {
+        result := self.builtin_load_clambda(...keyof this);
+        keyof this = ();
+        keyof self.builtin_load_clambda = ();
+        return result;
+    },
+    json_decode => () -> {
+        result := self.builtin_json_decode(...keyof this);
+        keyof this = ();
+        keyof self.builtin_json_decode = ();
+        return result;
+    },
+    json_encode => () -> {
+        result := self.builtin_json_encode(...keyof this);
+        keyof this = ();
+        keyof self.builtin_json_encode = ();
+        return result;
+    }
+};
+
+builtins.print("Hello World!"); // 打印 "Hello World!"
+```
+
+= 别名系统
+
+由于XLang-Rust采用的是结构化类型系统，因此在XLang-Rust中，变量的类型是由其值决定的，而不是由其声明时的类型决定的。这使得XLang-Rust的数据结构更加灵活和动态。但也导致了一个问题：如何在显著指定一个对象到底是什么。为了解决这个问题，XLang-Rust引入了别名系统。
+
+别名系统允许用户为一个对象创建一个别名，这个别名可以在后续的代码中使用。
+
+使用 `alias_name::value` 语法来为对象附加一个别名。这个别名是静态的，不能被修改。
+
+```xlang
+A := MyType::(1, 2, 3); // 创建一个对象 A，别名为 MyType
+```
+
+可以使用 `aliasof value` 来获取对象的别名元组，返回一个元组，包含对象的所有别名的字符串。
+
+当然别名可以嵌套：
+```xlang
+A := A::B::(1, 2, 3); // 创建一个对象 A，别名为 MyType
+assert(alias of A == ('B', 'A')); // 获取对象 A 的别名
+```
+
+使用 `wipe value` 可以*浅拷贝*一个不带别名的对象
+
+*注意*: 定义别名的时候会对原对象进行浅拷贝，因此会导致Lambda对象丢失 `self` 引用。不建议对带 `self` 引用的Lambda对象使用别名。
+
+= 注解
+XLang-Rust 支持使用注解来标记函数或变量的特定属性。注解以 `@` 符号开头，后面跟随注解名称。不支持参数。
+
+下面是所有的注解列表：
+- `@dynamic`：标记一个表达式为动态的，允许表达式产生明显的副作用（比如跨函数作用域的变量使用）。AST在识别到后会认为该表达式是一个动态表达式，并不会进行静态分析。
+- `@static`：标记一个表达式为静态的，不允许表达式产生明显的副作用（比如跨函数作用域的变量使用）。AST在识别到后会认为该表达式是一个静态表达式，并会进行强制静态分析。
+- `@compile`：标记一个字符串为要被编译的模块路径。AST在识别到后会将该字符串编译为一个模块，模块路径相对于当前文件。
+
+所有注解都不影响表达式的值，只是影响 AST 的静态分析。
+
+下面是一个示例：
+```xlang
+x := 1; // 定义一个变量 x
+foo := () -> {
+    @dynamic x = 2; // x 不在当前作用域中，因此静态分析会失败，使用 @dynamic 绕过静态分析
+};
+foo(); // 调用函数 foo
+print(x); // 输出 2
+```
+= 控制流
+XLang-Rust 支持常见的控制流语句，包括条件语句、循环语句。
+
+== 条件语句
+XLang-Rust 支持 `if` 语句。
+
+定义为 `if atomic_expression_1 atomic_expression_2 <else expression>`，其中 `atomic_expression_1` 是一个布尔表达式，`atomic_expression_2` 是一个表达式，`<else expression>` 是可选的 else 分支，else 后可携带AST能自动匹配最长长度的表达式。`if`语句的返回值是被执行的分支的值。如果没有分支被执行，则返回 `null`。
+```xlang
+A := if true 1 else 2; // A 的值为 1
+B := if false 1 else 2; // B 的值为 2
+C := if false 1; // C 的值为 null
+
+// 当然也可以组合出更复杂的条件语句
+/*
+if (condition_1) {
+    // 执行代码块 1
+} else if (condition_2) {
+    // 执行代码块 2
+} else {
+    // 执行代码块 3
+}
+*/
+```
+
+== 循环语句
+XLang-Rust 支持 `while` 循环语句。
+
+定义为 `while atomic_expression_1 expression`，其中 `atomic_expression_1` 是一个布尔表达式，`expression` 是一个AST能自动匹配最长长度的表达式。`while` 正常结束循环的返回值为 `null`。
+```xlang
+i := 0; // 定义一个变量 i
+while (i < 10) {
+    print(i); // 打印 i 的值
+    i := i + 1; // 将 i 加 1
+};
+// 输出 0 到 9
+```
+
+=== break语句
+`break expression` 语句用于跳出当前循环。它会立即终止循环的执行，并返回携带的值。
+
+=== continue语句
+`continue expression` 语句用于跳过当前循环的剩余部分，并继续下一次循环。其携带的值不会影响 `while` 循环的返回值。
+
+= 边界作用域
+
+XLang-Rust 的边界作用域是一个特殊的作用域，用于为 `raise` 语句提供一个跳转点，之前已做介绍，现在用边界作用域来实现一个其他语言常见的 `try...catch` 机制。
+
+```xlang
+Err := (v?) -> bind Err::{
+    'result' : v,
+    value => () -> self.result,
+};
+Ok := (v?) -> bind Ok::{
+    'result' : v,
+    value => () -> self.result,
+};
+is_err := (v?) -> "Err" in {aliasof v | () -> true};
+
+try := (f?, is_err!) -> bind {
+    'result': wrap null,
+    value => () -> return valueof self.result,
+    catch => (err_handler?, f!, is_err!) -> {
+        result := boundary f(...(keyof f));
+        if (is_err(result)) {
+            err_handler(result);
+        } else {
+            self.result = result;
+        };
+        return self;
+    },
+    finally => (finally_handler?) -> {
+        result := boundary finally_handler(...(keyof finally_handler));
+        return self;
+    },
+};
+
+try_catch := (pair?, Ok!) -> {
+    return (valueof pair)(keyof pair, boundary {
+        return Ok((keyof pair)());
+    });
+};
+```
