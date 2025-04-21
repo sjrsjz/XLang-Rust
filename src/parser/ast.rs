@@ -478,7 +478,7 @@ pub enum ASTNodeType {
     Continue, // continue
     Range, // x..y
     In,
-    Yield,
+    Emit,
     AsyncLambdaCall,
     Alias(String),      // Type::Value
     Set,                // collection | filter
@@ -734,7 +734,7 @@ fn match_all<'t>(
 
     node_matcher.add_matcher(Box::new(
         |tokens, current| -> Result<(Option<ASTNode<'t>>, usize), ParserError<'t>> {
-            match_return_yield_raise(tokens, current)
+            match_return_emit_raise(tokens, current)
         },
     ));
 
@@ -1033,7 +1033,7 @@ fn match_annotation<'t>(
     Ok((Some(node), right_offset + 2))
 }
 
-fn match_return_yield_raise<'t>(
+fn match_return_emit_raise<'t>(
     tokens: &Vec<GatheredTokens<'t>>,
     current: usize,
 ) -> Result<(Option<ASTNode<'t>>, usize), ParserError<'t>> {
@@ -1041,7 +1041,7 @@ fn match_return_yield_raise<'t>(
         return Ok((None, 0));
     }
     if !is_identifier(&tokens[current], "return")
-        && !is_identifier(&tokens[current], "yield")
+        && !is_identifier(&tokens[current], "emit")
         && !is_identifier(&tokens[current], "raise")
     {
         return Ok((None, 0));
@@ -1061,7 +1061,7 @@ fn match_return_yield_raise<'t>(
 
     let node_type = match tokens[current].first().unwrap().token {
         "return" => ASTNodeType::Return,
-        "yield" => ASTNodeType::Yield,
+        "emit" => ASTNodeType::Emit,
         "raise" => ASTNodeType::Raise,
         _ => unreachable!(),
     };

@@ -36,7 +36,7 @@ pub enum SemanticTokenTypes {
     Continue,    // continue
     Range,       // x..y
     In,
-    Yield,
+    Emit,
     AsyncLambdaCall,
     Alias, // Type::Value
     Set,   // collection | filter
@@ -111,7 +111,7 @@ fn process_node(
             ASTNodeType::Continue => SemanticTokenTypes::Continue,
             ASTNodeType::Range => SemanticTokenTypes::Range,
             ASTNodeType::In => SemanticTokenTypes::In,
-            ASTNodeType::Yield => SemanticTokenTypes::Yield,
+            ASTNodeType::Emit => SemanticTokenTypes::Emit,
             ASTNodeType::Alias(_) => SemanticTokenTypes::Alias,
             ASTNodeType::Set => SemanticTokenTypes::Set,
             ASTNodeType::Map => SemanticTokenTypes::Map,
@@ -307,7 +307,7 @@ pub(super) fn encode_semantic_tokens(tokens: &[SemanticTokenTypes], text: &str) 
             SemanticTokenTypes::Continue => Some(45),
             SemanticTokenTypes::Range => Some(46),
             SemanticTokenTypes::In => Some(47),
-            SemanticTokenTypes::Yield => Some(48),
+            SemanticTokenTypes::Emit => Some(48),
             SemanticTokenTypes::Alias => Some(49),
             SemanticTokenTypes::Set => Some(50),
             SemanticTokenTypes::Map => Some(51),
@@ -346,7 +346,7 @@ pub(super) fn encode_semantic_tokens(tokens: &[SemanticTokenTypes], text: &str) 
             SemanticTokenTypes::Variable => MOD_NONE, // 变量使用可能没有，声明时可能有
             SemanticTokenTypes::LambdaDef => MOD_DECLARATION | MOD_DEFINITION,
             SemanticTokenTypes::AsyncLambdaCall => MOD_ASYNC,
-            SemanticTokenTypes::Yield => MOD_ASYNC,
+            SemanticTokenTypes::Emit => MOD_ASYNC,
             SemanticTokenTypes::Assign => MOD_MODIFICATION,
             SemanticTokenTypes::Operation => MOD_MODIFICATION, // 不确定，看具体操作
             SemanticTokenTypes::Modifier => MOD_NONE,          // 修饰符本身通常不带修饰符

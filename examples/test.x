@@ -84,7 +84,7 @@ foo := (n=>0)->{a:=n;if(n<10){this(a+1)}};foo();
 
 create_async_func := () -> (n=>0) -> {
     while (n = n + 1; n < 10) {
-        yield n / 2;
+        emit n / 2;
     };
     return "success";
 };

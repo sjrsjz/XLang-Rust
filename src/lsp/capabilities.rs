@@ -57,7 +57,7 @@ pub fn initialize_capabilities() -> ServerCapabilities {
         "continue".to_string(),
         "range".to_string(),
         "in".to_string(),
-        "yield".to_string(),
+        "emit".to_string(),
         "alias".to_string(),
         "set".to_string(),
         "map".to_string(),

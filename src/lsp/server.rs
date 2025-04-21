@@ -250,7 +250,7 @@ impl LspServer {
         // 添加XLang关键字
         let keywords = vec![
             "if", "else", "while", "return", "break", "continue", "and", "or", "not", "null", "in",
-            "async", "await", "yield", "deepcopy", "import", "keyof", "valueof", "typeof",
+            "async", "await", "emit", "deepcopy", "import", "keyof", "valueof", "typeof",
             "selfof", "dyn", "copy", "ref", "deref", "assert", "wrap", "wipe", "aliasof", "bind",
             "boundary", "collect", "raise", "xor", "captureof"
         ];
