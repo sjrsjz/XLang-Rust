@@ -22,8 +22,8 @@ serde_json = "1.0.140"
 log = "0.4.27"
 env_logger = "0.11.8"
 url = "2.5.4"
-xlang_vm_core = {path = "./xlang_vm_core"}
-xlang_frontend = {path = "./xlang_frontend"}
+xlang_frontend = { version = "0.1.0", path = "xlang_frontend" }
+xlang_vm_core = { version = "0.1.0", path = "xlang_vm_core" }
 [profile.release]
 # 保留一些调试信息，帮助排查问题
 debug = 1
