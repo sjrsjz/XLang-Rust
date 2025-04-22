@@ -46,7 +46,7 @@ assert(my_string + " How are you?" == "Hello, World! How are you?");
 assert(my_string[0] == "H");
 assert(my_string[1] == "e");
 assert(my_string[0..5] == "Hello");
-assert(len(my_string) == 13);
+assert(lengthof(my_string) == 13);
 
 /* 4. bool */
 my_bool := true;
@@ -77,16 +77,16 @@ assert(my_null != []);
 /* 6. bytes */
 // bytes 是一个字节数组，使用base64编码
 my_bytes := $"SGVsbG8sIFdvcmxkIQ==";
-assert(string(my_bytes) == "Hello, World!");
+assert(@dynamic string(my_bytes) == "Hello, World!");
 assert(typeof my_bytes == "bytes");
 assert(aliasof my_bytes == ());
 assert(my_bytes[0] == 72);
 assert(my_bytes[1] == 101);
 my_bytes = 0 : 65; // 向0位置写入65
-assert(string(my_bytes) == "Aello, World!");
+assert(@dynamic string(my_bytes) == "Aello, World!");
 my_bytes = (0..5) : 65; // 向0到5位置写入65
-assert(string(my_bytes) == "AAAAA, World!");
-assert(string(my_bytes[0..5]) == "AAAAA");
+assert(@dynamic string(my_bytes) == "AAAAA, World!");
+assert(@dynamic string(my_bytes[0..5]) == "AAAAA");
 
 /* 7. tuple */
 my_tuple := (1, 2.0, "Hello");
@@ -147,7 +147,7 @@ assert(my_dict.key2 == 2); // 通过key访问
 
 /* lambda */
 my_lambda := (x?) -> x + 1;
-print(my_lambda);
+@dynamic print(my_lambda);
 assert(typeof my_lambda == "lambda");
 assert(aliasof my_lambda == ());
 assert(keyof my_lambda == (x => null, )); // lambda上下文/参数
@@ -299,24 +299,24 @@ assert(counter.increment() == 1);
 /* 异步编程 */
 
 // 定义异步函数
-async_function := () -> {
+async_function := @dynamic (print!) -> {
     // 模拟异步操作
-    @dynamic print("异步操作开始");
+    print("异步操作开始");
     n := 0;
     while (n < 10) {
         n = n + 1;
     };
-    @dynamic print("异步操作完成");
+    print("异步操作完成");
     return "结果";
 };
 
 // 启动异步函数
 async async_function();
-print("主线程继续执行");
+@dynamic print("主线程继续执行");
 
 // 等待异步函数完成
 await async_function;
-print("异步函数结果:", valueof async_function);
+@dynamic print("异步函数结果:", valueof async_function);
 
 /* 函数式编程特性 */
 
@@ -421,7 +421,7 @@ assert(add5(3) == 8);
 
 // 字符串操作
 str := "Hello, World!";
-assert(len(str) == 13);
+assert(lengthof(str) == 13);
 assert(str[0] == "H");
 assert(str[0..5] == "Hello");
 
@@ -435,7 +435,7 @@ assert(max(3, 7) == 7);
 
 // 集合操作
 collection := (1, 2, 3, 4, 5);
-assert(len(collection) == 5);
+assert(lengthof(collection) == 5);
 assert(collection[2] == 3);
 assert(collection[1..3] == (2, 3));
 

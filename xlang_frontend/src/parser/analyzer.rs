@@ -345,50 +345,50 @@ pub fn analyze_ast<'t>(
     // 向context里初始化内置函数
     context.push_context();
     context.push_frame();
-    let _ = context.define_variable(&Variable {
-        name: "print".to_string(),
-        assumed_type: AssumedType::Lambda,
-    });
-    let _ = context.define_variable(&Variable {
-        name: "input".to_string(),
-        assumed_type: AssumedType::Lambda,
-    });
-    let _ = context.define_variable(&Variable {
-        name: "len".to_string(),
-        assumed_type: AssumedType::Lambda,
-    });
-    let _ = context.define_variable(&Variable {
-        name: "int".to_string(),
-        assumed_type: AssumedType::Lambda,
-    });
-    let _ = context.define_variable(&Variable {
-        name: "float".to_string(),
-        assumed_type: AssumedType::Lambda,
-    });
-    let _ = context.define_variable(&Variable {
-        name: "bytes".to_string(),
-        assumed_type: AssumedType::Lambda,
-    });
-    let _ = context.define_variable(&Variable {
-        name: "string".to_string(),
-        assumed_type: AssumedType::Lambda,
-    });
-    let _ = context.define_variable(&Variable {
-        name: "bool".to_string(),
-        assumed_type: AssumedType::Lambda,
-    });
-    let _ = context.define_variable(&Variable {
-        name: "load_clambda".to_string(),
-        assumed_type: AssumedType::Lambda,
-    });
-    let _ = context.define_variable(&Variable {
-        name: "json_encode".to_string(),
-        assumed_type: AssumedType::Lambda,
-    });
-    let _ = context.define_variable(&Variable {
-        name: "json_decode".to_string(),
-        assumed_type: AssumedType::Lambda,
-    });
+    // let _ = context.define_variable(&Variable {
+    //     name: "print".to_string(),
+    //     assumed_type: AssumedType::Lambda,
+    // });
+    // let _ = context.define_variable(&Variable {
+    //     name: "input".to_string(),
+    //     assumed_type: AssumedType::Lambda,
+    // });
+    // let _ = context.define_variable(&Variable {
+    //     name: "len".to_string(),
+    //     assumed_type: AssumedType::Lambda,
+    // });
+    // let _ = context.define_variable(&Variable {
+    //     name: "int".to_string(),
+    //     assumed_type: AssumedType::Lambda,
+    // });
+    // let _ = context.define_variable(&Variable {
+    //     name: "float".to_string(),
+    //     assumed_type: AssumedType::Lambda,
+    // });
+    // let _ = context.define_variable(&Variable {
+    //     name: "bytes".to_string(),
+    //     assumed_type: AssumedType::Lambda,
+    // });
+    // let _ = context.define_variable(&Variable {
+    //     name: "string".to_string(),
+    //     assumed_type: AssumedType::Lambda,
+    // });
+    // let _ = context.define_variable(&Variable {
+    //     name: "bool".to_string(),
+    //     assumed_type: AssumedType::Lambda,
+    // });
+    // let _ = context.define_variable(&Variable {
+    //     name: "load_clambda".to_string(),
+    //     assumed_type: AssumedType::Lambda,
+    // });
+    // let _ = context.define_variable(&Variable {
+    //     name: "json_encode".to_string(),
+    //     assumed_type: AssumedType::Lambda,
+    // });
+    // let _ = context.define_variable(&Variable {
+    //     name: "json_decode".to_string(),
+    //     assumed_type: AssumedType::Lambda,
+    // });
     // let _ = context.define_variable(&Variable { name: "this".to_string(), assumed_type: AssumedType::Lambda });
     // let _ = context.define_variable(&Variable { name: "self".to_string(), assumed_type: AssumedType::Tuple });
 

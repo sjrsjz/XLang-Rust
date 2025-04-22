@@ -1,7 +1,7 @@
 use rustc_hash::FxHashMap as HashMap;
 
-use super::super::gc::gc::GCRef;
-use super::super::gc::gc::GCSystem;
+use super::super::gc::GCRef;
+use super::super::gc::GCSystem;
 use super::variable::try_repr_vmobject;
 use super::variable::VMStackObject;
 

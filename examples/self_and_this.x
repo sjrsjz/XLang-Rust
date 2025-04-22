@@ -32,5 +32,5 @@ cycle_self := (n => 0) -> {
     return valueof this;
 };
 
-print(cycle_self());
-print(cycle_self()()()()());
+@dynamic print(cycle_self());
+@dynamic print(cycle_self()()()()());

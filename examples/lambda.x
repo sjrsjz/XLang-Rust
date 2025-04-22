@@ -25,7 +25,7 @@ factorial := Y((self?) -> (n?, self!) -> {
 });
 
 // 测试
-print("3! = " + string(factorial(3)));  // 应输出: 3! = 6
+@dynamic print("3! = " + string(factorial(3)));  // 应输出: 3! = 6
 
 // Ω组合子 (自应用) - 理论上会导致无限循环
 omega := (x?) -> x(x);
@@ -39,19 +39,19 @@ V := (x?) -> (y?, x!) -> (f?, x!, y!) -> f(x)(y);  // Vireo组合子
 add1 := (x?) -> x + 1;
 mul2 := (x?) -> x * 2;
 composed := B(add1)(mul2);
-print("B(add1)(mul2)(5) = " + string(composed(5)));  // (5*2)+1 = 11
+@dynamic print("B(add1)(mul2)(5) = " + string(composed(5)));  // (5*2)+1 = 11
 
 // 参数翻转示例  
 divide := (x?) -> (y?, x!) -> x / y;
 flipped_divide := C(divide);
-print("10/2 = " + string(divide(10)(2)));        // 10/2 = 5
-print("2/10 = " + string(flipped_divide(10)(2)));  // 2/10 = 0.2
+@dynamic print("10/2 = " + string(divide(10)(2)));        // 10/2 = 5
+@dynamic print("2/10 = " + string(flipped_divide(10)(2)));  // 2/10 = 0.2
 
 // 为W组合子创建正确的高阶函数示例
 // 这个函数接受一个参数并返回一个函数
 higher_order := (x?) -> (y?, x!) -> x * y;
-print("W(higher_order)(3) = " + string(W(higher_order)(3)));  // higher_order(3)(3) = 9
+@dynamic print("W(higher_order)(3) = " + string(W(higher_order)(3)));  // higher_order(3)(3) = 9
 
 // 另一种方式：使用 M 组合子代替 W 组合子来演示自应用
 duplicate := (x?) -> x + x;
-print("Duplicate of 3 = " + string(duplicate(3)));  // 6
+@dynamic print("Duplicate of 3 = " + string(duplicate(3)));  // 6

@@ -1,28 +1,26 @@
 mod lsp;
 use colored::Colorize;
 use rustyline::highlight::CmdKind;
-use xlang_frontend::dir_stack::DirStack;
+
+use xlang_vm_core::executor::native_function::native_functions::inject_builtin_functions;
 use xlang_vm_core::executor::variable::VMInstructions;
 use xlang_vm_core::executor::variable::VMLambda;
 use xlang_vm_core::executor::variable::VMTuple;
-
-use xlang_vm_core::gc::gc::GCRef;
+use xlang_vm_core::executor::variable::*;
+use xlang_vm_core::executor::vm::*;
+use xlang_vm_core::gc::GCRef;
+use xlang_vm_core::gc::GCSystem;
 use xlang_vm_core::instruction_set::VMInstructionPackage;
 use xlang_vm_core::ir::IRPackage;
 use xlang_vm_core::ir_translator::IRTranslator;
-
-use xlang_frontend::parser::lexer::lexer;
-
-use xlang_vm_core::gc::gc::GCSystem;
-
-use xlang_vm_core::executor::variable::*;
-use xlang_vm_core::executor::vm::*;
 
 use clap::{Parser, Subcommand};
 use std::fs;
 use std::path::Path;
 use std::path::PathBuf;
 
+use xlang_frontend::parser::lexer::lexer;
+use xlang_frontend::dir_stack::DirStack;
 use xlang_frontend::compile::{build_code, compile_to_bytecode};
 
 #[derive(Parser)]
@@ -107,7 +105,19 @@ fn execute_ir(package: VMInstructionPackage, _dir_stack: &mut DirStack) -> Resul
 
     main_lambda.clone_ref();
 
-    let _coro_id = coroutine_pool.new_coroutine(&mut main_lambda, &mut gc_system)?;
+    let coro_id = coroutine_pool.new_coroutine(&mut main_lambda, &mut gc_system)?;
+    
+    let result = inject_builtin_functions(coroutine_pool.get_executor_mut(coro_id).unwrap().get_context_mut(), &mut gc_system);
+
+    if let Err(e) = result {
+        eprintln!(
+            "{} {}",
+            "VM Crashed!:".bright_red().underline().bold(),
+            e.to_string()
+        );
+        return Err(VMError::AssertFailed);
+    }    
+    
     let result = coroutine_pool.run_until_finished(&mut gc_system);
     if let Err(e) = result {
         eprintln!(
@@ -168,7 +178,18 @@ fn execute_ir_repl(
     wrapped.clone_ref();
 
     main_lambda.drop_ref();
-    let _coro_id = coroutine_pool.new_coroutine(&mut wrapped, gc_system)?;
+    let coro_id = coroutine_pool.new_coroutine(&mut wrapped, gc_system)?;
+    
+    let result = inject_builtin_functions(coroutine_pool.get_executor_mut(coro_id).unwrap().get_context_mut(), gc_system);
+
+    if let Err(e) = result {
+        eprintln!(
+            "{} {}",
+            "VM Crashed!:".bright_red().underline().bold(),
+            e.to_string()
+        );
+        return Err(VMError::AssertFailed);
+    }    
 
     coroutine_pool.run_until_finished(gc_system)?;
     gc_system.collect();

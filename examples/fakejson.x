@@ -22,4 +22,4 @@ fake_json := {
     ],
 };
 
-print(fake_json)
+@dynamic print(fake_json)

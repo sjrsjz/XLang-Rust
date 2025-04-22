@@ -2,9 +2,8 @@ use crate::instruction_set::VMInstruction;
 use crate::opcode::Instruction32;
 use crate::opcode::ProcessedOpcode;
 
-use super::super::gc::gc::*;
+use super::super::gc::*;
 use super::context::*;
-use super::native_function::native_functions;
 use super::variable::*;
 use super::vm_instructions::vm_instructions;
 
@@ -140,6 +139,24 @@ impl VMCoroutinePool {
 
         lambda_object.drop_ref();
         Ok(id)
+    }
+
+    pub fn get_executor(&self, id: isize) -> Option<&VMExecutor> {
+        for (e, i) in &self.executors {
+            if *i == id {
+                return Some(e);
+            }
+        }
+        None
+    }
+
+    pub fn get_executor_mut(&mut self, id: isize) -> Option<&mut VMExecutor> {
+        for (e, i) in &mut self.executors {
+            if *i == id {
+                return Some(e);
+            }
+        }
+        None
     }
 
     pub fn step_all(
@@ -551,9 +568,6 @@ impl VMExecutor {
             .get_table()
             .get(&lambda_object.as_const_type::<VMLambda>().signature)
             .unwrap() as isize;
-
-        //create builtin functions
-        native_functions::inject_builtin_functions(&mut self.context, gc_system)?;
         Ok(())
     }
 
@@ -702,6 +716,14 @@ impl VMExecutor {
         }
 
         Ok(spawned_coroutines)
+    }
+
+    pub fn get_context(&self) -> &Context {
+        &self.context
+    }
+
+    pub fn get_context_mut(&mut self) -> &mut Context {
+        &mut self.context
     }
 }
 

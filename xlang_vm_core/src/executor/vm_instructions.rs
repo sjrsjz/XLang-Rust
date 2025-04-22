@@ -2,7 +2,7 @@ pub mod vm_instructions {
     use crate::executor::context::ContextFrameType;
     use crate::executor::variable::*;
     use crate::executor::vm::VMError;
-    use crate::gc::gc::GCSystem;
+    use crate::gc::GCSystem;
     use crate::opcode::{OpcodeArgument, ProcessedOpcode};
     use crate::executor::vm::VMExecutor;
     use std::fs::File;

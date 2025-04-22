@@ -1,1 +1,2 @@
-pub mod gc;
+mod gc;
+pub use gc::*;

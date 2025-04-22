@@ -21,7 +21,7 @@ mathlib := {
     }
 };
 
-print(mathlib.sqrt(4));
+@dynamic print(mathlib.sqrt(4));
 
 Vector := (data => ()) -> &mathlib bind Vector::{
     constructor := this;
@@ -95,22 +95,22 @@ A := Vector((1, 2, 3),);
 B := Vector((4, 5, 6),);
 
 C := A.add(B);
-print(C.data);
+@dynamic print(C.data);
 
 D := A.sub(B);
-print(D.data);
+@dynamic print(D.data);
 
 E := A.dot(B);
-print(E);
+@dynamic print(E);
 
 F := A.norm();
-print(F);
+@dynamic print(F);
 
 G := A.scalar(2);
-print(G.data);
+@dynamic print(G.data);
 
 H := A.normalize();
-print(H.data);
+@dynamic print(H.data);
 
 I := A.to_string();
-print(I);
+@dynamic print(I);

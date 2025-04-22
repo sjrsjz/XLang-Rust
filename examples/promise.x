@@ -30,4 +30,4 @@ my_promise := promise(
 
 async my_promise();
 await my_promise;
-print("Promise execution completed");
+@dynamic print("Promise execution completed");

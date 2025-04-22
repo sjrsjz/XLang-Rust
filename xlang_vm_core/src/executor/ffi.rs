@@ -3,7 +3,7 @@ use std::ffi::{CStr, CString, c_double, c_void};
 use std::os::raw::{c_char, c_int};
 use std::sync::{Arc, RwLock};
 
-use crate::gc::gc::{GCObject, GCRef, GCSystem};
+use crate::gc::{GCObject, GCRef, GCSystem};
 
 /// 定义Lambda函数的类型
 pub type CLambdaEntryFn = unsafe extern "C" fn(*mut c_void) -> *mut c_void;
@@ -538,7 +538,7 @@ pub mod vm_clambda_loading {
 
     use libloading::{Library, Symbol};
 
-    use crate::gc::gc::{GCRef, GCSystem};
+    use crate::gc::{GCRef, GCSystem};
 
     use super::{
         CLambdaBodyFn, CLambdaDestroyFn, CLambdaEntryFn, ffi_to_gc_ref, gc_ref_to_ffi, vm_ffi,

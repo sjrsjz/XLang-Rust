@@ -10,5 +10,5 @@ expensive_computation := () -> {
     @dynamic print("Expensive computation executed");
     return 42;
 };
-print(lazy_value(expensive_computation));
-print(lazy_value(expensive_computation));
+@dynamic print(lazy_value(expensive_computation));
+@dynamic print(lazy_value(expensive_computation));

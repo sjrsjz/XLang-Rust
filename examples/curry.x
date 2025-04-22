@@ -1,5 +1,6 @@
 builtins := (() -> dyn import "./builtins.xbc")();
 print := builtins.print;
+string := builtins.string;
 
 // 无限柯里化求和函数
 sum := (initial?) -> {

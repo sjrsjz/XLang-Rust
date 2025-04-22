@@ -1,12 +1,12 @@
 /* 一个非常操蛋的用来禁止缓存参数的内置函数的包装 */
 builtins := bind {
-    'builtin_print' : print,
-    'builtin_int' : int,
-    'builtin_float' : float,
-    'builtin_string' : string,
-    'builtin_bool' : bool,
-    'builtin_bytes' : bytes,
-    'builtin_input' : input,
+    'builtin_print' : @dynamic print,
+    'builtin_int' : @dynamic int,
+    'builtin_float' : @dynamic float,
+    'builtin_string' : @dynamic string,
+    'builtin_bool' : @dynamic bool,
+    'builtin_bytes' : @dynamic bytes,
+    'builtin_input' : @dynamic input,
     print => () -> {
         result := self.builtin_print(...keyof this);
         keyof this = ();
@@ -101,13 +101,13 @@ print(asyncs);
 n:=0;
 while(n = n + 1; n < 1){
 	i := 0;
-	while(i = i + 1; i <= len(asyncs)) {
+	while(i = i + 1; i <= lengthof asyncs) {
 		print(valueof asyncs[i - 1]);
 	};
 };
 print("waiting for asyncs to finish");
 n:=0;
-while(n = n + 1; n <= len(asyncs)) {
+while(n = n + 1; n <= lengthof asyncs) {
 	await asyncs[n - 1];
 };
 print("all asyncs finished");

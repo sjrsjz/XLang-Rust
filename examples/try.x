@@ -35,7 +35,7 @@ result := try(
     }
 ).value();
 
-print("Result:", result);
+@dynamic print("Result:", result);
 
 
 x := 1;
@@ -57,4 +57,4 @@ result := try(
     }
 ).value();
 
-print("Result:", result);
+@dynamic print("Result:", result);

@@ -11,7 +11,7 @@ pub mod native_functions {
                 VMVariableError,
             },
         },
-        gc::gc::{GCRef, GCSystem},
+        gc::{GCRef, GCSystem},
     };
     use base64::Engine;
 

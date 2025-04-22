@@ -1,4 +1,4 @@
-v := json_decode("""
+v := @dynamic json_decode("""
 
 {
     "name": "John",
@@ -22,8 +22,11 @@ v := json_decode("""
     ]
 }
 """);
-print(v.name); // John
-print(v.age); // 30
-print(v.city); // New York
-print(v.phone.home); // 123-456-7890
-print(v.phone.work); // 987-654-3210
+
+@dynamic {
+    print(v.name); // John
+    print(v.age); // 30
+    print(v.city); // New York
+    print(v.phone.home); // 123-456-7890
+    print(v.phone.work); // 987-654-3210
+}
