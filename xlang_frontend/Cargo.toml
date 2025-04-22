@@ -2,7 +2,13 @@
 name = "xlang_frontend"
 version = "0.1.0"
 edition = "2024"
-
+authors = ["sjrsjz <sjrsjz@gmail.com>"]
+description = "Frontend for XLang-Rust"
+license = "MIT"
+repository = "https://github.com/sjrsjz/XLang-Rust" 
+readme = "README.md"
+keywords = ["language", "dynamic", "scripting", "interpreter"]
+categories = ["compilers", "command-line-utilities"]
 [dependencies]
 base64 = "0.22.1"
 colored = "3.0.0"
