@@ -1,5 +1,3 @@
-use log::{debug, info, warn}; // 添加 info
-
 use crate::{
     compile::{build_code, compile_to_bytecode},
     dir_stack::DirStack,
@@ -398,11 +396,6 @@ pub fn analyze_ast<'t>(
     let mut warnings = Vec::new(); // 添加一个新的 Vec 用于存储 AnalyzeWarn
     let mut context_at_break: Option<VariableContext> = None; // Store context here
 
-    debug!(
-        "Starting AST analysis with break at position: {:?}",
-        break_at_position
-    );
-
     analyze_node(
         ast,
         &mut context,
@@ -413,9 +406,6 @@ pub fn analyze_ast<'t>(
         &mut context_at_break,
         dir_stack,
     );
-    if context.pop_frame().is_err() || context.pop_context().is_err() {
-        warn!("Failed to pop frame or context after analysis") // 调整警告信息
-    }
 
     AnalysisOutput {
         errors,   // 使用更新后的名称
@@ -442,21 +432,11 @@ fn analyze_node<'t>(
 
     // 2. Check if the *start* of the current node is at or beyond the break position
     if let Some(break_pos) = break_at_position {
-        debug!(
-            "Checking node: {:?} ({:?}) against break position: {}",
-            node.node_type,
-            node.start_token.map(|t| t.position),
-            break_pos
-        );
         if let Some(token) = node.start_token {
             // 使用 token.position (开始字节偏移)
             // 检查断点是否在 token 的范围内 [start, end)
             if token.position + token.origin_token.len() >= break_pos {
                 // 我们已经到达或超过了目标位置。在分析此节点之前捕获上下文。
-                debug!(
-                    "Break point reached at or before node: {:?} (pos: {})",
-                    node.node_type, token.position
-                );
                 *context_at_break = Some(context.clone()); // 克隆上下文状态
                 return AssumedType::Unknown; // 停止此分支的分析
             }
@@ -519,7 +499,6 @@ fn analyze_node<'t>(
                     for child in &node.children {
                         // 检查子节点是否为字符串
                         if let ASTNodeType::String(file_path) = &child.node_type {
-                            info!("@compile: Trigger compilation for file: {}", file_path);
                             let read_file = std::fs::read_to_string(file_path);
                             if let Err(e) = read_file {
                                 // 使用 AnalyzeWarn::CompileError 记录读取错误
@@ -566,11 +545,6 @@ fn analyze_node<'t>(
                                                         child,
                                                         error_message,
                                                     )); // 使用 child 作为错误关联的节点
-                                                } else {
-                                                    info!(
-                                                        "Bytecode written to '{}'",
-                                                        xbc_file_path
-                                                    );
                                                 }
                                             }
                                             Err(e) => {

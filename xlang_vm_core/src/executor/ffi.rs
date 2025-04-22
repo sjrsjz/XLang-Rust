@@ -76,7 +76,7 @@ pub mod vm_ffi {
         lookup_table.insert(name.to_string(), ThreadSafePtr(func_ptr));
     }
 
-    pub unsafe extern "C" fn rust_lookup(name: *const c_char) -> *mut c_void {
+    pub unsafe extern "C" fn rust_lookup(name: *const c_char) -> *mut c_void { unsafe {
         init_lookup_table();
         if name.is_null() {
             return std::ptr::null_mut();
@@ -88,7 +88,7 @@ pub mod vm_ffi {
         }
         println!("Function not found: {}", name);
         std::ptr::null_mut()
-    }
+    }}
 
     // 批量注册标准函数
     pub fn register_standard_functions() {
@@ -189,17 +189,17 @@ pub mod vm_ffi {
         0
     }
 
-    pub unsafe extern "C" fn new_vm_int64(v: c_longlong, gc_system: *mut c_void) -> FFIGCRef {
+    pub unsafe extern "C" fn new_vm_int64(v: c_longlong, gc_system: *mut c_void) -> FFIGCRef { unsafe {
         let gc_system = &mut *(gc_system as *mut GCSystem);
         gc_ref_to_ffi(&gc_system.new_object(VMInt::new(v)))
-    }
+    }}
 
-    pub unsafe extern "C" fn new_vm_float64(v: c_double, gc_system: *mut c_void) -> FFIGCRef {
+    pub unsafe extern "C" fn new_vm_float64(v: c_double, gc_system: *mut c_void) -> FFIGCRef { unsafe {
         let gc_system = &mut *(gc_system as *mut GCSystem);
         gc_ref_to_ffi(&gc_system.new_object(VMFloat::new(v)))
-    }
+    }}
 
-    pub unsafe extern "C" fn new_vm_string(s: *const c_char, gc_system: *mut c_void) -> FFIGCRef {
+    pub unsafe extern "C" fn new_vm_string(s: *const c_char, gc_system: *mut c_void) -> FFIGCRef { unsafe {
         let gc_system = &mut *(gc_system as *mut GCSystem);
         let c_str = CStr::from_ptr(s);
         if let Ok(rust_str) = c_str.to_str() {
@@ -207,23 +207,23 @@ pub mod vm_ffi {
         } else {
             gc_ref_to_ffi(&gc_system.new_object(VMString::new("")))
         }
-    }
+    }}
 
-    pub unsafe extern "C" fn new_vm_boolean(b: c_int, gc_system: *mut c_void) -> FFIGCRef {
+    pub unsafe extern "C" fn new_vm_boolean(b: c_int, gc_system: *mut c_void) -> FFIGCRef { unsafe {
         let gc_system = &mut *(gc_system as *mut GCSystem);
         gc_ref_to_ffi(&gc_system.new_object(VMBoolean::new(b != 0)))
-    }
+    }}
 
-    pub unsafe extern "C" fn new_vm_null(gc_system: *mut c_void) -> FFIGCRef {
+    pub unsafe extern "C" fn new_vm_null(gc_system: *mut c_void) -> FFIGCRef { unsafe {
         let gc_system = &mut *(gc_system as *mut GCSystem);
         gc_ref_to_ffi(&gc_system.new_object(VMNull::new()))
-    }
+    }}
 
     pub unsafe extern "C" fn new_vm_bytes(
         data: *const u8,
         len: c_int,
         gc_system: *mut c_void,
-    ) -> FFIGCRef {
+    ) -> FFIGCRef { unsafe {
         let gc_system = &mut *(gc_system as *mut GCSystem);
 
         if data.is_null() || len <= 0 {
@@ -232,40 +232,40 @@ pub mod vm_ffi {
 
         let bytes = std::slice::from_raw_parts(data, len as usize).to_vec();
         gc_ref_to_ffi(&gc_system.new_object(VMBytes::new(&bytes)))
-    }
+    }}
 
-    pub unsafe extern "C" fn new_vm_tuple(gc_system: *mut c_void) -> FFIGCRef {
+    pub unsafe extern "C" fn new_vm_tuple(gc_system: *mut c_void) -> FFIGCRef { unsafe {
         let gc_system = &mut *(gc_system as *mut GCSystem);
         gc_ref_to_ffi(&gc_system.new_object(VMTuple::new(&mut Vec::new())))
-    }
+    }}
 
     pub unsafe extern "C" fn new_vm_keyval(
         key: FFIGCRef,
         value: FFIGCRef,
         gc_system: *mut c_void,
-    ) -> FFIGCRef {
+    ) -> FFIGCRef { unsafe {
         let gc_system = &mut *(gc_system as *mut GCSystem);
         let key_ref = &mut ffi_to_gc_ref(&key);
         let value_ref = &mut ffi_to_gc_ref(&value);
         gc_ref_to_ffi(&gc_system.new_object(VMKeyVal::new(key_ref, value_ref)))
-    }
+    }}
 
     pub unsafe extern "C" fn new_vm_named(
         key: FFIGCRef,
         value: FFIGCRef,
         gc_system: *mut c_void,
-    ) -> FFIGCRef {
+    ) -> FFIGCRef { unsafe {
         let gc_system = &mut *(gc_system as *mut GCSystem);
         let key_ref = &mut ffi_to_gc_ref(&key);
         let value_ref = &mut ffi_to_gc_ref(&value);
         gc_ref_to_ffi(&gc_system.new_object(VMNamed::new(key_ref, value_ref)))
-    }
+    }}
 
-    pub unsafe extern "C" fn new_vm_wrapper(value: FFIGCRef, gc_system: *mut c_void) -> FFIGCRef {
+    pub unsafe extern "C" fn new_vm_wrapper(value: FFIGCRef, gc_system: *mut c_void) -> FFIGCRef { unsafe {
         let gc_system = &mut *(gc_system as *mut GCSystem);
         let value_ref = &mut ffi_to_gc_ref(&value);
         gc_ref_to_ffi(&gc_system.new_object(VMWrapper::new(value_ref)))
-    }
+    }}
 
     // 类型检查函数
     pub unsafe extern "C" fn is_vm_int(obj: FFIGCRef) -> c_int {
@@ -610,11 +610,11 @@ pub mod vm_clambda_loading {
         signature: &String,
         gc_ref: &mut GCRef,
         gc_system: &mut GCSystem,
-    ) -> Result<GCRef, String> {
+    ) -> Result<GCRef, String> { unsafe {
         // 通过签名获取函数指针
         let symbol_name = format!("clambda_{}", signature);
         let func: Symbol<CLambdaBodyFn> =
-            match unsafe { clambda.lib.as_ref().get(symbol_name.as_bytes()) } {
+            match clambda.lib.as_ref().get(symbol_name.as_bytes()) {
                 Ok(func) => func,
                 Err(e) => {
                     return Err(format!(
@@ -638,5 +638,5 @@ pub mod vm_clambda_loading {
         // 将结果转换为GCRef
         let result_ref = ffi_to_gc_ref(&result_ptr);
         Ok(result_ref)
-    }
+    }}
 }
