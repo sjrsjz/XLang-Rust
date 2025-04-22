@@ -7,11 +7,11 @@ use log::{debug, error, info, warn};
 use serde_json::Value;
 use url::Url;
 
-use crate::dir_stack::DirStack;
+use xlang_frontend::dir_stack::DirStack;
 use crate::lsp::semantic::encode_semantic_tokens;
-use crate::parser::analyzer;
-use crate::parser::ast::build_ast;
-use crate::parser::lexer;
+use xlang_frontend::parser::analyzer;
+use xlang_frontend::parser::ast::build_ast;
+use xlang_frontend::parser::lexer;
 
 use super::capabilities::initialize_capabilities;
 use super::document::TextDocument;

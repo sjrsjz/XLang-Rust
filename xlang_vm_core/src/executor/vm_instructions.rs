@@ -1,14 +1,14 @@
 pub mod vm_instructions {
-    use crate::vm::executor::context::ContextFrameType;
-    use crate::vm::executor::variable::*;
-    use crate::vm::executor::vm::VMError;
-    use crate::vm::gc::gc::GCSystem;
-    use crate::vm::opcode::{OpcodeArgument, ProcessedOpcode};
-    use crate::VMExecutor;
+    use crate::executor::context::ContextFrameType;
+    use crate::executor::variable::*;
+    use crate::executor::vm::VMError;
+    use crate::gc::gc::GCSystem;
+    use crate::opcode::{OpcodeArgument, ProcessedOpcode};
+    use crate::executor::vm::VMExecutor;
     use std::fs::File;
     use std::io::Read;
 
-    use crate::vm::executor::vm::SpawnedCoroutine;
+    use crate::executor::vm::SpawnedCoroutine;
 
     pub fn load_int(
         vm: &mut VMExecutor,

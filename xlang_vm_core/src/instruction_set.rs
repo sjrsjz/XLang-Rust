@@ -208,6 +208,7 @@ impl VMInstruction {
 }
 
 use rustc_hash::FxHashMap as HashMap;
+use std::fs;
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct VMInstructionPackage {
     function_ips: HashMap<String, usize>, // 签名定位表
@@ -254,4 +255,18 @@ impl VMInstructionPackage {
     pub fn get_debug_info(&self) -> &HashMap<usize, DebugInfo> {
         &self.debug_infos
     }
+
+    pub fn write_to_file(&self, path: &str) -> Result<(), std::io::Error> {
+        let serialized = bincode::serialize(self)
+            .map_err(|e| std::io::Error::other(format!("Serialization error: {}", e)))?;
+
+        fs::write(path, serialized)
+    }
+
+    pub fn read_from_file(path: &str) -> Result<Self, std::io::Error> {
+        let bytes = fs::read(path)?;
+        bincode::deserialize(&bytes)
+            .map_err(|e| std::io::Error::other(format!("Deserialization error: {}", e)))
+    }
+
 }

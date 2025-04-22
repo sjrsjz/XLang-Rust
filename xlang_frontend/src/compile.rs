@@ -2,16 +2,16 @@ use colored::Colorize;
 
 use crate::dir_stack::DirStack;
 use crate::parser::lexer::lexer;
-use crate::vm::instruction_set::VMInstructionPackage;
-use crate::vm::ir::Functions;
-use crate::vm::ir::IRPackage;
-use crate::vm::ir_generator::ir_generator;
+use xlang_vm_core::instruction_set::VMInstructionPackage;
+use xlang_vm_core::ir::Functions;
+use xlang_vm_core::ir::IRPackage;
+use crate::ir_generator::ir_generator;
 use crate::parser::analyzer::analyze_ast;
-use crate::vm::ir::DebugInfo;
-use crate::vm::ir::IR;
+use xlang_vm_core::ir::DebugInfo;
+use xlang_vm_core::ir::IR;
 use crate::parser::ast::ast_token_stream;
 use crate::parser::ast::build_ast;
-use crate::vm::ir_translator::IRTranslator;
+use xlang_vm_core::ir_translator::IRTranslator;
 
 
 

@@ -1,6 +1,6 @@
-use crate::vm::instruction_set::VMInstruction;
-use crate::vm::opcode::Instruction32;
-use crate::vm::opcode::ProcessedOpcode;
+use crate::instruction_set::VMInstruction;
+use crate::opcode::Instruction32;
+use crate::opcode::ProcessedOpcode;
 
 use super::super::gc::gc::*;
 use super::context::*;
@@ -620,9 +620,9 @@ impl VMExecutor {
                         // Manually call the raise logic after pushing the error object
                         let dummy_opcode = ProcessedOpcode {
                             instruction: 0,
-                            operand1: crate::vm::opcode::OpcodeArgument::None,
-                            operand2: crate::vm::opcode::OpcodeArgument::None,
-                            operand3: crate::vm::opcode::OpcodeArgument::None,
+                            operand1: crate::opcode::OpcodeArgument::None,
+                            operand2: crate::opcode::OpcodeArgument::None,
+                            operand3: crate::opcode::OpcodeArgument::None,
                         };
                         vm_instructions::raise(self, &dummy_opcode, gc_system)
                     })();

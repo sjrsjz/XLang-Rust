@@ -4,14 +4,14 @@ use url::Url;
 use super::document::TextDocument;
 use super::protocol::*;
 use super::semantic::SemanticTokenTypes;
-use crate::dir_stack::DirStack;
+use xlang_frontend::dir_stack::DirStack;
 use crate::lsp::semantic::do_semantic;
-use crate::parser::analyzer::analyze_ast;
-use crate::parser::ast::ast_token_stream;
-use crate::parser::ast::build_ast;
-use crate::parser::ast::ParserError;
-use crate::parser::lexer::lexer;
-use crate::parser::lexer::Token;
+use xlang_frontend::parser::analyzer::analyze_ast;
+use xlang_frontend::parser::ast::ast_token_stream;
+use xlang_frontend::parser::ast::build_ast;
+use xlang_frontend::parser::ast::ParserError;
+use xlang_frontend::parser::lexer::lexer;
+use xlang_frontend::parser::lexer::Token;
 /// 验证文档并生成诊断信息
 /// 返回诊断信息和可选的语义着色结果
 pub fn validate_document(document: &TextDocument) -> (Vec<Diagnostic>, Option<Vec<SemanticTokenTypes>>) {
@@ -132,7 +132,7 @@ pub fn validate_document(document: &TextDocument) -> (Vec<Diagnostic>, Option<Ve
             let result = analyze_ast(&ast, None, &mut dir_stack);
             for error in result.errors {
                 match error {
-                    crate::parser::analyzer::AnalyzeError::UndefinedVariable(var) => {
+                    xlang_frontend::parser::analyzer::AnalyzeError::UndefinedVariable(var) => {
                         if var.start_token.is_none() {
                             continue;
                         }
@@ -150,7 +150,7 @@ pub fn validate_document(document: &TextDocument) -> (Vec<Diagnostic>, Option<Ve
             }
             for warn in result.warnings {
                 match warn {
-                    crate::parser::analyzer::AnalyzeWarn::CompileError(node, warn) => {
+                    xlang_frontend::parser::analyzer::AnalyzeWarn::CompileError(node, warn) => {
                         if node.start_token.is_none() {
                             continue;
                         }

@@ -1,33 +1,29 @@
 mod lsp;
-mod parser;
-mod vm;
 use colored::Colorize;
-use dir_stack::DirStack;
 use rustyline::highlight::CmdKind;
-use vm::executor::variable::VMInstructions;
-use vm::executor::variable::VMLambda;
-use vm::executor::variable::VMTuple;
+use xlang_frontend::dir_stack::DirStack;
+use xlang_vm_core::executor::variable::VMInstructions;
+use xlang_vm_core::executor::variable::VMLambda;
+use xlang_vm_core::executor::variable::VMTuple;
 
-use vm::gc::gc::GCRef;
-use vm::instruction_set::VMInstructionPackage;
-use vm::ir::IRPackage;
-use vm::ir_translator::IRTranslator;
+use xlang_vm_core::gc::gc::GCRef;
+use xlang_vm_core::instruction_set::VMInstructionPackage;
+use xlang_vm_core::ir::IRPackage;
+use xlang_vm_core::ir_translator::IRTranslator;
 
-use self::parser::lexer::{lexer, Token, TokenType};
+use xlang_frontend::parser::lexer::lexer;
 
-use self::vm::gc::gc::GCSystem;
+use xlang_vm_core::gc::gc::GCSystem;
 
-use self::vm::executor::variable::*;
-use self::vm::executor::vm::*;
+use xlang_vm_core::executor::variable::*;
+use xlang_vm_core::executor::vm::*;
 
 use clap::{Parser, Subcommand};
 use std::fs;
 use std::path::Path;
 use std::path::PathBuf;
 
-mod compile;
-mod dir_stack;
-use compile::{build_code, compile_to_bytecode};
+use xlang_frontend::compile::{build_code, compile_to_bytecode};
 
 #[derive(Parser)]
 #[command(author, version, about, long_about = None)]
@@ -178,22 +174,6 @@ fn execute_ir_repl(
     gc_system.collect();
 
     Ok(wrapped)
-}
-
-// Implement bytecode file saving and loading for VMInstructionPackage
-impl VMInstructionPackage {
-    pub fn write_to_file(&self, path: &str) -> Result<(), std::io::Error> {
-        let serialized = bincode::serialize(self)
-            .map_err(|e| std::io::Error::other(format!("Serialization error: {}", e)))?;
-
-        fs::write(path, serialized)
-    }
-
-    pub fn read_from_file(path: &str) -> Result<Self, std::io::Error> {
-        let bytes = fs::read(path)?;
-        bincode::deserialize(&bytes)
-            .map_err(|e| std::io::Error::other(format!("Deserialization error: {}", e)))
-    }
 }
 
 fn run_file(path: &PathBuf) -> Result<(), String> {
@@ -917,7 +897,8 @@ fn is_input_complete(input: &str) -> bool {
         let token_str = last_token.token;
 
         // Check for operators that usually expect a right-hand side or subsequent input
-        let is_trailing_operator = matches!(token_str,
+        let is_trailing_operator = matches!(
+            token_str,
             // Arithmetic, Comparison, Logical, Assignment, Access, Bitwise
             "+" | "-" | "*" | "/" | "%" | "**" |
             "==" | "!=" | "<" | ">" | "<=" | ">=" |
@@ -932,7 +913,8 @@ fn is_input_complete(input: &str) -> bool {
         }
 
         // Check for keywords that expect a following expression or block
-        let is_trailing_keyword = matches!(token_str,
+        let is_trailing_keyword = matches!(
+            token_str,
             "if" | "else" | "while" | "bind" | "return" | "emit" | "in" | "async" | "await"
         );
 
@@ -949,7 +931,6 @@ fn is_input_complete(input: &str) -> bool {
         // Check for keywords that might *start* a block implicitly if followed by newline/indent
         // Example: `bind my_func =` should be incomplete. The operator check handles this.
         // Example: `if condition` should be incomplete. The keyword check handles this.
-
     } else {
         // If there are no tokens after trimming and removing comments, it's complete.
         return true;

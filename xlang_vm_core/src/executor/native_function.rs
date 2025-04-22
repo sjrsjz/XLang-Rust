@@ -1,7 +1,7 @@
 pub mod native_functions {
     use std::io::Write;
 
-    use crate::vm::{
+    use crate::{
         executor::{
             context::Context,
             ffi::vm_clambda_loading,
@@ -15,8 +15,8 @@ pub mod native_functions {
     };
     use base64::Engine;
 
-    use crate::vm::executor::variable::{VMLambda, VMLambdaBody};
-    use crate::vm::executor::vm::VMError;
+    use crate::executor::variable::{VMLambda, VMLambdaBody};
+    use crate::executor::vm::VMError;
     use rustc_hash::FxHashMap as HashMap;
     use rustc_hash::FxHashSet as HashSet;
     use serde_json::Value as JsonValue;

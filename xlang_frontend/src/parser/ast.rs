@@ -1,6 +1,6 @@
 use std::{fmt::Debug, vec};
 
-use crate::{Token, TokenType};
+use crate::parser::lexer::{Token, TokenType};
 
 #[derive(Debug)]
 pub enum ParserError<'t> {

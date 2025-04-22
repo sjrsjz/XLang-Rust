@@ -1,9 +1,7 @@
-use super::super::ir::{Functions, IROperation};
-use crate::{
-    parser::ast::{ASTNode, ASTNodeModifier, ASTNodeOperation, ASTNodeType},
-    vm::ir::{DebugInfo, IR},
-};
+use crate::parser::ast::{ASTNode, ASTNodeModifier, ASTNodeOperation, ASTNodeType};
 use base64::{self, Engine};
+use xlang_vm_core::ir::{DebugInfo, IR};
+use xlang_vm_core::ir::{Functions, IROperation};
 #[derive(Debug)]
 enum Scope {
     Frame,
@@ -57,7 +55,6 @@ impl LabelGenerator {
         self.label_counter += 1;
         (full_label, label)
     }
-
 }
 
 #[derive(Debug)]
@@ -153,7 +150,11 @@ impl<'t> IRGenerator<'t> {
 
                     instructions.push((
                         self.generate_debug_info(ast_node),
-                        IR::LoadLambda("__main__".to_string(), ast_node.start_token.unwrap().position, *is_capture),
+                        IR::LoadLambda(
+                            "__main__".to_string(),
+                            ast_node.start_token.unwrap().position,
+                            *is_capture,
+                        ),
                     ));
                 } else {
                     let (full_signature, signature) = self.new_function_signature();
@@ -163,7 +164,8 @@ impl<'t> IRGenerator<'t> {
                         NameSpace::new(signature.clone(), Some(&self.namespace)),
                     );
 
-                    let mut body_instructions = generator.generate(&ast_node.children.last().unwrap())?; // body, compute redirect jump directly
+                    let mut body_instructions =
+                        generator.generate(&ast_node.children.last().unwrap())?; // body, compute redirect jump directly
                     body_instructions.push((self.generate_debug_info(ast_node), IR::Return));
 
                     self.functions
@@ -176,7 +178,11 @@ impl<'t> IRGenerator<'t> {
                     instructions.push((self.generate_debug_info(ast_node), IR::ForkInstruction));
                     instructions.push((
                         self.generate_debug_info(ast_node),
-                        IR::LoadLambda(full_signature, ast_node.start_token.unwrap().position, *is_capture),
+                        IR::LoadLambda(
+                            full_signature,
+                            ast_node.start_token.unwrap().position,
+                            *is_capture,
+                        ),
                     ));
                 }
                 Ok(instructions)
@@ -707,21 +713,54 @@ impl<'t> IRGenerator<'t> {
                         instructions.push((self.generate_debug_info(ast_node), IR::BuildTuple(0)));
                         instructions.extend(self.generate_without_redirect(&ast_node.children[0])?);
                         instructions.push((self.generate_debug_info(ast_node), IR::ResetIter));
-                        instructions.push((self.generate_debug_info(ast_node), IR::RedirectLabel(label4.clone())));
-                        instructions.push((self.generate_debug_info(ast_node), IR::RedirectNextOrJump(label1.clone())));
-                        instructions.push((self.generate_debug_info(ast_node), IR::ForkStackObjectRef(1)));
+                        instructions.push((
+                            self.generate_debug_info(ast_node),
+                            IR::RedirectLabel(label4.clone()),
+                        ));
+                        instructions.push((
+                            self.generate_debug_info(ast_node),
+                            IR::RedirectNextOrJump(label1.clone()),
+                        ));
+                        instructions.push((
+                            self.generate_debug_info(ast_node),
+                            IR::ForkStackObjectRef(1),
+                        ));
                         instructions.push((self.generate_debug_info(ast_node), IR::ValueOf));
-                        instructions.push((self.generate_debug_info(ast_node), IR::ForkStackObjectRef(1)));
+                        instructions.push((
+                            self.generate_debug_info(ast_node),
+                            IR::ForkStackObjectRef(1),
+                        ));
                         instructions.push((self.generate_debug_info(ast_node), IR::BuildTuple(1)));
                         instructions.push((self.generate_debug_info(ast_node), IR::CallLambda));
-                        instructions.push((self.generate_debug_info(ast_node), IR::RedirectJumpIfFalse(label2.clone())));
-                        instructions.push((self.generate_debug_info(ast_node), IR::PushValueIntoTuple(2)));
-                        instructions.push((self.generate_debug_info(ast_node), IR::RedirectJump(label3.clone())));
-                        instructions.push((self.generate_debug_info(ast_node), IR::RedirectLabel(label2.clone())));
+                        instructions.push((
+                            self.generate_debug_info(ast_node),
+                            IR::RedirectJumpIfFalse(label2.clone()),
+                        ));
+                        instructions.push((
+                            self.generate_debug_info(ast_node),
+                            IR::PushValueIntoTuple(2),
+                        ));
+                        instructions.push((
+                            self.generate_debug_info(ast_node),
+                            IR::RedirectJump(label3.clone()),
+                        ));
+                        instructions.push((
+                            self.generate_debug_info(ast_node),
+                            IR::RedirectLabel(label2.clone()),
+                        ));
                         instructions.push((self.generate_debug_info(ast_node), IR::Pop));
-                        instructions.push((self.generate_debug_info(ast_node), IR::RedirectLabel(label3.clone())));
-                        instructions.push((self.generate_debug_info(ast_node), IR::RedirectJump(label4.clone())));
-                        instructions.push((self.generate_debug_info(ast_node), IR::RedirectLabel(label1.clone())));
+                        instructions.push((
+                            self.generate_debug_info(ast_node),
+                            IR::RedirectLabel(label3.clone()),
+                        ));
+                        instructions.push((
+                            self.generate_debug_info(ast_node),
+                            IR::RedirectJump(label4.clone()),
+                        ));
+                        instructions.push((
+                            self.generate_debug_info(ast_node),
+                            IR::RedirectLabel(label1.clone()),
+                        ));
                         instructions.push((self.generate_debug_info(ast_node), IR::Pop));
                     }
                     ASTNodeModifier::LengthOf => {
@@ -745,17 +784,29 @@ impl<'t> IRGenerator<'t> {
                 instructions.push((self.generate_debug_info(ast_node), IR::In));
                 let (label_1, _) = self.new_label();
                 let (label_2, _) = self.new_label();
-                instructions.push((self.generate_debug_info(ast_node), IR::RedirectJumpIfFalse(label_1.clone())));
+                instructions.push((
+                    self.generate_debug_info(ast_node),
+                    IR::RedirectJumpIfFalse(label_1.clone()),
+                ));
                 instructions.push((self.generate_debug_info(ast_node), IR::ValueOf));
                 instructions.push((self.generate_debug_info(ast_node), IR::Swap(0, 1)));
                 instructions.push((self.generate_debug_info(ast_node), IR::BuildTuple(1)));
                 instructions.push((self.generate_debug_info(ast_node), IR::CallLambda));
-                instructions.push((self.generate_debug_info(ast_node), IR::RedirectJump(label_2.clone())));
-                instructions.push((self.generate_debug_info(ast_node), IR::RedirectLabel(label_1)));
+                instructions.push((
+                    self.generate_debug_info(ast_node),
+                    IR::RedirectJump(label_2.clone()),
+                ));
+                instructions.push((
+                    self.generate_debug_info(ast_node),
+                    IR::RedirectLabel(label_1),
+                ));
                 instructions.push((self.generate_debug_info(ast_node), IR::Pop));
                 instructions.push((self.generate_debug_info(ast_node), IR::Pop));
                 instructions.push((self.generate_debug_info(ast_node), IR::LoadBool(false)));
-                instructions.push((self.generate_debug_info(ast_node), IR::RedirectLabel(label_2)));
+                instructions.push((
+                    self.generate_debug_info(ast_node),
+                    IR::RedirectLabel(label_2),
+                ));
                 Ok(instructions)
             }
             ASTNodeType::Alias(alias) => {
@@ -811,15 +862,33 @@ impl<'t> IRGenerator<'t> {
                 instructions.extend(self.generate_without_redirect(&ast_node.children[1])?);
                 instructions.push((self.generate_debug_info(ast_node), IR::Swap(0, 1)));
                 instructions.push((self.generate_debug_info(ast_node), IR::ResetIter));
-                instructions.push((self.generate_debug_info(ast_node), IR::RedirectLabel(label2.clone())));
-                instructions.push((self.generate_debug_info(ast_node), IR::RedirectNextOrJump(label1.clone())));
-                instructions.push((self.generate_debug_info(ast_node), IR::ForkStackObjectRef(2))); // fork lambda
+                instructions.push((
+                    self.generate_debug_info(ast_node),
+                    IR::RedirectLabel(label2.clone()),
+                ));
+                instructions.push((
+                    self.generate_debug_info(ast_node),
+                    IR::RedirectNextOrJump(label1.clone()),
+                ));
+                instructions.push((
+                    self.generate_debug_info(ast_node),
+                    IR::ForkStackObjectRef(2),
+                )); // fork lambda
                 instructions.push((self.generate_debug_info(ast_node), IR::Swap(0, 1))); // swap to make sure the arguments are in the right order
                 instructions.push((self.generate_debug_info(ast_node), IR::BuildTuple(1)));
                 instructions.push((self.generate_debug_info(ast_node), IR::CallLambda));
-                instructions.push((self.generate_debug_info(ast_node), IR::PushValueIntoTuple(3)));
-                instructions.push((self.generate_debug_info(ast_node), IR::RedirectJump(label2.clone())));
-                instructions.push((self.generate_debug_info(ast_node), IR::RedirectLabel(label1.clone())));
+                instructions.push((
+                    self.generate_debug_info(ast_node),
+                    IR::PushValueIntoTuple(3),
+                ));
+                instructions.push((
+                    self.generate_debug_info(ast_node),
+                    IR::RedirectJump(label2.clone()),
+                ));
+                instructions.push((
+                    self.generate_debug_info(ast_node),
+                    IR::RedirectLabel(label1.clone()),
+                ));
                 instructions.push((self.generate_debug_info(ast_node), IR::Pop));
                 instructions.push((self.generate_debug_info(ast_node), IR::Pop));
                 Ok(instructions)

@@ -1,9 +1,9 @@
 use std::collections::HashMap;
-use std::ffi::{c_double, c_void, CStr, CString};
+use std::ffi::{CStr, CString, c_double, c_void};
 use std::os::raw::{c_char, c_int};
 use std::sync::{Arc, RwLock};
 
-use crate::vm::gc::gc::{GCObject, GCRef, GCSystem};
+use crate::gc::gc::{GCObject, GCRef, GCSystem};
 
 /// 定义Lambda函数的类型
 pub type CLambdaEntryFn = unsafe extern "C" fn(*mut c_void) -> *mut c_void;
@@ -11,34 +11,33 @@ pub type CLambdaEntryFn = unsafe extern "C" fn(*mut c_void) -> *mut c_void;
 pub type CLambdaDestroyFn = unsafe extern "C" fn();
 /// 定义入口
 pub type CLambdaBodyFn = unsafe extern "C" fn(
-    FFIGCRef, // GCRef
+    FFIGCRef,    // GCRef
     *mut c_void, // GCSystem
 ) -> FFIGCRef; // GCRef
 
 #[repr(C)]
 #[derive(Debug, Clone)]
 pub struct FFIGCRef {
-    pub data: *mut c_void,  // 指向对象数据的指针
-    pub vtable: *mut c_void // 指向类型虚表的指针
+    pub data: *mut c_void,   // 指向对象数据的指针
+    pub vtable: *mut c_void, // 指向类型虚表的指针
 }
 
 impl FFIGCRef {
     pub fn is_null(&self) -> bool {
         self.data.is_null()
     }
-    
 }
 
 // 将GCRef转换为FFIGCRef
 pub fn gc_ref_to_ffi(gc_ref: &GCRef) -> FFIGCRef {
     let fat_ptr = gc_ref.get_reference();
-    
+
     // 安全地将胖指针拆分为两部分
     let (data, vtable) = unsafe {
         let ptr_parts = std::mem::transmute::<*mut dyn GCObject, [*mut c_void; 2]>(fat_ptr);
         (ptr_parts[0], ptr_parts[1])
     };
-    
+
     FFIGCRef { data, vtable }
 }
 
@@ -50,7 +49,7 @@ pub fn ffi_to_gc_ref(ffi_ref: &FFIGCRef) -> GCRef {
         // 然后将这个数组转换回胖指针
         std::mem::transmute::<[*mut c_void; 2], *mut dyn GCObject>(ptr_parts)
     };
-    
+
     GCRef::new(fat_ptr)
 }
 
@@ -58,7 +57,7 @@ pub mod vm_ffi {
     use lazy_static::lazy_static;
 
     use super::*;
-    use crate::vm::executor::variable::*;
+    use crate::executor::variable::*;
     use std::ffi::c_longlong;
 
     // A wrapper around *mut c_void that implements Send and Sync
@@ -170,27 +169,27 @@ pub mod vm_ffi {
         if gc_ref.isinstance::<VMTuple>() {
             let tuple = gc_ref.as_const_type::<VMTuple>();
             let len = tuple.len() as c_longlong;
-            return len
+            return len;
         }
         if gc_ref.isinstance::<VMBytes>() {
             let bytes = gc_ref.as_const_type::<VMBytes>();
             let len = bytes.len() as c_longlong;
-            return len
+            return len;
         }
         if gc_ref.isinstance::<VMString>() {
             let string = gc_ref.as_const_type::<VMString>();
             let len = string.value.len() as c_longlong;
-            return len
+            return len;
         }
         if gc_ref.isinstance::<VMRange>() {
             let range = gc_ref.as_const_type::<VMRange>();
             let len = range.len() as c_longlong;
-            return len
+            return len;
         }
         0
     }
 
-    pub unsafe extern "C" fn new_vm_int64(v: c_longlong, gc_system: *mut c_void) -> FFIGCRef{
+    pub unsafe extern "C" fn new_vm_int64(v: c_longlong, gc_system: *mut c_void) -> FFIGCRef {
         let gc_system = &mut *(gc_system as *mut GCSystem);
         gc_ref_to_ffi(&gc_system.new_object(VMInt::new(v)))
     }
@@ -200,10 +199,7 @@ pub mod vm_ffi {
         gc_ref_to_ffi(&gc_system.new_object(VMFloat::new(v)))
     }
 
-    pub unsafe extern "C" fn new_vm_string(
-        s: *const c_char,
-        gc_system: *mut c_void,
-    ) -> FFIGCRef {
+    pub unsafe extern "C" fn new_vm_string(s: *const c_char, gc_system: *mut c_void) -> FFIGCRef {
         let gc_system = &mut *(gc_system as *mut GCSystem);
         let c_str = CStr::from_ptr(s);
         if let Ok(rust_str) = c_str.to_str() {
@@ -253,7 +249,7 @@ pub mod vm_ffi {
         let value_ref = &mut ffi_to_gc_ref(&value);
         gc_ref_to_ffi(&gc_system.new_object(VMKeyVal::new(key_ref, value_ref)))
     }
-    
+
     pub unsafe extern "C" fn new_vm_named(
         key: FFIGCRef,
         value: FFIGCRef,
@@ -265,10 +261,7 @@ pub mod vm_ffi {
         gc_ref_to_ffi(&gc_system.new_object(VMNamed::new(key_ref, value_ref)))
     }
 
-    pub unsafe extern "C" fn new_vm_wrapper(
-        value: FFIGCRef,
-        gc_system: *mut c_void,
-    ) -> FFIGCRef {
+    pub unsafe extern "C" fn new_vm_wrapper(value: FFIGCRef, gc_system: *mut c_void) -> FFIGCRef {
         let gc_system = &mut *(gc_system as *mut GCSystem);
         let value_ref = &mut ffi_to_gc_ref(&value);
         gc_ref_to_ffi(&gc_system.new_object(VMWrapper::new(value_ref)))
@@ -280,11 +273,7 @@ pub mod vm_ffi {
             return 0;
         }
         let gc_ref = ffi_to_gc_ref(&obj);
-        if gc_ref.isinstance::<VMInt>() {
-            1
-        } else {
-            0
-        }
+        if gc_ref.isinstance::<VMInt>() { 1 } else { 0 }
     }
 
     pub unsafe extern "C" fn is_vm_float(obj: FFIGCRef) -> c_int {
@@ -292,11 +281,7 @@ pub mod vm_ffi {
             return 0;
         }
         let gc_ref = ffi_to_gc_ref(&obj);
-        if gc_ref.isinstance::<VMFloat>() {
-            1
-        } else {
-            0
-        }
+        if gc_ref.isinstance::<VMFloat>() { 1 } else { 0 }
     }
 
     pub unsafe extern "C" fn is_vm_string(obj: FFIGCRef) -> c_int {
@@ -328,11 +313,7 @@ pub mod vm_ffi {
             return 1;
         }
         let gc_ref = ffi_to_gc_ref(&obj);
-        if gc_ref.isinstance::<VMNull>() {
-            1
-        } else {
-            0
-        }
+        if gc_ref.isinstance::<VMNull>() { 1 } else { 0 }
     }
 
     pub unsafe extern "C" fn is_vm_bytes(obj: FFIGCRef) -> c_int {
@@ -340,25 +321,17 @@ pub mod vm_ffi {
             return 0;
         }
         let gc_ref = ffi_to_gc_ref(&obj);
-        if gc_ref.isinstance::<VMBytes>() {
-            1
-        } else {
-            0
-        }
+        if gc_ref.isinstance::<VMBytes>() { 1 } else { 0 }
     }
-    
+
     pub unsafe extern "C" fn is_vm_tuple(obj: FFIGCRef) -> c_int {
         if obj.is_null() {
             return 0;
         }
         let gc_ref = ffi_to_gc_ref(&obj);
-        if gc_ref.isinstance::<VMTuple>() {
-            1
-        } else {
-            0
-        }
+        if gc_ref.isinstance::<VMTuple>() { 1 } else { 0 }
     }
-    
+
     pub unsafe extern "C" fn is_vm_keyval(obj: FFIGCRef) -> c_int {
         if obj.is_null() {
             return 0;
@@ -370,17 +343,13 @@ pub mod vm_ffi {
             0
         }
     }
-    
+
     pub unsafe extern "C" fn is_vm_named(obj: FFIGCRef) -> c_int {
         if obj.is_null() {
             return 0;
         }
         let gc_ref = ffi_to_gc_ref(&obj);
-        if gc_ref.isinstance::<VMNamed>() {
-            1
-        } else {
-            0
-        }
+        if gc_ref.isinstance::<VMNamed>() { 1 } else { 0 }
     }
 
     pub unsafe extern "C" fn is_vm_wrapper(obj: FFIGCRef) -> c_int {
@@ -478,37 +447,51 @@ pub mod vm_ffi {
         gc_system: *mut c_void,
     ) -> FFIGCRef {
         if tuple.is_null() {
-            return FFIGCRef { data: std::ptr::null_mut(), vtable: std::ptr::null_mut() };
+            return FFIGCRef {
+                data: std::ptr::null_mut(),
+                vtable: std::ptr::null_mut(),
+            };
         }
 
         let tuple_ref = &mut ffi_to_gc_ref(&tuple);
-        let gc_system = &mut *(gc_system as *mut GCSystem);
+        let gc_system = unsafe { &mut *(gc_system as *mut GCSystem) };
 
         if !tuple_ref.isinstance::<VMTuple>() {
-            return FFIGCRef { data: std::ptr::null_mut(), vtable: std::ptr::null_mut() };
+            return FFIGCRef {
+                data: std::ptr::null_mut(),
+                vtable: std::ptr::null_mut(),
+            };
         }
 
         let index_obj = gc_system.new_object(VMInt::new(index as i64));
 
-        match crate::vm::executor::variable::try_index_of_as_vmobject(
-            tuple_ref, &index_obj, gc_system,
-        ) {
+        match crate::executor::variable::try_index_of_as_vmobject(tuple_ref, &index_obj, gc_system)
+        {
             Ok(value) => gc_ref_to_ffi(&value),
-            Err(_) => FFIGCRef { data: std::ptr::null_mut(), vtable: std::ptr::null_mut() },
+            Err(_) => FFIGCRef {
+                data: std::ptr::null_mut(),
+                vtable: std::ptr::null_mut(),
+            },
         }
     }
 
     // 对象操作函数
     pub unsafe extern "C" fn get_vm_value(obj: FFIGCRef) -> FFIGCRef {
         if obj.is_null() {
-            return FFIGCRef { data: std::ptr::null_mut(), vtable: std::ptr::null_mut() };
+            return FFIGCRef {
+                data: std::ptr::null_mut(),
+                vtable: std::ptr::null_mut(),
+            };
         }
 
         let mut gc_ref = ffi_to_gc_ref(&obj);
 
         let v = try_value_of_as_vmobject(&mut gc_ref);
         if v.is_err() {
-            return FFIGCRef { data: std::ptr::null_mut(), vtable: std::ptr::null_mut() };
+            return FFIGCRef {
+                data: std::ptr::null_mut(),
+                vtable: std::ptr::null_mut(),
+            };
         }
         let value_ref = v.unwrap();
         gc_ref_to_ffi(value_ref)
@@ -516,14 +499,20 @@ pub mod vm_ffi {
 
     pub unsafe extern "C" fn get_vm_key(obj: FFIGCRef) -> FFIGCRef {
         if obj.is_null() {
-            return FFIGCRef { data: std::ptr::null_mut(), vtable: std::ptr::null_mut() };
+            return FFIGCRef {
+                data: std::ptr::null_mut(),
+                vtable: std::ptr::null_mut(),
+            };
         }
 
         let mut gc_ref = ffi_to_gc_ref(&obj);
 
         let v = try_key_of_as_vmobject(&mut gc_ref);
         if v.is_err() {
-            return FFIGCRef { data: std::ptr::null_mut(), vtable: std::ptr::null_mut() };
+            return FFIGCRef {
+                data: std::ptr::null_mut(),
+                vtable: std::ptr::null_mut(),
+            };
         }
         let value_ref = v.unwrap();
         gc_ref_to_ffi(value_ref)
@@ -537,7 +526,7 @@ pub mod vm_ffi {
         let target_ref = &mut ffi_to_gc_ref(&target);
         let value_ref = &mut ffi_to_gc_ref(&value);
 
-        match crate::vm::executor::variable::try_assign_as_vmobject(target_ref, value_ref) {
+        match crate::executor::variable::try_assign_as_vmobject(target_ref, value_ref) {
             Ok(_) => 1,
             Err(_) => 0,
         }
@@ -549,9 +538,11 @@ pub mod vm_clambda_loading {
 
     use libloading::{Library, Symbol};
 
-    use crate::vm::gc::gc::{GCRef, GCSystem};
+    use crate::gc::gc::{GCRef, GCSystem};
 
-    use super::{ffi_to_gc_ref, gc_ref_to_ffi, vm_ffi, CLambdaBodyFn, CLambdaDestroyFn, CLambdaEntryFn};
+    use super::{
+        CLambdaBodyFn, CLambdaDestroyFn, CLambdaEntryFn, ffi_to_gc_ref, gc_ref_to_ffi, vm_ffi,
+    };
 
     #[derive(Debug)]
     pub struct CLambda {
@@ -574,18 +565,24 @@ pub mod vm_clambda_loading {
 
     pub unsafe fn load_clambda(lib_path: &str) -> Result<CLambda, String> {
         // Load the library
-        let lib = Library::new(lib_path).map_err(|e| format!("Failed to load library: {}", e))?;
+        let lib = unsafe {
+            Library::new(lib_path).map_err(|e| format!("Failed to load library: {}", e))
+        }?;
         let lib_arc = Arc::new(Box::new(lib));
 
         // Get symbols from the reference to the library
-        let clambda_entry: Symbol<CLambdaEntryFn> = lib_arc
-            .as_ref()
-            .get(b"clambda_entry")
-            .map_err(|e| format!("Failed to load clambda_entry: {}", e))?;
-        let clambda_destroy: Symbol<CLambdaDestroyFn> = lib_arc
-            .as_ref()
-            .get(b"clambda_destroy")
-            .map_err(|e| format!("Failed to load clambda_destroy: {}", e))?;
+        let clambda_entry: Symbol<CLambdaEntryFn> = unsafe {
+            lib_arc
+                .as_ref()
+                .get(b"clambda_entry")
+                .map_err(|e| format!("Failed to load clambda_entry: {}", e))
+        }?;
+        let clambda_destroy: Symbol<CLambdaDestroyFn> = unsafe {
+            lib_arc
+                .as_ref()
+                .get(b"clambda_destroy")
+                .map_err(|e| format!("Failed to load clambda_destroy: {}", e))
+        }?;
 
         // Create a new CLambda instance
         let clambda = CLambda {
@@ -600,12 +597,12 @@ pub mod vm_clambda_loading {
 
     pub unsafe fn init_clambda(clambda: &mut CLambda) {
         // Call the clambda entry point
-        (clambda.clambda_entry)(vm_ffi::rust_lookup as *mut c_void);
+        unsafe { (clambda.clambda_entry)(vm_ffi::rust_lookup as *mut c_void) };
     }
 
     pub unsafe fn destroy_clambda(clambda: &mut CLambda) {
         // Call the clambda destroy function
-        (clambda.clambda_destroy)();
+        unsafe { (clambda.clambda_destroy)() };
     }
 
     pub unsafe fn call_clambda(
@@ -616,15 +613,16 @@ pub mod vm_clambda_loading {
     ) -> Result<GCRef, String> {
         // 通过签名获取函数指针
         let symbol_name = format!("clambda_{}", signature);
-        let func: Symbol<CLambdaBodyFn> = match clambda.lib.as_ref().get(symbol_name.as_bytes()) {
-            Ok(func) => func,
-            Err(e) => {
-                return Err(format!(
-                    "Failed to find function with signature '{}': {}",
-                    signature, e
-                ))
-            }
-        };
+        let func: Symbol<CLambdaBodyFn> =
+            match unsafe { clambda.lib.as_ref().get(symbol_name.as_bytes()) } {
+                Ok(func) => func,
+                Err(e) => {
+                    return Err(format!(
+                        "Failed to find function with signature '{}': {}",
+                        signature, e
+                    ));
+                }
+            };
 
         // 准备参数
         let args_ptr = gc_ref_to_ffi(gc_ref);

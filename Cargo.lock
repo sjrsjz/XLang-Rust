@@ -25,6 +25,8 @@ dependencies = [
  "serde_json",
  "unicode-segmentation",
  "url",
+ "xlang_frontend",
+ "xlang_vm_core",
 ]
 
 [[package]]
@@ -1023,6 +1025,33 @@ name = "writeable"
 version = "0.5.5"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "1e9df38ee2d2c3c5948ea468a8406ff0db0b29ae1ffde1bcf20ef305bcc95c51"
+
+[[package]]
+name = "xlang_frontend"
+version = "0.1.0"
+dependencies = [
+ "base64",
+ "colored",
+ "log",
+ "regex",
+ "unicode-segmentation",
+ "xlang_vm_core",
+]
+
+[[package]]
+name = "xlang_vm_core"
+version = "0.1.0"
+dependencies = [
+ "base64",
+ "bincode",
+ "colored",
+ "lazy_static",
+ "libloading",
+ "rustc-hash",
+ "serde",
+ "serde_json",
+ "unicode-segmentation",
+]
 
 [[package]]
 name = "yoke"

@@ -1,4 +1,4 @@
-use crate::parser::{
+use xlang_frontend::parser::{
     ast::{ASTNode, ASTNodeType},
     lexer::{Token, TokenType},
 };

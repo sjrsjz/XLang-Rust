@@ -6,7 +6,6 @@ use crate::{
 };
 
 use super::ast::ASTNode;
-
 #[derive(Debug, Clone, PartialEq)] // Added PartialEq for comparison if needed later
 pub enum AssumedType {
     Unknown,

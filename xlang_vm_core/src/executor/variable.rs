@@ -2,7 +2,7 @@ use super::{
     super::gc::gc::{GCObject, GCRef, GCSystem, GCTraceable},
     ffi::vm_clambda_loading::{self, CLambda},
 };
-use crate::vm::instruction_set::VMInstructionPackage;
+use crate::instruction_set::VMInstructionPackage;
 use base64::{self, Engine};
 use colored::Colorize;
 /**
