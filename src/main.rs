@@ -466,7 +466,7 @@ fn run_repl() -> Result<(), String> {
     use rustyline::hint::{Hinter, HistoryHinter};
     use rustyline::validate::{self, Validator};
     use rustyline::{CompletionType, Config, Context, EditMode, Editor};
-    use std::borrow::Cow::{self, Borrowed, Owned};
+    use std::borrow::Cow::{self, Owned};
     use std::collections::HashSet;
     use std::path::PathBuf;
 
@@ -639,7 +639,7 @@ fn run_repl() -> Result<(), String> {
             default: bool,
         ) -> Cow<'b, str> {
             if default {
-                Borrowed(prompt)
+                Owned(prompt.green().bold().to_string())
             } else {
                 Owned(prompt.bright_purple().to_string())
             }
@@ -709,7 +709,7 @@ fn run_repl() -> Result<(), String> {
         let mut is_multiline = false;
 
         // 主提示符
-        let main_prompt = format!("{} ", format!("In[{}]:", line_count).green().bold());
+        let main_prompt = format!("In[{}]: ", line_count);
 
         // 读取第一行
         let readline = rl.readline(&main_prompt);
