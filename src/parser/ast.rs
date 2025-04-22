@@ -527,6 +527,7 @@ pub enum ASTNodeModifier {
     BindSelf,
     Collect,
     CaptureOf, // $lambda
+    LengthOf, // LengthOf
 }
 
 #[derive(Debug)]
@@ -2446,6 +2447,7 @@ fn match_modifier<'t>(
             "boundary",
             "collect",
             "captureof",
+            "lengthof",
         ]
         .contains(&tokens[current].first().unwrap().token)
     {
@@ -2485,6 +2487,7 @@ fn match_modifier<'t>(
             "bind" => ASTNodeModifier::BindSelf,
             "collect" => ASTNodeModifier::Collect,
             "captureof" => ASTNodeModifier::CaptureOf,
+            "lengthof" => ASTNodeModifier::LengthOf,
             _ => return Ok((None, 0)),
         };
         return Ok((

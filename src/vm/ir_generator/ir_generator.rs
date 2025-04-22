@@ -724,6 +724,10 @@ impl<'t> IRGenerator<'t> {
                         instructions.push((self.generate_debug_info(ast_node), IR::RedirectLabel(label1.clone())));
                         instructions.push((self.generate_debug_info(ast_node), IR::Pop));
                     }
+                    ASTNodeModifier::LengthOf => {
+                        instructions.extend(self.generate_without_redirect(&ast_node.children[0])?);
+                        instructions.push((self.generate_debug_info(ast_node), IR::LengthOf));
+                    }
                 }
                 Ok(instructions)
             }

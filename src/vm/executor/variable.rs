@@ -92,6 +92,28 @@ impl VMVariableError {
     }
 }
 
+pub fn try_length_of_as_vmobject(
+    value: &GCRef,
+) -> Result<usize, VMVariableError> {
+    if value.isinstance::<VMString>() {
+        let string = value.as_const_type::<VMString>();
+        return Ok(string.value.len());
+    } else if value.isinstance::<VMTuple>() {
+        let tuple = value.as_const_type::<VMTuple>();
+        return Ok(tuple.values.len());
+    } else if value.isinstance::<VMRange>() {
+        let range = value.as_const_type::<VMRange>();
+        return Ok(range.len() as usize);
+    } else if value.isinstance::<VMBytes>() {
+        let bytes = value.as_const_type::<VMBytes>();
+        return Ok(bytes.value.len());
+    }
+    Err(VMVariableError::TypeError(
+        value.clone(),
+        "Cannot get length of a non-lengthable type".to_string(),
+    ))
+}
+
 pub fn try_contains_as_vmobject(value: &GCRef, other: &GCRef) -> Result<bool, VMVariableError> {
     if value.isinstance::<VMString>() {
         let string = value.as_const_type::<VMString>();

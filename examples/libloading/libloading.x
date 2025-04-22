@@ -10,24 +10,25 @@ clambda(1, 2, 3);
 print(add(1, 2));
 
 mathlib := {
-    clambda := () -> dyn @dynamic load_clambda("../../modules/clambda_math_lib/clambda_math.so");
-    mathlib::{
-        sin => sin::clambda,
-        cos => cos::clambda,
-        tan => tan::clambda,
-        pow => pow::clambda,
-        sqrt => sqrt::clambda,
-        round => round::clambda,
-        floor => floor::clambda,
-        ceil => ceil::clambda,
-        log => log::clambda,
-        log10 => log10::clambda,
-        exp => exp::clambda,
-        max => max::clambda,
-        min => min::clambda,
-        abs => abs::clambda,
-        pi => (pi::clambda)(),
-        e => (e::clambda)(),
+    clambda := @dynamic load_clambda("../../modules/clambda_math_lib/clambda_math.so");
+    {
+        // 封装，由于 C 库一般不接受命名参数，所以这里包装一层
+        sin => (x?) -> &clambda (sin::() -> dyn $this)(x),
+        cos => (x?) -> &clambda (cos::() -> dyn $this)(x),
+        tan => (x?) -> &clambda (tan::() -> dyn $this)(x),
+        pow => (x?, y?) -> &clambda (pow::() -> dyn $this)(x, y),
+        sqrt => (x?) -> &clambda (sqrt::() -> dyn $this)(x),
+        round => (x?) -> &clambda (round::() -> dyn $this)(x),
+        floor => (x?) -> &clambda (floor::() -> dyn $this)(x),
+        ceil => (x?) -> &clambda (ceil::() -> dyn $this)(x),
+        log => (x?) -> &clambda (log::() -> dyn $this)(x),
+        log10 => (x?) -> &clambda (log10::() -> dyn $this)(x),
+        exp => (x?) -> &clambda (exp::() -> dyn $this)(x),
+        max => (x?) -> &clambda (max::() -> dyn $this)(x),
+        min => (x?) -> &clambda (min::() -> dyn $this)(x),
+        abs => (x?) -> &clambda (abs::() -> dyn $this)(x),
+        pi => (pi::() -> dyn clambda)(),
+        e => (e::() -> dyn clambda)(),
     }
 };
 print(mathlib.sin(1));

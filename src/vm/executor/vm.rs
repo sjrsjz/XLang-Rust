@@ -339,7 +339,7 @@ impl VMExecutor {
             vm_instructions::push_value_into_tuple;
         instruction_table[VMInstruction::ResetIter as usize] = vm_instructions::reset_iter;
         instruction_table[VMInstruction::NextOrJump as usize] = vm_instructions::next_or_jump;
-
+        instruction_table[VMInstruction::LengthOf as usize] = vm_instructions::get_length;
         // 控制流
         instruction_table[VMInstruction::Call as usize] = vm_instructions::call_lambda;
         instruction_table[VMInstruction::AsyncCall as usize] = vm_instructions::async_call_lambda;

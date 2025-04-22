@@ -91,6 +91,7 @@ pub enum IR{
     ForkStackObjectRef(usize), // fork stack object
     PushValueIntoTuple(usize), // push value into tuple on stack
     CaptureOf, // capture value
+    LengthOf, // get length of object
 }
 
 #[derive(Serialize, Deserialize, Debug, Clone)]

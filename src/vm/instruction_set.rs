@@ -70,6 +70,7 @@ pub enum VMInstruction {
     NextOrJump = 66,  // 下一个或跳转
     ForkStackObjectRef = 67, // 分叉栈对象引用
     PushValueIntoTuple = 68, // 将值推入元组
+    LengthOf = 69, // 获取对象长度
 
     // 控制流
     Call = 70,        // 调用函数
@@ -108,100 +109,6 @@ pub enum VMInstruction {
 }
 
 impl VMInstruction {
-    /// 获取指令名称
-    pub fn _name(&self) -> &'static str {
-        match self {
-            Self::LoadNull => "LoadNull",
-            Self::LoadInt32 => "LoadInt32",
-            Self::LoadInt64 => "LoadInt64",
-            Self::LoadFloat32 => "LoadFloat32",
-            Self::LoadFloat64 => "LoadFloat64",
-            Self::LoadString => "LoadString",
-            Self::LoadBytes => "LoadBytes",
-            Self::LoadBool => "LoadBool",
-            Self::LoadLambda => "LoadLambda",
-            Self::Pop => "Pop",
-
-            Self::BuildTuple => "BuildTuple",
-            Self::BuildKeyValue => "BuildKeyValue",
-            Self::BuildNamed => "BuildNamed",
-            Self::BuildRange => "BuildRange",
-            Self::BuildSet => "BuildSet",
-
-            Self::BinaryAdd => "BinaryAdd",
-            Self::BinarySub => "BinarySub",
-            Self::BinaryMul => "BinaryMul",
-            Self::BinaryDiv => "BinaryDiv",
-            Self::BinaryMod => "BinaryMod",
-            Self::BinaryPow => "BinaryPow",
-            Self::BinaryBitAnd => "BinaryBitAnd",
-            Self::BinaryBitOr => "BinaryBitOr",
-            Self::BinaryBitXor => "BinaryBitXor",
-            Self::BinaryShl => "BinaryShl",
-            Self::BinaryShr => "BinaryShr",
-            Self::BinaryEq => "BinaryEq",
-            Self::BinaryNe => "BinaryNe",
-            Self::BinaryGt => "BinaryGt",
-            Self::BinaryLt => "BinaryLt",
-            Self::BinaryGe => "BinaryGe",
-            Self::BinaryLe => "BinaryLe",
-            Self::BinaryIn => "BinaryIn",
-
-            Self::UnaryBitNot => "UnaryBitNot",
-            Self::UnaryAbs => "UnaryAbs",
-            Self::UnaryNeg => "UnaryNeg",
-
-            Self::StoreVar => "StoreVar",
-            Self::LoadVar => "LoadVar",
-            Self::SetValue => "SetValue",
-            Self::WrapObj => "WrapObj",
-            Self::GetAttr => "GetAttr",
-            Self::IndexOf => "IndexOf",
-            Self::KeyOf => "KeyOf",
-            Self::ValueOf => "ValueOf",
-            Self::SelfOf => "SelfOf",
-            Self::TypeOf => "TypeOf",
-            Self::DeepCopy => "DeepCopy",
-            Self::ShallowCopy => "ShallowCopy",
-            Self::MakeRef => "MakeRef",
-            Self::Deref => "Deref",
-            Self::Swap => "Swap",
-            Self::ResetIter => "ResetIter",
-            Self::NextOrJump => "NextOrJump",
-            Self::PushValueIntoTuple => "PushValueIntoTuple",
-            Self::ForkStackObjectRef => "ForkStackObjectRef",
-
-            Self::Call => "Call",
-            Self::AsyncCall => "AsyncCall",
-            Self::Return => "Return",
-            Self::Raise => "Raise",
-            Self::Jump => "Jump",
-            Self::JumpIfFalse => "JumpIfFalse",
-
-            Self::NewFrame => "NewFrame",
-            Self::NewBoundaryFrame => "NewBoundaryFrame",
-            Self::PopFrame => "PopFrame",
-            Self::PopBoundaryFrame => "PopBoundaryFrame",
-            Self::ResetStack => "ResetStack",
-
-            Self::Import => "Import",
-
-            Self::Fork => "Fork",
-            Self::BindSelf => "BindSelf",
-            Self::Assert => "Assert",
-            Self::Emit => "Emit",
-            Self::IsFinished => "IsFinished",
-
-            Self::Alias => "Alias",
-            Self::WipeAlias => "WipeAlias",
-            Self::AliasOf => "AliasOf",
-
-            Self::CaptureOf => "CaptureOf",
-
-            Self::Nop => "Nop",
-        }
-    }
-
     /// 根据操作码获取指令
     pub fn from_opcode(opcode: u8) -> Option<Self> {
         match opcode {
@@ -264,6 +171,7 @@ impl VMInstruction {
             66 => Some(Self::NextOrJump),
             67 => Some(Self::ForkStackObjectRef),
             68 => Some(Self::PushValueIntoTuple),
+            69 => Some(Self::LengthOf),
 
             70 => Some(Self::Call),
             71 => Some(Self::AsyncCall),
@@ -295,180 +203,6 @@ impl VMInstruction {
             255 => Some(Self::Nop),
 
             _ => None,
-        }
-    }
-
-    /// 获取指令是否带有参数
-    pub fn _has_arguments(&self) -> bool {
-        match self {
-            Self::LoadNull
-            | Self::Pop
-            | Self::BuildKeyValue
-            | Self::BuildNamed
-            | Self::BuildRange
-            | Self::BindSelf
-            | Self::BinaryAdd
-            | Self::BinarySub
-            | Self::BinaryMul
-            | Self::BinaryDiv
-            | Self::BinaryMod
-            | Self::BinaryPow
-            | Self::BinaryBitAnd
-            | Self::BinaryBitOr
-            | Self::BinaryBitXor
-            | Self::BinaryShl
-            | Self::BinaryShr
-            | Self::BinaryEq
-            | Self::BinaryNe
-            | Self::BinaryGt
-            | Self::BinaryLt
-            | Self::BinaryGe
-            | Self::BinaryLe
-            | Self::BinaryIn
-            | Self::UnaryBitNot
-            | Self::SetValue
-            | Self::WrapObj
-            | Self::GetAttr
-            | Self::IndexOf
-            | Self::KeyOf
-            | Self::ValueOf
-            | Self::SelfOf
-            | Self::TypeOf
-            | Self::DeepCopy
-            | Self::ShallowCopy
-            | Self::MakeRef
-            | Self::Deref
-            | Self::Call
-            | Self::AsyncCall
-            | Self::Return
-            | Self::Raise
-            | Self::NewFrame
-            | Self::PopFrame
-            | Self::PopBoundaryFrame
-            | Self::ResetStack
-            | Self::Import
-            | Self::Fork
-            | Self::Assert
-            | Self::Emit
-            | Self::IsFinished
-            | Self::WipeAlias
-            | Self::AliasOf
-            | Self::Nop
-            | Self::UnaryAbs
-            | Self::UnaryNeg
-            | Self::ResetIter
-            | Self::CaptureOf
-            | Self::BuildSet => false,
-
-            // 有参数的指令
-            Self::LoadInt32
-            | Self::LoadInt64
-            | Self::LoadFloat32
-            | Self::LoadFloat64
-            | Self::LoadString
-            | Self::LoadBytes
-            | Self::LoadBool
-            | Self::LoadLambda
-            | Self::BuildTuple
-            | Self::StoreVar
-            | Self::LoadVar
-            | Self::Jump
-            | Self::JumpIfFalse
-            | Self::NewBoundaryFrame
-            | Self::Alias
-            | Self::Swap
-            | Self::ForkStackObjectRef
-            | Self::PushValueIntoTuple
-            | Self::NextOrJump => true,
-        }
-    }
-
-    /// 获取指令参数数量
-    pub fn _argument_count(&self) -> usize {
-        match self {
-            // 没有参数的指令
-            Self::LoadNull
-            | Self::Pop
-            | Self::BuildKeyValue
-            | Self::BuildNamed
-            | Self::BuildRange
-            | Self::BindSelf
-            | Self::BinaryAdd
-            | Self::BinarySub
-            | Self::BinaryMul
-            | Self::BinaryDiv
-            | Self::BinaryMod
-            | Self::BinaryPow
-            | Self::BinaryBitAnd
-            | Self::BinaryBitOr
-            | Self::BinaryBitXor
-            | Self::BinaryShl
-            | Self::BinaryShr
-            | Self::BinaryEq
-            | Self::BinaryNe
-            | Self::BinaryGt
-            | Self::BinaryLt
-            | Self::BinaryGe
-            | Self::BinaryLe
-            | Self::BinaryIn
-            | Self::UnaryBitNot
-            | Self::SetValue
-            | Self::WrapObj
-            | Self::GetAttr
-            | Self::IndexOf
-            | Self::KeyOf
-            | Self::ValueOf
-            | Self::SelfOf
-            | Self::TypeOf
-            | Self::DeepCopy
-            | Self::ShallowCopy
-            | Self::MakeRef
-            | Self::Deref
-            | Self::Call
-            | Self::AsyncCall
-            | Self::Return
-            | Self::Raise
-            | Self::NewFrame
-            | Self::PopFrame
-            | Self::PopBoundaryFrame
-            | Self::ResetStack
-            | Self::Import
-            | Self::Fork
-            | Self::Assert
-            | Self::Emit
-            | Self::IsFinished
-            | Self::WipeAlias
-            | Self::AliasOf
-            | Self::Nop
-            | Self::UnaryAbs
-            | Self::UnaryNeg
-            | Self::ResetIter
-            | Self::CaptureOf
-            | Self::BuildSet => 0,
-
-            // 单参数指令
-            Self::LoadInt32
-            | Self::LoadBool
-            | Self::BuildTuple
-            | Self::Jump
-            | Self::JumpIfFalse
-            | Self::NewBoundaryFrame
-            | Self::ForkStackObjectRef
-            | Self::PushValueIntoTuple
-            | Self::NextOrJump => 1,
-
-            // 双参数指令
-            Self::LoadLambda | Self::Swap => 2,
-
-            // 64位值需要两个32位参数
-            Self::LoadInt64
-            | Self::LoadFloat32
-            | Self::LoadFloat64
-            | Self::LoadString
-            | Self::LoadBytes
-            | Self::StoreVar
-            | Self::LoadVar
-            | Self::Alias => 1, // 这里指逻辑参数数量
         }
     }
 }

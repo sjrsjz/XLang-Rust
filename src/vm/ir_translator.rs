@@ -750,6 +750,17 @@ impl IRTranslator {
                         .get_opcode(),
                     );
                 }
+                IR::LengthOf => {
+                    self.code.push(
+                        Opcode32::build_opcode(
+                            VMInstruction::LengthOf as u8,
+                            0,
+                            0,
+                            0,
+                        )
+                        .get_opcode(),
+                    );
+                }
                 _ => {
                     return Err(IRTranslatorError::InvalidInstruction(ir));
                 }

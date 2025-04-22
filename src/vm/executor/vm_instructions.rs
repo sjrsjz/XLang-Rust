@@ -1548,4 +1548,16 @@ pub mod vm_instructions {
         obj.drop_ref();
         Ok(None)
     }
+    pub fn get_length(
+        vm: &mut VMExecutor,
+        _opcode: &ProcessedOpcode,
+        gc_system: &mut GCSystem,
+    ) -> Result<Option<Vec<SpawnedCoroutine>>, VMError> {
+        let mut obj = vm.pop_object_and_check()?;
+        let result = try_length_of_as_vmobject(&obj).map_err(VMError::VMVariableError)?;
+        let mut result = gc_system.new_object(VMInt::new(result as i64));
+        vm.push_vmobject(result.clone_ref())?;
+        obj.drop_ref();
+        Ok(None)
+    }
 }

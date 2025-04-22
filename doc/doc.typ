@@ -642,7 +642,7 @@ foo(); // 调用函数 foo，输出 1
 == 内置函数
 XLang-Rust 提供了一些内置函数来操作和处理数据。以下是一些常用的内置函数：
 - `print(value)`：打印值到标准输出。
-- `len(value)`：返回值的长度或大小。
+- `len(value)`：返回值的长度或大小。现在可以使用 `lengthof value` 来获取长度。但为了兼容性，`len` 仍然是一个内置函数。
 - `int(value)`：将值转换为整数。
 - `float(value)`：将值转换为浮点数。
 - `string(value)`：将值转换为字符串。
@@ -754,6 +754,51 @@ A := #foo 5; // 调用 foo 函数，传入参数 5，结果为 25
 print(A); // 输出 25
 ```
 
+== C Lambda
+XLang-Rust 支持调用 C 语言编写的动态链接库（DLL/SO）。可以使用 `load_clambda` 函数加载一个 C 动态链接库，并返回一个 clambda 对象。
+
+下面是一个示例：
+
+```xlang
+mathlib := {
+    clambda := @dynamic load_clambda("../../modules/clambda_math_lib/clambda_math.so"); // 加载 C 动态链接库
+    {
+        // 封装，由于 C 库一般不接受命名参数，所以这里包装一层，直接使用位置参数
+        sin => (x?) -> &clambda (sin::() -> dyn $this)(x),
+        cos => (x?) -> &clambda (cos::() -> dyn $this)(x),
+        tan => (x?) -> &clambda (tan::() -> dyn $this)(x),
+        pow => (x?, y?) -> &clambda (pow::() -> dyn $this)(x, y),
+        sqrt => (x?) -> &clambda (sqrt::() -> dyn $this)(x),
+        round => (x?) -> &clambda (round::() -> dyn $this)(x),
+        floor => (x?) -> &clambda (floor::() -> dyn $this)(x),
+        ceil => (x?) -> &clambda (ceil::() -> dyn $this)(x),
+        log => (x?) -> &clambda (log::() -> dyn $this)(x),
+        log10 => (x?) -> &clambda (log10::() -> dyn $this)(x),
+        exp => (x?) -> &clambda (exp::() -> dyn $this)(x),
+        max => (x?) -> &clambda (max::() -> dyn $this)(x),
+        min => (x?) -> &clambda (min::() -> dyn $this)(x),
+        abs => (x?) -> &clambda (abs::() -> dyn $this)(x),
+        pi => (pi::() -> dyn clambda)(), // 直接调用 C 库中的 pi 函数
+        e => (e::() -> dyn clambda)(),
+    }
+};
+print(mathlib.sin(1));
+print(mathlib.cos(1));
+print(mathlib.tan(1));
+print(mathlib.pow(2, 3));
+print(mathlib.sqrt(4));
+print(mathlib.round(1.5));
+print(mathlib.floor(1.5));
+print(mathlib.ceil(1.5));
+print(mathlib.log(2));
+print(mathlib.log10(100));
+print(mathlib.exp(1));
+print(mathlib.max(1, 2));
+print(mathlib.min(1, 2));
+print(mathlib.abs(-1));
+print(mathlib.pi);
+print(mathlib.e);
+```
 = 别名系统
 
 由于XLang-Rust采用的是结构化类型系统，因此在XLang-Rust中，变量的类型是由其值决定的，而不是由其声明时的类型决定的。这使得XLang-Rust的数据结构更加灵活和动态。但也导致了一个问题：如何在显著指定一个对象到底是什么。为了解决这个问题，XLang-Rust引入了别名系统。
@@ -934,7 +979,7 @@ print(squared); // 输出 (1, 4, 9)
   [27], [`..`], [从左到右], [区间构造],
   [28], [
     `deepcopy`, `copy`, `ref`, `deref`, `keyof`, `valueof`, `selfof`,
-    `assert`, `import`, `wrap`, `typeof`, `wipe`, `aliasof`, `collect`, `captureof`, `bind`, `boundary`, `await`
+    `assert`, `import`, `wrap`, `typeof`, `wipe`, `aliasof`, `collect`, `captureof`, `bind`, `boundary`, `await`, `lengthof`
    ], [N/A], [一元修饰符/操作],
   [29], [`key?`, `key!`], [N/A], [快速命名参数 (语法糖)],
   [30], [`...`], [N/A], [展开运算 (元组暗示)],
