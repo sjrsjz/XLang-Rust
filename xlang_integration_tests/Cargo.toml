@@ -1,0 +1,8 @@
+[package]
+name = "xlang_integration_tests"
+version = "0.1.0"
+edition = "2024"
+
+[dependencies]
+xlang_frontend = {path = "../xlang_frontend"}
+xlang_vm_core = {path = "../xlang_vm_core"}
