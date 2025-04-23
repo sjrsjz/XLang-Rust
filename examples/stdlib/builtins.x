@@ -1,5 +1,5 @@
 /* 一个非常操蛋的用来禁止缓存参数的内置函数的包装 */
-builtins := bind {
+builtins := bind @dynamic {
     'builtin_print' : print,
     'builtin_int' : int,
     'builtin_float' : float,
