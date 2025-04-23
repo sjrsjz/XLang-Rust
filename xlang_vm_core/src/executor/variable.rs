@@ -12,7 +12,7 @@ use colored::Colorize;
  * - 任何new对象的行为都需要使用gc_system，并且会产生一个native_gcref_object_count，虚拟机必须在某处drop_ref直到为0
  *
  */
-use std::fmt::Debug;
+use std::{fmt::Debug, future::Future, pin::Pin};
 
 #[derive(Debug, Clone)]
 pub enum VMStackObject {
@@ -2643,6 +2643,9 @@ impl VMCoroutineStatus {
 pub enum VMLambdaBody {
     VMInstruction(GCRef),
     VMNativeFunction(fn(GCRef, &mut GCSystem) -> Result<GCRef, VMVariableError>),
+    VMAsyncNativeFunction(
+        fn(GCRef, &mut GCSystem) -> Pin<Box<dyn Future<Output = Result<GCRef, VMVariableError>> + Send + 'static>>,
+    ),
 }
 
 #[derive(Debug)]
@@ -2684,6 +2687,9 @@ impl VMLambda {
                 &mut cloned_result,
             ],
             VMLambdaBody::VMNativeFunction(_) => {
+                vec![&mut cloned_default_args_tuple, &mut cloned_result]
+            }
+            VMLambdaBody::VMAsyncNativeFunction(_) => {
                 vec![&mut cloned_default_args_tuple, &mut cloned_result]
             }
         };
@@ -2747,6 +2753,9 @@ impl VMLambda {
                 &mut cloned_result,
             ],
             VMLambdaBody::VMNativeFunction(_) => {
+                vec![&mut cloned_default_args_tuple, &mut cloned_result]
+            }
+            VMLambdaBody::VMAsyncNativeFunction(_) => {
                 vec![&mut cloned_default_args_tuple, &mut cloned_result]
             }
         };
@@ -2825,6 +2834,7 @@ impl GCObject for VMLambda {
                 self.traceable.remove_reference(instructions);
             }
             VMLambdaBody::VMNativeFunction(_) => {}
+            VMLambdaBody::VMAsyncNativeFunction(_) => {}
         }
         self.traceable.remove_reference(&mut self.result);
         if self.self_object.is_some() {
@@ -2859,6 +2869,7 @@ impl VMObject for VMLambda {
                 VMLambdaBody::VMInstruction(try_deepcopy_as_vmobject(instructions, gc_system)?)
             }
             VMLambdaBody::VMNativeFunction(_) => self.lambda_body.clone(),
+            VMLambdaBody::VMAsyncNativeFunction(_) => self.lambda_body.clone(),
         };
 
         let new_lambda = gc_system.new_object(VMLambda::new_with_alias(
@@ -2877,6 +2888,7 @@ impl VMObject for VMLambda {
                 instructions.drop_ref();
             }
             VMLambdaBody::VMNativeFunction(_) => {}
+            VMLambdaBody::VMAsyncNativeFunction(_) => {}
         }
         new_result.drop_ref();
         Ok(new_lambda)

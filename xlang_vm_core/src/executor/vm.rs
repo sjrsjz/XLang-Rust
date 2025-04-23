@@ -463,6 +463,11 @@ impl VMExecutor {
         if !lambda_object.isinstance::<VMLambda>() {
             return Err(VMError::TryEnterNotLambda(lambda_object.clone()));
         }
+        if let VMLambdaBody::VMAsyncNativeFunction(_) = &lambda_object.as_const_type::<VMLambda>().lambda_body
+        {
+            self.lambda_instructions.push(lambda_object.clone());
+            return Ok(());
+        }
 
         let VMLambdaBody::VMInstruction(lambda_body) =
             &lambda_object.as_const_type::<VMLambda>().lambda_body
@@ -559,7 +564,9 @@ impl VMExecutor {
     ) -> Result<(), VMError> {
         self.enter_lambda(lambda_object, gc_system)?;
 
-        self.ip = *self
+        if let VMLambdaBody::VMInstruction(_) = &lambda_object.as_const_type::<VMLambda>().lambda_body
+        {
+            self.ip = *self
             .lambda_instructions
             .last()
             .unwrap()
@@ -568,6 +575,7 @@ impl VMExecutor {
             .get_table()
             .get(&lambda_object.as_const_type::<VMLambda>().signature)
             .unwrap() as isize;
+        }
         Ok(())
     }
 
@@ -585,6 +593,13 @@ impl VMExecutor {
         let mut spawned_coroutines = None;
         if !self.lambda_instructions.is_empty() && *coroutine_status != VMCoroutineStatus::Finished
         {
+            if self.lambda_instructions.last().unwrap().isinstance::<VMLambda>() {
+                let lambda = self.lambda_instructions.last_mut().unwrap().as_type::<VMLambda>();
+                if let VMLambdaBody::VMAsyncNativeFunction(func) = &mut lambda.lambda_body{
+                    
+                }
+                return Ok(None)
+            }
             let vm_instruction = self
                 .lambda_instructions
                 .last()
