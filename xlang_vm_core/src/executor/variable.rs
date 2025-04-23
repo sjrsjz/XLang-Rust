@@ -2637,6 +2637,7 @@ pub enum VMCoroutineStatus {
 pub trait VMNativeGeneratorFunction: Debug {
     fn init(&mut self, arg: &mut GCRef, gc_system: &mut GCSystem) -> Result<(), VMVariableError>; // 初始化函数
     fn step(&mut self, gc_system: &mut GCSystem) -> Result<GCRef, VMVariableError>; // 执行一步，返回yield值
+    fn get_result(&mut self, gc_system: &mut GCSystem) -> Result<GCRef, VMVariableError>; // 获取结果
     fn is_done(&self) -> bool; // 检查是否完成
     fn clone_generator(&self) -> Arc<Box<dyn VMNativeGeneratorFunction>>; // 克隆生成器
 }
@@ -2682,7 +2683,7 @@ impl PartialEq for VMLambdaBody {
     fn eq(&self, other: &Self) -> bool {
         match (self, other) {
             (VMLambdaBody::VMInstruction(a), VMLambdaBody::VMInstruction(b)) => a == b, // 假设 GCRef 实现 PartialEq
-            (VMLambdaBody::VMNativeFunction(a), VMLambdaBody::VMNativeFunction(b)) => a == b, // 比较函数指针
+            (VMLambdaBody::VMNativeFunction(a), VMLambdaBody::VMNativeFunction(b)) => std::ptr::fn_addr_eq(*a, *b), // 比较函数指针
             (VMLambdaBody::VMNativeGeneratorFunction(_), VMLambdaBody::VMNativeGeneratorFunction(_)) => false, // 通常不比较 trait object 的内容
             _ => false, // 不同变体不相等
         }
@@ -2985,7 +2986,7 @@ impl VMObject for VMLambda {
         };
 
 
-        Ok(gc_system.new_object(VMLambda::new_with_alias(
+        let new_lambda = gc_system.new_object(VMLambda::new_with_alias(
             self.code_position,
             self.signature.clone(),
             &mut new_default_args_tuple,
@@ -2994,7 +2995,18 @@ impl VMObject for VMLambda {
             &mut new_lambda_body,
             &mut new_result,
             &self.alias,
-        )))
+        ));
+        new_default_args_tuple.drop_ref();
+        match new_lambda_body {
+            VMLambdaBody::VMInstruction(ref mut instructions) => {
+                instructions.drop_ref();
+            }
+            VMLambdaBody::VMNativeFunction(_) => {}
+            VMLambdaBody::VMNativeGeneratorFunction(_) => {
+            }
+        }
+        new_result.drop_ref();
+        return Ok(new_lambda);
     }
 
     fn assign<'t>(&mut self, value: &'t mut GCRef) -> Result<&'t mut GCRef, VMVariableError> {

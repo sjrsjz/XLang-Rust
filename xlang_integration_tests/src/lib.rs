@@ -337,13 +337,17 @@ mod tests {
         fn clone_generator(&self) -> Arc<Box<dyn VMNativeGeneratorFunction>> {
             Arc::new(Box::new(self.clone()))
         }
+
+        fn get_result(&mut self, gc_system: &mut xlang_vm_core::gc::GCSystem) -> Result<GCRef, VMVariableError> {
+            return Ok(gc_system.new_object(VMNull::new()));
+        }
     }
 
     #[test]
     fn test_xlang_custom_native_async_function() {
         let code = r#"
         n := 0;
-        while (n = n + 1; n < 10) {
+        while (n = n + 1; n <= 100) {
             @dynamic async (copy custom_generator)(n * 10);
         }
         "#;
@@ -448,7 +452,7 @@ mod tests {
                 );
             }
             Err(e) => {
-                println!("Failed to execute code: {:?}", e);
+                println!("Failed to execute code: {}", e.to_string());
             }
         }
 

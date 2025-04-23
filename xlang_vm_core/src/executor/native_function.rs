@@ -1,3 +1,381 @@
+use rustc_hash::FxHashMap;
+
+use crate::gc::{GCRef, GCSystem};
+
+use super::variable::{VMKeyVal, VMLambda, VMLambdaBody, VMNull, VMString, VMTuple, VMVariableError};
+
+fn check_if_tuple(tuple: GCRef) -> Result<(), VMVariableError> {
+    if !tuple.isinstance::<VMTuple>() {
+        return Err(VMVariableError::TypeError(
+            tuple,
+            "native function's input must be a tuple".to_string(),
+        ));
+    }
+    Ok(())
+}
+// Helper function to create a native VMLambda
+fn create_native_lambda(
+    name: &str,
+    native_fn: fn(GCRef, &mut GCSystem) -> Result<GCRef, VMVariableError>,
+    gc_system: &mut GCSystem,
+) -> Result<GCRef, VMVariableError> {
+    // Create empty tuple for default args (can be shared or created anew)
+    // Using a shared empty tuple might be slightly more efficient if possible,
+    // but creating anew is safer and simpler here.
+    let mut params = gc_system.new_object(VMTuple::new(&mut vec![]));
+    let mut result = gc_system.new_object(VMNull::new()); // Default result placeholder
+
+    let lambda = gc_system.new_object(VMLambda::new(
+        0,                               // code_position, 0 for native
+        format!("<builtins>::{}", name), // signature
+        &mut params,
+        None, // capture
+        None, // self_object
+        &mut VMLambdaBody::VMNativeFunction(native_fn),
+        &mut result,
+    ));
+
+    // Drop refs owned by the lambda now
+    params.drop_ref();
+    result.drop_ref();
+
+    Ok(lambda)
+}
+
+// Helper function to build a module tuple from a map of functions
+fn build_module(
+    functions: &FxHashMap<String, for<'a> fn(GCRef, &'a mut GCSystem) -> Result<GCRef, VMVariableError>>,
+    gc_system: &mut GCSystem,
+) -> GCRef {
+    let mut module = gc_system.new_object(VMTuple::new(&mut vec![]));
+    for (name, func) in functions {
+        let mut func_ref = create_native_lambda(name, *func, gc_system).unwrap();
+        let mut key = gc_system.new_object(VMString::new(name));
+        let mut kv_pair = gc_system.new_object(VMKeyVal::new(&mut key, &mut func_ref));
+        let _ = module.as_type::<VMTuple>().append(&mut kv_pair);
+        func_ref.drop_ref(); // Drop the ref created by create_native_lambda
+        key.drop_ref(); // Drop the ref created by VMString::new
+        kv_pair.drop_ref(); // Drop the ref created by VMKeyVal::new
+    }
+    module
+}
+
+mod string_utils {
+    use rustc_hash::FxHashMap;
+
+    use crate::{
+        executor::variable::{
+            VMBoolean, VMInt, VMString, VMTuple, VMVariableError,
+        },
+        gc::{GCRef, GCSystem},
+    };
+
+    use super::{build_module, check_if_tuple}; // Import necessary items
+
+    // Helper to extract string from the first argument of the tuple
+    fn get_self_string(tuple: &GCRef) -> Result<&String, VMVariableError> {
+        let tuple_obj = tuple.as_const_type::<VMTuple>();
+        if tuple_obj.values.is_empty() {
+            return Err(VMVariableError::TypeError(
+                tuple.clone(),
+                "String method called with no arguments (missing self)".to_string(),
+            ));
+        }
+        let self_obj = &tuple_obj.values[0];
+        if !self_obj.isinstance::<VMString>() {
+            return Err(VMVariableError::TypeError(
+                self_obj.clone(),
+                "First argument must be a string".to_string(),
+            ));
+        }
+        Ok(&self_obj.as_const_type::<VMString>().value)
+    }
+
+    // string.split(separator, [maxsplit])
+    fn split(args_tuple: GCRef, gc_system: &mut GCSystem) -> Result<GCRef, VMVariableError> {
+        check_if_tuple(args_tuple.clone())?;
+        let tuple_obj = args_tuple.as_const_type::<VMTuple>();
+        let self_str = get_self_string(&args_tuple)?;
+
+        if tuple_obj.values.len() < 2 {
+            return Err(VMVariableError::TypeError(
+                args_tuple.clone(),
+                "split requires at least one argument (separator)".to_string(),
+            ));
+        }
+
+        let sep_obj = &tuple_obj.values[1];
+        if !sep_obj.isinstance::<VMString>() {
+            return Err(VMVariableError::TypeError(
+                sep_obj.clone(),
+                "Separator must be a string".to_string(),
+            ));
+        }
+        let separator = &sep_obj.as_const_type::<VMString>().value;
+
+        // Optional maxsplit argument
+        let maxsplit: Option<usize> = if tuple_obj.values.len() > 2 {
+            let maxsplit_obj = &tuple_obj.values[2];
+            if maxsplit_obj.isinstance::<VMInt>() {
+                let val = maxsplit_obj.as_const_type::<VMInt>().value;
+                if val < 0 {
+                    None // Negative maxsplit means split all
+                } else {
+                    Some(val as usize)
+                }
+            } else {
+                return Err(VMVariableError::TypeError(
+                    maxsplit_obj.clone(),
+                    "maxsplit must be an integer".to_string(),
+                ));
+            }
+        } else {
+            None // Default: split all occurrences
+        };
+
+        let mut result_elements = Vec::new();
+        let mut temp_refs = Vec::new();
+
+        let parts: Vec<&str> = match maxsplit {
+            Some(n) => self_str.splitn(n + 1, separator).collect(),
+            None => self_str.split(separator).collect(),
+        };
+
+        for part in parts {
+            let vm_part = gc_system.new_object(VMString::new(part));
+            result_elements.push(vm_part.clone()); // Clone for the final tuple
+            temp_refs.push(vm_part); // Track for dropping later
+        }
+
+        let mut element_refs: Vec<&mut GCRef> = result_elements.iter_mut().collect();
+        let result_tuple = gc_system.new_object(VMTuple::new(&mut element_refs));
+
+        // Drop refs owned by the new tuple and temporary refs
+        for mut r in temp_refs {
+            r.drop_ref();
+        }
+        for mut r in result_elements {
+            r.drop_ref();
+        }
+
+        Ok(result_tuple)
+    }
+
+    // separator.join(iterable)
+    fn join(args_tuple: GCRef, gc_system: &mut GCSystem) -> Result<GCRef, VMVariableError> {
+        check_if_tuple(args_tuple.clone())?;
+        let tuple_obj = args_tuple.as_const_type::<VMTuple>();
+        let separator = get_self_string(&args_tuple)?; // Separator is 'self'
+
+        if tuple_obj.values.len() != 2 {
+            return Err(VMVariableError::TypeError(
+                args_tuple.clone(),
+                "join requires exactly one argument (iterable)".to_string(),
+            ));
+        }
+
+        let iterable_obj = &tuple_obj.values[1];
+        if !iterable_obj.isinstance::<VMTuple>() {
+            return Err(VMVariableError::TypeError(
+                iterable_obj.clone(),
+                "Argument to join must be a tuple".to_string(),
+            ));
+        }
+        let iterable_tuple = iterable_obj.as_const_type::<VMTuple>();
+
+        let mut string_parts = Vec::with_capacity(iterable_tuple.values.len());
+        for item in &iterable_tuple.values {
+            if !item.isinstance::<VMString>() {
+                return Err(VMVariableError::TypeError(
+                    item.clone(),
+                    "All elements in the iterable must be strings for join".to_string(),
+                ));
+            }
+            string_parts.push(item.as_const_type::<VMString>().value.as_str());
+        }
+
+        let joined_string = string_parts.join(separator);
+        Ok(gc_system.new_object(VMString::new(&joined_string)))
+    }
+
+    // string.replace(old, new, [count])
+    fn replace(args_tuple: GCRef, gc_system: &mut GCSystem) -> Result<GCRef, VMVariableError> {
+        check_if_tuple(args_tuple.clone())?;
+        let tuple_obj = args_tuple.as_const_type::<VMTuple>();
+        let self_str = get_self_string(&args_tuple)?;
+
+        if tuple_obj.values.len() < 3 {
+            return Err(VMVariableError::TypeError(
+                args_tuple.clone(),
+                "replace requires at least two arguments (old, new)".to_string(),
+            ));
+        }
+
+        let old_obj = &tuple_obj.values[1];
+        let new_obj = &tuple_obj.values[2];
+
+        if !old_obj.isinstance::<VMString>() || !new_obj.isinstance::<VMString>() {
+            return Err(VMVariableError::TypeError(
+                args_tuple.clone(), // Or pinpoint the specific non-string arg
+                "Both 'old' and 'new' arguments must be strings".to_string(),
+            ));
+        }
+        let old_str = &old_obj.as_const_type::<VMString>().value;
+        let new_str = &new_obj.as_const_type::<VMString>().value;
+
+        // Optional count argument
+        let count: Option<usize> = if tuple_obj.values.len() > 3 {
+            let count_obj = &tuple_obj.values[3];
+            if count_obj.isinstance::<VMInt>() {
+                let val = count_obj.as_const_type::<VMInt>().value;
+                if val < 0 {
+                    None // Negative count means replace all
+                } else {
+                    Some(val as usize)
+                }
+            } else {
+                return Err(VMVariableError::TypeError(
+                    count_obj.clone(),
+                    "count must be an integer".to_string(),
+                ));
+            }
+        } else {
+            None // Default: replace all occurrences
+        };
+
+        let result_string = match count {
+            Some(n) => self_str.replacen(old_str, new_str, n),
+            None => self_str.replace(old_str, new_str),
+        };
+
+        Ok(gc_system.new_object(VMString::new(&result_string)))
+    }
+
+    // string.startswith(prefix)
+    fn startswith(args_tuple: GCRef, gc_system: &mut GCSystem) -> Result<GCRef, VMVariableError> {
+        check_if_tuple(args_tuple.clone())?;
+        let tuple_obj = args_tuple.as_const_type::<VMTuple>();
+        let self_str = get_self_string(&args_tuple)?;
+
+        if tuple_obj.values.len() != 2 {
+            return Err(VMVariableError::TypeError(
+                args_tuple.clone(),
+                "startswith requires exactly one argument (prefix)".to_string(),
+            ));
+        }
+
+        let prefix_obj = &tuple_obj.values[1];
+        if !prefix_obj.isinstance::<VMString>() {
+            return Err(VMVariableError::TypeError(
+                prefix_obj.clone(),
+                "Prefix must be a string".to_string(),
+            ));
+        }
+        let prefix_str = &prefix_obj.as_const_type::<VMString>().value;
+
+        let result = self_str.starts_with(prefix_str);
+        Ok(gc_system.new_object(VMBoolean::new(result)))
+    }
+
+    // string.endswith(suffix)
+    fn endswith(args_tuple: GCRef, gc_system: &mut GCSystem) -> Result<GCRef, VMVariableError> {
+        check_if_tuple(args_tuple.clone())?;
+        let tuple_obj = args_tuple.as_const_type::<VMTuple>();
+        let self_str = get_self_string(&args_tuple)?;
+
+        if tuple_obj.values.len() != 2 {
+            return Err(VMVariableError::TypeError(
+                args_tuple.clone(),
+                "endswith requires exactly one argument (suffix)".to_string(),
+            ));
+        }
+
+        let suffix_obj = &tuple_obj.values[1];
+        if !suffix_obj.isinstance::<VMString>() {
+            return Err(VMVariableError::TypeError(
+                suffix_obj.clone(),
+                "Suffix must be a string".to_string(),
+            ));
+        }
+        let suffix_str = &suffix_obj.as_const_type::<VMString>().value;
+
+        let result = self_str.ends_with(suffix_str);
+        Ok(gc_system.new_object(VMBoolean::new(result)))
+    }
+
+    // string.strip([chars])
+    fn strip(args_tuple: GCRef, gc_system: &mut GCSystem) -> Result<GCRef, VMVariableError> {
+        check_if_tuple(args_tuple.clone())?;
+        let tuple_obj = args_tuple.as_const_type::<VMTuple>();
+        let self_str = get_self_string(&args_tuple)?;
+
+        let result_string = if tuple_obj.values.len() > 1 {
+            let chars_obj = &tuple_obj.values[1];
+            if !chars_obj.isinstance::<VMString>() {
+                return Err(VMVariableError::TypeError(
+                    chars_obj.clone(),
+                    "Characters to strip must be a string".to_string(),
+                ));
+            }
+            let chars_str = &chars_obj.as_const_type::<VMString>().value;
+            let chars_to_strip: Vec<char> = chars_str.chars().collect();
+            self_str.trim_matches(|c| chars_to_strip.contains(&c)).to_string()
+        } else {
+            // Default: strip whitespace
+            self_str.trim().to_string()
+        };
+
+        Ok(gc_system.new_object(VMString::new(&result_string)))
+    }
+
+    // string.lower()
+    fn lower(args_tuple: GCRef, gc_system: &mut GCSystem) -> Result<GCRef, VMVariableError> {
+        check_if_tuple(args_tuple.clone())?;
+        let self_str = get_self_string(&args_tuple)?;
+        // Check for extra arguments if desired, though lower usually takes none
+        if args_tuple.as_const_type::<VMTuple>().values.len() > 1 {
+            return Err(VMVariableError::TypeError(
+                args_tuple.clone(),
+                "lower takes no arguments".to_string(),
+            ));
+        }
+
+        let result_string = self_str.to_lowercase();
+        Ok(gc_system.new_object(VMString::new(&result_string)))
+    }
+
+    // string.upper()
+    fn upper(args_tuple: GCRef, gc_system: &mut GCSystem) -> Result<GCRef, VMVariableError> {
+        check_if_tuple(args_tuple.clone())?;
+        let self_str = get_self_string(&args_tuple)?;
+        // Check for extra arguments
+        if args_tuple.as_const_type::<VMTuple>().values.len() > 1 {
+            return Err(VMVariableError::TypeError(
+                args_tuple.clone(),
+                "upper takes no arguments".to_string(),
+            ));
+        }
+
+        let result_string = self_str.to_uppercase();
+        Ok(gc_system.new_object(VMString::new(&result_string)))
+    }
+
+    // Function to create the string utility module
+    pub fn get_string_utils_module(gc_system: &mut GCSystem) -> GCRef {
+        let mut functions = FxHashMap::default();
+        functions.insert("split".to_string(), split as for<'a> fn(_, &'a mut _) -> _);
+        functions.insert("join".to_string(), join as for<'a> fn(_, &'a mut _) -> _);
+        functions.insert("replace".to_string(), replace as for<'a> fn(_, &'a mut _) -> _);
+        functions.insert("startswith".to_string(), startswith as for<'a> fn(_, &'a mut _) -> _);
+        functions.insert("endswith".to_string(), endswith as for<'a> fn(_, &'a mut _) -> _);
+        functions.insert("strip".to_string(), strip as for<'a> fn(_, &'a mut _) -> _);
+        functions.insert("lower".to_string(), lower as for<'a> fn(_, &'a mut _) -> _);
+        functions.insert("upper".to_string(), upper as for<'a> fn(_, &'a mut _) -> _);
+
+        build_module(&functions, gc_system)
+    }
+}
+
 pub mod native_functions {
     use std::io::Write;
 
@@ -15,11 +393,11 @@ pub mod native_functions {
     };
     use base64::Engine;
 
-    use crate::executor::variable::{VMLambda, VMLambdaBody};
     use crate::executor::vm::VMError;
-    use rustc_hash::FxHashMap as HashMap;
     use rustc_hash::FxHashSet as HashSet;
     use serde_json::Value as JsonValue;
+    use super::string_utils; // Import the new module
+    use super::check_if_tuple; // Import the check_if_tuple function
 
     // Helper function to convert VMObject GCRef to serde_json::Value
     fn vmobject_to_json(
@@ -58,7 +436,7 @@ pub mod native_functions {
             Ok(JsonValue::String(
                 value.as_const_type::<VMString>().value.clone(),
             ))
-        }  else if value.isinstance::<VMTuple>() {
+        } else if value.isinstance::<VMTuple>() {
             // --- Modified VMTuple handling ---
             let tuple = value.as_const_type::<VMTuple>();
             let all_keyval = tuple.values.iter().all(|v| v.isinstance::<VMKeyVal>());
@@ -206,219 +584,52 @@ pub mod native_functions {
         }
     }
 
-    fn check_if_tuple(tuple: GCRef) -> Result<(), VMVariableError> {
-        if !tuple.isinstance::<VMTuple>() {
-            return Err(VMVariableError::TypeError(
-                tuple,
-                "native function's input must be a tuple".to_string(),
-            ));
-        }
-        Ok(())
-    }
-
     pub fn inject_builtin_functions(
         context: &mut Context,
         gc_system: &mut GCSystem,
     ) -> Result<(), VMError> {
-        let mut built_in_functions: HashMap<String, GCRef> = HashMap::default();
+        let built_in_functions: [(
+            &str,
+            fn(GCRef, &mut GCSystem) -> Result<GCRef, VMVariableError>,
+        ); 11] = [
+            ("print", self::print),
+            ("len", self::len),
+            ("int", self::to_int),
+            ("float", self::to_float),
+            ("string", self::to_string),
+            ("bool", self::to_bool),
+            ("bytes", self::to_bytes),
+            ("input", self::input),
+            ("load_clambda", self::load_clambda),
+            ("json_encode", self::json_encode),
+            ("json_decode", self::json_decode),
+        ];
 
-        let mut params = gc_system.new_object(VMTuple::new(&mut vec![]));
-        let mut result = gc_system.new_object(VMNull::new());
-        built_in_functions.insert(
-            "print".to_string(),
-            gc_system.new_object(VMLambda::new(
-                0,
-                "<builtins>::print".to_string(),
-                &mut params,
-                None,
-                None,
-                &mut VMLambdaBody::VMNativeFunction(self::print),
-                &mut result,
-            )),
-        );
-        params.drop_ref();
-        result.drop_ref();
+        for (name, func_ptr) in built_in_functions.iter() {
+            let mut lambda_ref = super::create_native_lambda(name, *func_ptr, gc_system)
+                .map_err(|e| VMError::VMVariableError(e))?; // Handle potential errors during lambda creation
 
-        let mut params = gc_system.new_object(VMTuple::new(&mut vec![]));
-        let mut result = gc_system.new_object(VMNull::new());
-        built_in_functions.insert(
-            "len".to_string(),
-            gc_system.new_object(VMLambda::new(
-                0,
-                "<builtins>::len".to_string(),
-                &mut params,
-                None,
-                None,
-                &mut VMLambdaBody::VMNativeFunction(self::len),
-                &mut result,
-            )),
-        );
-        params.drop_ref();
-        result.drop_ref();
+            let result = context.let_var(name, &mut lambda_ref, gc_system);
+            lambda_ref.drop_ref(); // Drop the ref created by create_native_lambda
 
-        let mut params = gc_system.new_object(VMTuple::new(&mut vec![]));
-        let mut result = gc_system.new_object(VMNull::new());
-        built_in_functions.insert(
-            "int".to_string(),
-            gc_system.new_object(VMLambda::new(
-                0,
-                "<builtins>::int".to_string(),
-                &mut params,
-                None,
-                None,
-                &mut VMLambdaBody::VMNativeFunction(self::to_int),
-                &mut result,
-            )),
-        );
-        params.drop_ref();
-        result.drop_ref();
-
-        let mut params = gc_system.new_object(VMTuple::new(&mut vec![]));
-        let mut result = gc_system.new_object(VMNull::new());
-        built_in_functions.insert(
-            "float".to_string(),
-            gc_system.new_object(VMLambda::new(
-                0,
-                "<builtins>::float".to_string(),
-                &mut params,
-                None,
-                None,
-                &mut VMLambdaBody::VMNativeFunction(self::to_float),
-                &mut result,
-            )),
-        );
-        params.drop_ref();
-        result.drop_ref();
-
-        let mut params = gc_system.new_object(VMTuple::new(&mut vec![]));
-        let mut result = gc_system.new_object(VMNull::new());
-        built_in_functions.insert(
-            "string".to_string(),
-            gc_system.new_object(VMLambda::new(
-                0,
-                "<builtins>::string".to_string(),
-                &mut params,
-                None,
-                None,
-                &mut VMLambdaBody::VMNativeFunction(self::to_string),
-                &mut result,
-            )),
-        );
-        params.drop_ref();
-        result.drop_ref();
-
-        let mut params = gc_system.new_object(VMTuple::new(&mut vec![]));
-        let mut result = gc_system.new_object(VMNull::new());
-        built_in_functions.insert(
-            "bool".to_string(),
-            gc_system.new_object(VMLambda::new(
-                0,
-                "<builtins>::bool".to_string(),
-                &mut params,
-                None,
-                None,
-                &mut VMLambdaBody::VMNativeFunction(self::to_bool),
-                &mut result,
-            )),
-        );
-        params.drop_ref();
-        result.drop_ref();
-
-        let mut params = gc_system.new_object(VMTuple::new(&mut vec![]));
-        let mut result = gc_system.new_object(VMNull::new());
-        built_in_functions.insert(
-            "bytes".to_string(),
-            gc_system.new_object(VMLambda::new(
-                0,
-                "<builtins>::bytes".to_string(),
-                &mut params,
-                None,
-                None,
-                &mut VMLambdaBody::VMNativeFunction(self::to_bytes),
-                &mut result,
-            )),
-        );
-        params.drop_ref();
-        result.drop_ref();
-
-        let mut params = gc_system.new_object(VMTuple::new(&mut vec![]));
-        let mut result = gc_system.new_object(VMNull::new());
-        built_in_functions.insert(
-            "input".to_string(),
-            gc_system.new_object(VMLambda::new(
-                0,
-                "<builtins>::input".to_string(),
-                &mut params,
-                None,
-                None,
-                &mut VMLambdaBody::VMNativeFunction(self::input),
-                &mut result,
-            )),
-        );
-        params.drop_ref();
-        result.drop_ref();
-
-        let mut params = gc_system.new_object(VMTuple::new(&mut vec![]));
-        let mut result = gc_system.new_object(VMNull::new());
-        built_in_functions.insert(
-            "load_clambda".to_string(),
-            gc_system.new_object(VMLambda::new(
-                0,
-                "<builtins>::load_clambda".to_string(),
-                &mut params,
-                None,
-                None,
-                &mut VMLambdaBody::VMNativeFunction(self::load_clambda),
-                &mut result,
-            )),
-        );
-        params.drop_ref();
-        result.drop_ref();
-
-        let mut params = gc_system.new_object(VMTuple::new(&mut vec![]));
-        let mut result = gc_system.new_object(VMNull::new());
-        built_in_functions.insert(
-            "json_encode".to_string(),
-            gc_system.new_object(VMLambda::new(
-                0,
-                "<builtins>::json_encode".to_string(),
-                &mut params,
-                None,
-                None,
-                &mut VMLambdaBody::VMNativeFunction(self::json_encode),
-                &mut result,
-            )),
-        );
-        params.drop_ref();
-        result.drop_ref();
-
-        let mut params = gc_system.new_object(VMTuple::new(&mut vec![]));
-        let mut result = gc_system.new_object(VMNull::new());
-        built_in_functions.insert(
-            "json_decode".to_string(),
-            gc_system.new_object(VMLambda::new(
-                0,
-                "<builtins>::json_decode".to_string(),
-                &mut params,
-                None,
-                None,
-                &mut VMLambdaBody::VMNativeFunction(self::json_decode),
-                &mut result,
-            )),
-        );
-        params.drop_ref();
-        result.drop_ref();
-
-        for (name, func) in built_in_functions.iter_mut() {
-            let result = context.let_var(name, func, gc_system);
-            func.drop_ref();
-            if result.is_err() {
-                return Err(VMError::ContextError(result.unwrap_err()));
+            if let Err(context_error) = result {
+                // If let_var fails, we might want to clean up already added functions,
+                // but for simplicity, we just return the error here.
+                return Err(VMError::ContextError(context_error));
             }
         }
+
+        // Inject the string module
+        let mut string_module = string_utils::get_string_utils_module(gc_system);
+        let result = context.let_var("string_utils", &mut string_module, gc_system);
+        string_module.drop_ref();
+
+        if let Err(context_error) = result {
+            return Err(VMError::ContextError(context_error));
+        }
+
         Ok(())
     }
-
 
     pub fn json_encode(tuple: GCRef, gc_system: &mut GCSystem) -> Result<GCRef, VMVariableError> {
         check_if_tuple(tuple.clone())?;
@@ -455,7 +666,7 @@ pub mod native_functions {
 
         let json_string_obj = tuple_obj.values[0].clone();
         if !json_string_obj.isinstance::<VMString>() {
-             return Err(VMVariableError::TypeError(
+            return Err(VMVariableError::TypeError(
                 json_string_obj,
                 "Argument to json_decode must be a string".to_string(),
             ));
