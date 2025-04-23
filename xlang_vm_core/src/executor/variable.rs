@@ -2683,7 +2683,7 @@ impl PartialEq for VMLambdaBody {
     fn eq(&self, other: &Self) -> bool {
         match (self, other) {
             (VMLambdaBody::VMInstruction(a), VMLambdaBody::VMInstruction(b)) => a == b, // 假设 GCRef 实现 PartialEq
-            (VMLambdaBody::VMNativeFunction(a), VMLambdaBody::VMNativeFunction(b)) => std::ptr::fn_addr_eq(*a, *b), // 比较函数指针
+            (VMLambdaBody::VMNativeFunction(_), VMLambdaBody::VMNativeFunction(_)) => false, // 函数指针通常不比较
             (VMLambdaBody::VMNativeGeneratorFunction(_), VMLambdaBody::VMNativeGeneratorFunction(_)) => false, // 通常不比较 trait object 的内容
             _ => false, // 不同变体不相等
         }

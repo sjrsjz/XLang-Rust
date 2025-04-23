@@ -65,95 +65,111 @@ mod string_utils {
 
     use crate::{
         executor::variable::{
-            VMBoolean, VMInt, VMString, VMTuple, VMVariableError,
+            VMBoolean, VMInt, VMNull, VMString, VMTuple, VMVariableError
         },
         gc::{GCRef, GCSystem},
     };
 
     use super::{build_module, check_if_tuple}; // Import necessary items
 
-    // Helper to extract string from the first argument of the tuple
-    fn get_self_string(tuple: &GCRef) -> Result<&String, VMVariableError> {
-        let tuple_obj = tuple.as_const_type::<VMTuple>();
-        if tuple_obj.values.is_empty() {
-            return Err(VMVariableError::TypeError(
-                tuple.clone(),
-                "String method called with no arguments (missing self)".to_string(),
+    // Helper to extract a specific string argument from the tuple by index
+    fn get_string_arg(args_tuple: &GCRef, index: usize, func_name: &str, arg_name: &str) -> Result<String, VMVariableError> {
+        let tuple_obj = args_tuple.as_const_type::<VMTuple>();
+        if index >= tuple_obj.values.len() {
+             return Err(VMVariableError::TypeError(
+                args_tuple.clone(),
+                format!("{} missing argument: {}", func_name, arg_name),
             ));
         }
-        let self_obj = &tuple_obj.values[0];
-        if !self_obj.isinstance::<VMString>() {
+        let arg_obj = &tuple_obj.values[index];
+        if !arg_obj.isinstance::<VMString>() {
             return Err(VMVariableError::TypeError(
-                self_obj.clone(),
-                "First argument must be a string".to_string(),
+                arg_obj.clone(),
+                format!("Argument '{}' for {} must be a string", arg_name, func_name),
             ));
         }
-        Ok(&self_obj.as_const_type::<VMString>().value)
+        Ok(arg_obj.as_const_type::<VMString>().value.clone())
     }
 
-    // string.split(separator, [maxsplit])
+     // Helper to extract a specific integer argument from the tuple by index
+    fn get_optional_int_arg(args_tuple: &GCRef, index: usize, func_name: &str, arg_name: &str) -> Result<Option<i64>, VMVariableError> {
+        let tuple_obj = args_tuple.as_const_type::<VMTuple>();
+        if index >= tuple_obj.values.len() {
+            return Ok(None); // Argument is optional and not provided
+        }
+        let arg_obj = &tuple_obj.values[index];
+         if arg_obj.isinstance::<VMNull>() { // Allow null/None as absence
+            return Ok(None);
+        }
+        if !arg_obj.isinstance::<VMInt>() {
+            return Err(VMVariableError::TypeError(
+                arg_obj.clone(),
+                format!("Argument '{}' for {} must be an integer or null", arg_name, func_name),
+            ));
+        }
+        Ok(Some(arg_obj.as_const_type::<VMInt>().value))
+    }
+
+    // Helper to extract a specific tuple argument from the tuple by index
+    fn get_tuple_arg(args_tuple: &GCRef, index: usize, func_name: &str, arg_name: &str) -> Result<GCRef, VMVariableError> {
+        let tuple_obj = args_tuple.as_const_type::<VMTuple>();
+         if index >= tuple_obj.values.len() {
+             return Err(VMVariableError::TypeError(
+                args_tuple.clone(),
+                format!("{} missing argument: {}", func_name, arg_name),
+            ));
+        }
+        let arg_obj = &tuple_obj.values[index];
+        if !arg_obj.isinstance::<VMTuple>() {
+            return Err(VMVariableError::TypeError(
+                arg_obj.clone(),
+                format!("Argument '{}' for {} must be a tuple", arg_name, func_name),
+            ));
+        }
+        Ok(arg_obj.clone())
+    }
+
+
+    // string_utils.split(string, separator, [maxsplit])
     fn split(args_tuple: GCRef, gc_system: &mut GCSystem) -> Result<GCRef, VMVariableError> {
         check_if_tuple(args_tuple.clone())?;
         let tuple_obj = args_tuple.as_const_type::<VMTuple>();
-        let self_str = get_self_string(&args_tuple)?;
+        let arg_count = tuple_obj.values.len();
 
-        if tuple_obj.values.len() < 2 {
-            return Err(VMVariableError::TypeError(
+        if !(2..=3).contains(&arg_count) {
+             return Err(VMVariableError::TypeError(
                 args_tuple.clone(),
-                "split requires at least one argument (separator)".to_string(),
+                format!("split expected 2 or 3 arguments, got {}", arg_count),
             ));
         }
 
-        let sep_obj = &tuple_obj.values[1];
-        if !sep_obj.isinstance::<VMString>() {
-            return Err(VMVariableError::TypeError(
-                sep_obj.clone(),
-                "Separator must be a string".to_string(),
-            ));
-        }
-        let separator = &sep_obj.as_const_type::<VMString>().value;
+        let target_str = get_string_arg(&args_tuple, 0, "split", "string")?;
+        let separator = get_string_arg(&args_tuple, 1, "split", "separator")?;
 
         // Optional maxsplit argument
-        let maxsplit: Option<usize> = if tuple_obj.values.len() > 2 {
-            let maxsplit_obj = &tuple_obj.values[2];
-            if maxsplit_obj.isinstance::<VMInt>() {
-                let val = maxsplit_obj.as_const_type::<VMInt>().value;
-                if val < 0 {
-                    None // Negative maxsplit means split all
-                } else {
-                    Some(val as usize)
-                }
-            } else {
-                return Err(VMVariableError::TypeError(
-                    maxsplit_obj.clone(),
-                    "maxsplit must be an integer".to_string(),
-                ));
-            }
-        } else {
-            None // Default: split all occurrences
+        let maxsplit_opt_i64 = get_optional_int_arg(&args_tuple, 2, "split", "maxsplit")?;
+        let maxsplit: Option<usize> = match maxsplit_opt_i64 {
+             Some(val) if val < 0 => None, // Negative maxsplit means split all
+             Some(val) => Some(val as usize),
+             None => None, // Default: split all occurrences or not provided
         };
+
 
         let mut result_elements = Vec::new();
-        let mut temp_refs = Vec::new();
 
         let parts: Vec<&str> = match maxsplit {
-            Some(n) => self_str.splitn(n + 1, separator).collect(),
-            None => self_str.split(separator).collect(),
+            Some(n) => target_str.splitn(n + 1, &separator).collect(),
+            None => target_str.split(&separator).collect(),
         };
-
+        // ... rest of split implementation remains the same ...
         for part in parts {
             let vm_part = gc_system.new_object(VMString::new(part));
             result_elements.push(vm_part.clone()); // Clone for the final tuple
-            temp_refs.push(vm_part); // Track for dropping later
         }
 
         let mut element_refs: Vec<&mut GCRef> = result_elements.iter_mut().collect();
         let result_tuple = gc_system.new_object(VMTuple::new(&mut element_refs));
 
-        // Drop refs owned by the new tuple and temporary refs
-        for mut r in temp_refs {
-            r.drop_ref();
-        }
         for mut r in result_elements {
             r.drop_ref();
         }
@@ -161,26 +177,21 @@ mod string_utils {
         Ok(result_tuple)
     }
 
-    // separator.join(iterable)
+    // string_utils.join(separator, iterable)
     fn join(args_tuple: GCRef, gc_system: &mut GCSystem) -> Result<GCRef, VMVariableError> {
         check_if_tuple(args_tuple.clone())?;
         let tuple_obj = args_tuple.as_const_type::<VMTuple>();
-        let separator = get_self_string(&args_tuple)?; // Separator is 'self'
+        let arg_count = tuple_obj.values.len();
 
-        if tuple_obj.values.len() != 2 {
+        if arg_count != 2 {
             return Err(VMVariableError::TypeError(
                 args_tuple.clone(),
-                "join requires exactly one argument (iterable)".to_string(),
+                format!("join expected 2 arguments, got {}", arg_count),
             ));
         }
 
-        let iterable_obj = &tuple_obj.values[1];
-        if !iterable_obj.isinstance::<VMTuple>() {
-            return Err(VMVariableError::TypeError(
-                iterable_obj.clone(),
-                "Argument to join must be a tuple".to_string(),
-            ));
-        }
+        let separator = get_string_arg(&args_tuple, 0, "join", "separator")?;
+        let iterable_obj = get_tuple_arg(&args_tuple, 1, "join", "iterable")?;
         let iterable_tuple = iterable_obj.as_const_type::<VMTuple>();
 
         let mut string_parts = Vec::with_capacity(iterable_tuple.values.len());
@@ -188,181 +199,156 @@ mod string_utils {
             if !item.isinstance::<VMString>() {
                 return Err(VMVariableError::TypeError(
                     item.clone(),
-                    "All elements in the iterable must be strings for join".to_string(),
+                    "All elements in the iterable for join must be strings".to_string(),
                 ));
             }
             string_parts.push(item.as_const_type::<VMString>().value.as_str());
         }
-
-        let joined_string = string_parts.join(separator);
+        // ... rest of join implementation remains the same ...
+        let joined_string = string_parts.join(&separator);
         Ok(gc_system.new_object(VMString::new(&joined_string)))
     }
 
-    // string.replace(old, new, [count])
+    // string_utils.replace(string, old, new, [count])
     fn replace(args_tuple: GCRef, gc_system: &mut GCSystem) -> Result<GCRef, VMVariableError> {
         check_if_tuple(args_tuple.clone())?;
         let tuple_obj = args_tuple.as_const_type::<VMTuple>();
-        let self_str = get_self_string(&args_tuple)?;
+        let arg_count = tuple_obj.values.len();
 
-        if tuple_obj.values.len() < 3 {
+        if !(3..=4).contains(&arg_count) {
             return Err(VMVariableError::TypeError(
                 args_tuple.clone(),
-                "replace requires at least two arguments (old, new)".to_string(),
+                 format!("replace expected 3 or 4 arguments, got {}", arg_count),
             ));
         }
 
-        let old_obj = &tuple_obj.values[1];
-        let new_obj = &tuple_obj.values[2];
-
-        if !old_obj.isinstance::<VMString>() || !new_obj.isinstance::<VMString>() {
-            return Err(VMVariableError::TypeError(
-                args_tuple.clone(), // Or pinpoint the specific non-string arg
-                "Both 'old' and 'new' arguments must be strings".to_string(),
-            ));
-        }
-        let old_str = &old_obj.as_const_type::<VMString>().value;
-        let new_str = &new_obj.as_const_type::<VMString>().value;
+        let target_str = get_string_arg(&args_tuple, 0, "replace", "string")?;
+        let old_str = get_string_arg(&args_tuple, 1, "replace", "old")?;
+        let new_str = get_string_arg(&args_tuple, 2, "replace", "new")?;
 
         // Optional count argument
-        let count: Option<usize> = if tuple_obj.values.len() > 3 {
-            let count_obj = &tuple_obj.values[3];
-            if count_obj.isinstance::<VMInt>() {
-                let val = count_obj.as_const_type::<VMInt>().value;
-                if val < 0 {
-                    None // Negative count means replace all
-                } else {
-                    Some(val as usize)
-                }
-            } else {
-                return Err(VMVariableError::TypeError(
-                    count_obj.clone(),
-                    "count must be an integer".to_string(),
-                ));
-            }
-        } else {
-            None // Default: replace all occurrences
+        let count_opt_i64 = get_optional_int_arg(&args_tuple, 3, "replace", "count")?;
+        let count: Option<usize> = match count_opt_i64 {
+             Some(val) if val < 0 => None, // Negative count means replace all
+             Some(val) => Some(val as usize),
+             None => None, // Default: replace all occurrences or not provided
         };
 
         let result_string = match count {
-            Some(n) => self_str.replacen(old_str, new_str, n),
-            None => self_str.replace(old_str, new_str),
+            Some(n) => target_str.replacen(&old_str, &new_str, n),
+            None => target_str.replace(&old_str, &new_str),
         };
-
+        // ... rest of replace implementation remains the same ...
         Ok(gc_system.new_object(VMString::new(&result_string)))
     }
 
-    // string.startswith(prefix)
+    // string_utils.startswith(string, prefix)
     fn startswith(args_tuple: GCRef, gc_system: &mut GCSystem) -> Result<GCRef, VMVariableError> {
         check_if_tuple(args_tuple.clone())?;
         let tuple_obj = args_tuple.as_const_type::<VMTuple>();
-        let self_str = get_self_string(&args_tuple)?;
+        let arg_count = tuple_obj.values.len();
 
-        if tuple_obj.values.len() != 2 {
+        if arg_count != 2 {
             return Err(VMVariableError::TypeError(
                 args_tuple.clone(),
-                "startswith requires exactly one argument (prefix)".to_string(),
+                format!("startswith expected 2 arguments, got {}", arg_count),
             ));
         }
 
-        let prefix_obj = &tuple_obj.values[1];
-        if !prefix_obj.isinstance::<VMString>() {
-            return Err(VMVariableError::TypeError(
-                prefix_obj.clone(),
-                "Prefix must be a string".to_string(),
-            ));
-        }
-        let prefix_str = &prefix_obj.as_const_type::<VMString>().value;
+        let target_str = get_string_arg(&args_tuple, 0, "startswith", "string")?;
+        let prefix_str = get_string_arg(&args_tuple, 1, "startswith", "prefix")?;
 
-        let result = self_str.starts_with(prefix_str);
+        let result = target_str.starts_with(&prefix_str);
         Ok(gc_system.new_object(VMBoolean::new(result)))
     }
 
-    // string.endswith(suffix)
+    // string_utils.endswith(string, suffix)
     fn endswith(args_tuple: GCRef, gc_system: &mut GCSystem) -> Result<GCRef, VMVariableError> {
         check_if_tuple(args_tuple.clone())?;
         let tuple_obj = args_tuple.as_const_type::<VMTuple>();
-        let self_str = get_self_string(&args_tuple)?;
+        let arg_count = tuple_obj.values.len();
 
-        if tuple_obj.values.len() != 2 {
+        if arg_count != 2 {
             return Err(VMVariableError::TypeError(
                 args_tuple.clone(),
-                "endswith requires exactly one argument (suffix)".to_string(),
+                format!("endswith expected 2 arguments, got {}", arg_count),
             ));
         }
 
-        let suffix_obj = &tuple_obj.values[1];
-        if !suffix_obj.isinstance::<VMString>() {
-            return Err(VMVariableError::TypeError(
-                suffix_obj.clone(),
-                "Suffix must be a string".to_string(),
-            ));
-        }
-        let suffix_str = &suffix_obj.as_const_type::<VMString>().value;
+        let target_str = get_string_arg(&args_tuple, 0, "endswith", "string")?;
+        let suffix_str = get_string_arg(&args_tuple, 1, "endswith", "suffix")?;
 
-        let result = self_str.ends_with(suffix_str);
+        let result = target_str.ends_with(&suffix_str);
         Ok(gc_system.new_object(VMBoolean::new(result)))
     }
 
-    // string.strip([chars])
+    // string_utils.strip(string, [chars])
     fn strip(args_tuple: GCRef, gc_system: &mut GCSystem) -> Result<GCRef, VMVariableError> {
         check_if_tuple(args_tuple.clone())?;
         let tuple_obj = args_tuple.as_const_type::<VMTuple>();
-        let self_str = get_self_string(&args_tuple)?;
+        let arg_count = tuple_obj.values.len();
 
-        let result_string = if tuple_obj.values.len() > 1 {
-            let chars_obj = &tuple_obj.values[1];
-            if !chars_obj.isinstance::<VMString>() {
-                return Err(VMVariableError::TypeError(
-                    chars_obj.clone(),
-                    "Characters to strip must be a string".to_string(),
-                ));
-            }
-            let chars_str = &chars_obj.as_const_type::<VMString>().value;
-            let chars_to_strip: Vec<char> = chars_str.chars().collect();
-            self_str.trim_matches(|c| chars_to_strip.contains(&c)).to_string()
+        if !(1..=2).contains(&arg_count) {
+            return Err(VMVariableError::TypeError(
+                args_tuple.clone(),
+                format!("strip expected 1 or 2 arguments, got {}", arg_count),
+            ));
+        }
+
+        let target_str = get_string_arg(&args_tuple, 0, "strip", "string")?;
+
+        let result_string = if arg_count > 1 {
+             let chars_str = get_string_arg(&args_tuple, 1, "strip", "chars")?;
+             let chars_to_strip: Vec<char> = chars_str.chars().collect();
+             target_str.trim_matches(|c| chars_to_strip.contains(&c)).to_string()
         } else {
             // Default: strip whitespace
-            self_str.trim().to_string()
+            target_str.trim().to_string()
         };
-
+        // ... rest of strip implementation remains the same ...
         Ok(gc_system.new_object(VMString::new(&result_string)))
     }
 
-    // string.lower()
+    // string_utils.lower(string)
     fn lower(args_tuple: GCRef, gc_system: &mut GCSystem) -> Result<GCRef, VMVariableError> {
         check_if_tuple(args_tuple.clone())?;
-        let self_str = get_self_string(&args_tuple)?;
-        // Check for extra arguments if desired, though lower usually takes none
-        if args_tuple.as_const_type::<VMTuple>().values.len() > 1 {
+        let tuple_obj = args_tuple.as_const_type::<VMTuple>();
+        let arg_count = tuple_obj.values.len();
+
+        if arg_count != 1 {
             return Err(VMVariableError::TypeError(
                 args_tuple.clone(),
-                "lower takes no arguments".to_string(),
+                format!("lower expected 1 argument, got {}", arg_count),
             ));
         }
 
-        let result_string = self_str.to_lowercase();
+        let target_str = get_string_arg(&args_tuple, 0, "lower", "string")?;
+        let result_string = target_str.to_lowercase();
         Ok(gc_system.new_object(VMString::new(&result_string)))
     }
 
-    // string.upper()
+    // string_utils.upper(string)
     fn upper(args_tuple: GCRef, gc_system: &mut GCSystem) -> Result<GCRef, VMVariableError> {
         check_if_tuple(args_tuple.clone())?;
-        let self_str = get_self_string(&args_tuple)?;
-        // Check for extra arguments
-        if args_tuple.as_const_type::<VMTuple>().values.len() > 1 {
+        let tuple_obj = args_tuple.as_const_type::<VMTuple>();
+        let arg_count = tuple_obj.values.len();
+
+        if arg_count != 1 {
             return Err(VMVariableError::TypeError(
                 args_tuple.clone(),
-                "upper takes no arguments".to_string(),
+                format!("upper expected 1 argument, got {}", arg_count),
             ));
         }
 
-        let result_string = self_str.to_uppercase();
+        let target_str = get_string_arg(&args_tuple, 0, "upper", "string")?;
+        let result_string = target_str.to_uppercase();
         Ok(gc_system.new_object(VMString::new(&result_string)))
     }
 
     // Function to create the string utility module
     pub fn get_string_utils_module(gc_system: &mut GCSystem) -> GCRef {
         let mut functions = FxHashMap::default();
+        // ... existing function insertions ...
         functions.insert("split".to_string(), split as for<'a> fn(_, &'a mut _) -> _);
         functions.insert("join".to_string(), join as for<'a> fn(_, &'a mut _) -> _);
         functions.insert("replace".to_string(), replace as for<'a> fn(_, &'a mut _) -> _);
@@ -375,6 +361,322 @@ mod string_utils {
         build_module(&functions, gc_system)
     }
 }
+
+mod fs {
+    use rustc_hash::FxHashMap;
+    use std::{
+        fs::{self, OpenOptions},
+        io::Write,
+        path::Path,
+    };
+
+    use crate::{
+        executor::variable::{
+            VMBoolean, VMBytes, VMNull, VMString, VMTuple, VMVariableError,
+        },
+        gc::{GCRef, GCSystem},
+    };
+
+    use super::{build_module, check_if_tuple}; // Import necessary items
+
+    // Helper to map std::io::Error to VMVariableError
+    fn io_error_to_vm(err: std::io::Error, path: Option<&str>) -> VMVariableError {
+        let msg = match path {
+            Some(p) => format!("IO Error for path '{}': {}", p, err),
+            None => format!("IO Error: {}", err),
+        };
+        VMVariableError::DetailedError(msg)
+    }
+
+    // Helper to extract a single string argument (path)
+    fn get_path_arg(args_tuple: &GCRef, func_name: &str) -> Result<String, VMVariableError> {
+        let tuple_obj = args_tuple.as_const_type::<VMTuple>();
+        if tuple_obj.values.len() != 1 {
+            return Err(VMVariableError::TypeError(
+                args_tuple.clone(),
+                format!("{} requires exactly one argument (path)", func_name),
+            ));
+        }
+        let path_obj = &tuple_obj.values[0];
+        if !path_obj.isinstance::<VMString>() {
+            return Err(VMVariableError::TypeError(
+                path_obj.clone(),
+                "Path argument must be a string".to_string(),
+            ));
+        }
+        Ok(path_obj.as_const_type::<VMString>().value.clone())
+    }
+
+    // Helper to extract path and content (string) arguments
+    fn get_path_content_string_args(
+        args_tuple: &GCRef,
+        func_name: &str,
+    ) -> Result<(String, String), VMVariableError> {
+        let tuple_obj = args_tuple.as_const_type::<VMTuple>();
+        if tuple_obj.values.len() != 2 {
+            return Err(VMVariableError::TypeError(
+                args_tuple.clone(),
+                format!("{} requires exactly two arguments (path, content)", func_name),
+            ));
+        }
+        let path_obj = &tuple_obj.values[0];
+        let content_obj = &tuple_obj.values[1];
+
+        if !path_obj.isinstance::<VMString>() {
+            return Err(VMVariableError::TypeError(
+                path_obj.clone(),
+                "Path argument must be a string".to_string(),
+            ));
+        }
+         if !content_obj.isinstance::<VMString>() {
+            return Err(VMVariableError::TypeError(
+                content_obj.clone(),
+                "Content argument must be a string".to_string(),
+            ));
+        }
+        let path = path_obj.as_const_type::<VMString>().value.clone();
+        let content = content_obj.as_const_type::<VMString>().value.clone();
+        Ok((path, content))
+    }
+
+     // Helper to extract path and content (bytes) arguments
+    fn get_path_content_bytes_args(
+        args_tuple: &GCRef,
+        func_name: &str,
+    ) -> Result<(String, Vec<u8>), VMVariableError> {
+        let tuple_obj = args_tuple.as_const_type::<VMTuple>();
+        if tuple_obj.values.len() != 2 {
+            return Err(VMVariableError::TypeError(
+                args_tuple.clone(),
+                format!("{} requires exactly two arguments (path, content)", func_name),
+            ));
+        }
+        let path_obj = &tuple_obj.values[0];
+        let content_obj = &tuple_obj.values[1];
+
+        if !path_obj.isinstance::<VMString>() {
+            return Err(VMVariableError::TypeError(
+                path_obj.clone(),
+                "Path argument must be a string".to_string(),
+            ));
+        }
+         if !content_obj.isinstance::<VMBytes>() {
+            return Err(VMVariableError::TypeError(
+                content_obj.clone(),
+                "Content argument must be bytes".to_string(),
+            ));
+        }
+        let path = path_obj.as_const_type::<VMString>().value.clone();
+        let content = content_obj.as_const_type::<VMBytes>().value.clone();
+        Ok((path, content))
+    }
+
+
+    // fs.read(path) -> string
+    fn read_file(args_tuple: GCRef, gc_system: &mut GCSystem) -> Result<GCRef, VMVariableError> {
+        check_if_tuple(args_tuple.clone())?;
+        let path_str = get_path_arg(&args_tuple, "read")?;
+        let path = Path::new(&path_str);
+
+        match fs::read_to_string(path) {
+            Ok(content) => Ok(gc_system.new_object(VMString::new(&content))),
+            Err(e) => Err(io_error_to_vm(e, Some(&path_str))),
+        }
+    }
+
+    // fs.read_bytes(path) -> bytes
+    fn read_bytes(args_tuple: GCRef, gc_system: &mut GCSystem) -> Result<GCRef, VMVariableError> {
+        check_if_tuple(args_tuple.clone())?;
+        let path_str = get_path_arg(&args_tuple, "read_bytes")?;
+        let path = Path::new(&path_str);
+
+        match fs::read(path) {
+            Ok(content) => Ok(gc_system.new_object(VMBytes::new(&content))),
+            Err(e) => Err(io_error_to_vm(e, Some(&path_str))),
+        }
+    }
+
+    // fs.write(path, content)
+    fn write_file(args_tuple: GCRef, gc_system: &mut GCSystem) -> Result<GCRef, VMVariableError> {
+        check_if_tuple(args_tuple.clone())?;
+        let (path_str, content) = get_path_content_string_args(&args_tuple, "write")?;
+        let path = Path::new(&path_str);
+
+        match fs::write(path, content) {
+            Ok(_) => Ok(gc_system.new_object(VMNull::new())),
+            Err(e) => Err(io_error_to_vm(e, Some(&path_str))),
+        }
+    }
+
+    // fs.write_bytes(path, content)
+    fn write_bytes(args_tuple: GCRef, gc_system: &mut GCSystem) -> Result<GCRef, VMVariableError> {
+        check_if_tuple(args_tuple.clone())?;
+        let (path_str, content) = get_path_content_bytes_args(&args_tuple, "write_bytes")?;
+        let path = Path::new(&path_str);
+
+        match fs::write(path, content) {
+            Ok(_) => Ok(gc_system.new_object(VMNull::new())),
+            Err(e) => Err(io_error_to_vm(e, Some(&path_str))),
+        }
+    }
+
+     // fs.append(path, content)
+    fn append_file(args_tuple: GCRef, gc_system: &mut GCSystem) -> Result<GCRef, VMVariableError> {
+        check_if_tuple(args_tuple.clone())?;
+        let (path_str, content) = get_path_content_string_args(&args_tuple, "append")?;
+        let path = Path::new(&path_str);
+
+        match OpenOptions::new().append(true).create(true).open(path) {
+            Ok(mut file) => match file.write_all(content.as_bytes()) {
+                Ok(_) => Ok(gc_system.new_object(VMNull::new())),
+                Err(e) => Err(io_error_to_vm(e, Some(&path_str))),
+            },
+            Err(e) => Err(io_error_to_vm(e, Some(&path_str))),
+        }
+    }
+
+    // fs.append_bytes(path, content)
+    fn append_bytes(args_tuple: GCRef, gc_system: &mut GCSystem) -> Result<GCRef, VMVariableError> {
+        check_if_tuple(args_tuple.clone())?;
+        let (path_str, content) = get_path_content_bytes_args(&args_tuple, "append_bytes")?;
+        let path = Path::new(&path_str);
+
+         match OpenOptions::new().append(true).create(true).open(path) {
+            Ok(mut file) => match file.write_all(&content) {
+                Ok(_) => Ok(gc_system.new_object(VMNull::new())),
+                Err(e) => Err(io_error_to_vm(e, Some(&path_str))),
+            },
+            Err(e) => Err(io_error_to_vm(e, Some(&path_str))),
+        }
+    }
+
+
+    // fs.exists(path) -> bool
+    fn exists(args_tuple: GCRef, gc_system: &mut GCSystem) -> Result<GCRef, VMVariableError> {
+        check_if_tuple(args_tuple.clone())?;
+        let path_str = get_path_arg(&args_tuple, "exists")?;
+        let path = Path::new(&path_str);
+        Ok(gc_system.new_object(VMBoolean::new(path.exists())))
+    }
+
+    // fs.is_file(path) -> bool
+    fn is_file(args_tuple: GCRef, gc_system: &mut GCSystem) -> Result<GCRef, VMVariableError> {
+        check_if_tuple(args_tuple.clone())?;
+        let path_str = get_path_arg(&args_tuple, "is_file")?;
+        let path = Path::new(&path_str);
+        Ok(gc_system.new_object(VMBoolean::new(path.is_file())))
+    }
+
+    // fs.is_dir(path) -> bool
+    fn is_dir(args_tuple: GCRef, gc_system: &mut GCSystem) -> Result<GCRef, VMVariableError> {
+        check_if_tuple(args_tuple.clone())?;
+        let path_str = get_path_arg(&args_tuple, "is_dir")?;
+        let path = Path::new(&path_str);
+        Ok(gc_system.new_object(VMBoolean::new(path.is_dir())))
+    }
+
+    // fs.remove(path)
+    fn remove(args_tuple: GCRef, gc_system: &mut GCSystem) -> Result<GCRef, VMVariableError> {
+        check_if_tuple(args_tuple.clone())?;
+        let path_str = get_path_arg(&args_tuple, "remove")?;
+        let path = Path::new(&path_str);
+
+        let result = if path.is_dir() {
+            fs::remove_dir(path)
+        } else {
+            fs::remove_file(path)
+        };
+
+        match result {
+            Ok(_) => Ok(gc_system.new_object(VMNull::new())),
+            // Return false if path does not exist, mimic os.remove behavior?
+            // Or stick to raising error? Let's raise error for now.
+             Err(e) if e.kind() == std::io::ErrorKind::NotFound => {
+                 Err(VMVariableError::ValueError(args_tuple.clone(), format!("Path not found: {}", path_str)))
+            }
+            Err(e) => Err(io_error_to_vm(e, Some(&path_str))),
+        }
+    }
+
+    // fs.mkdir(path)
+    fn mkdir(args_tuple: GCRef, gc_system: &mut GCSystem) -> Result<GCRef, VMVariableError> {
+        check_if_tuple(args_tuple.clone())?;
+        let path_str = get_path_arg(&args_tuple, "mkdir")?;
+        let path = Path::new(&path_str);
+
+        match fs::create_dir_all(path) { // create_dir_all is like mkdir -p
+            Ok(_) => Ok(gc_system.new_object(VMNull::new())),
+            Err(e) => Err(io_error_to_vm(e, Some(&path_str))),
+        }
+    }
+
+    // fs.listdir(path) -> tuple<string>
+    fn listdir(args_tuple: GCRef, gc_system: &mut GCSystem) -> Result<GCRef, VMVariableError> {
+        check_if_tuple(args_tuple.clone())?;
+        let path_str = get_path_arg(&args_tuple, "listdir")?;
+        let path = Path::new(&path_str);
+
+        match fs::read_dir(path) {
+            Ok(entries) => {
+                let mut result_elements = Vec::new();
+
+                for entry_result in entries {
+                    match entry_result {
+                        Ok(entry) => {
+                            // Get filename as string, handle potential non-UTF8 names
+                            let file_name = entry.file_name();
+                            match file_name.to_str() {
+                                Some(name_str) => {
+                                    let vm_name = gc_system.new_object(VMString::new(name_str));
+                                    result_elements.push(vm_name.clone());
+                                }
+                                None => {
+                                     // Handle non-UTF8 filenames if necessary, e.g., skip or error
+                                     // For simplicity, we skip here.
+                                     eprintln!("Warning: Skipping non-UTF8 filename in listdir");
+                                }
+                            }
+                        }
+                        Err(e) => {
+                            return Err(io_error_to_vm(e, Some(&path_str)));
+                        }
+                    }
+                }
+
+                let mut element_refs: Vec<&mut GCRef> = result_elements.iter_mut().collect();
+                let result_tuple = gc_system.new_object(VMTuple::new(&mut element_refs));
+
+                // Drop refs owned by the new tuple and temporary refs
+                for mut r in result_elements { r.drop_ref(); }
+
+                Ok(result_tuple)
+            }
+            Err(e) => Err(io_error_to_vm(e, Some(&path_str))),
+        }
+    }
+
+
+    // Function to create the fs module
+    pub fn get_fs_module(gc_system: &mut GCSystem) -> GCRef {
+        let mut functions = FxHashMap::default();
+        // Add functions to the map
+        functions.insert("read".to_string(), read_file as for<'a> fn(_, &'a mut _) -> _);
+        functions.insert("read_bytes".to_string(), read_bytes as for<'a> fn(_, &'a mut _) -> _);
+        functions.insert("write".to_string(), write_file as for<'a> fn(_, &'a mut _) -> _);
+        functions.insert("write_bytes".to_string(), write_bytes as for<'a> fn(_, &'a mut _) -> _);
+        functions.insert("append".to_string(), append_file as for<'a> fn(_, &'a mut _) -> _);
+        functions.insert("append_bytes".to_string(), append_bytes as for<'a> fn(_, &'a mut _) -> _);
+        functions.insert("exists".to_string(), exists as for<'a> fn(_, &'a mut _) -> _);
+        functions.insert("is_file".to_string(), is_file as for<'a> fn(_, &'a mut _) -> _);
+        functions.insert("is_dir".to_string(), is_dir as for<'a> fn(_, &'a mut _) -> _);
+        functions.insert("remove".to_string(), remove as for<'a> fn(_, &'a mut _) -> _);
+        functions.insert("mkdir".to_string(), mkdir as for<'a> fn(_, &'a mut _) -> _);
+        functions.insert("listdir".to_string(), listdir as for<'a> fn(_, &'a mut _) -> _);
+
+        build_module(&functions, gc_system)
+    }
+}
+
 
 pub mod native_functions {
     use std::io::Write;
@@ -396,7 +698,6 @@ pub mod native_functions {
     use crate::executor::vm::VMError;
     use rustc_hash::FxHashSet as HashSet;
     use serde_json::Value as JsonValue;
-    use super::string_utils; // Import the new module
     use super::check_if_tuple; // Import the check_if_tuple function
 
     // Helper function to convert VMObject GCRef to serde_json::Value
@@ -620,9 +921,18 @@ pub mod native_functions {
         }
 
         // Inject the string module
-        let mut string_module = string_utils::get_string_utils_module(gc_system);
+        let mut string_module = super::string_utils::get_string_utils_module(gc_system);
         let result = context.let_var("string_utils", &mut string_module, gc_system);
         string_module.drop_ref();
+
+        if let Err(context_error) = result {
+            return Err(VMError::ContextError(context_error));
+        }
+
+        // Inject the fs module
+        let mut fs_module = super::fs::get_fs_module(gc_system);
+        let result = context.let_var("fs", &mut fs_module, gc_system);
+        fs_module.drop_ref(); // Drop ref after use
 
         if let Err(context_error) = result {
             return Err(VMError::ContextError(context_error));
@@ -637,7 +947,7 @@ pub mod native_functions {
         if tuple_obj.values.len() != 1 {
             return Err(VMVariableError::TypeError(
                 tuple.clone(),
-                "json_encode function takes exactly one argument".to_string(),
+                format!("json_encode expected 1 argument, got {}", tuple_obj.values.len()),
             ));
         }
         let object_to_encode = tuple_obj.values[0].clone();
@@ -660,7 +970,7 @@ pub mod native_functions {
         if tuple_obj.values.len() != 1 {
             return Err(VMVariableError::TypeError(
                 tuple.clone(),
-                "json_decode function takes exactly one argument".to_string(),
+                format!("json_decode expected 1 argument, got {}", tuple_obj.values.len()),
             ));
         }
 
@@ -703,25 +1013,26 @@ pub mod native_functions {
         if tuple_obj.values.len() != 1 {
             return Err(VMVariableError::TypeError(
                 tuple.clone(),
-                "len function's input should be one element".to_string(),
+                format!("len expected 1 argument, got {}", tuple_obj.values.len()),
             ));
         }
-        if tuple_obj.values[0].isinstance::<VMTuple>() {
-            let inner_tuple = tuple_obj.values[0].as_const_type::<VMTuple>();
+        let target_obj = &tuple_obj.values[0];
+        if target_obj.isinstance::<VMTuple>() {
+            let inner_tuple = target_obj.as_const_type::<VMTuple>();
             let obj = gc_system.new_object(VMInt::new(inner_tuple.values.len() as i64));
             Ok(obj)
-        } else if tuple_obj.values[0].isinstance::<VMString>() {
-            let inner_string = tuple_obj.values[0].as_const_type::<VMString>();
+        } else if target_obj.isinstance::<VMString>() {
+            let inner_string = target_obj.as_const_type::<VMString>();
             let obj = gc_system.new_object(VMInt::new(inner_string.value.len() as i64));
             return Ok(obj);
-        } else if tuple_obj.values[0].isinstance::<VMBytes>() {
-            let inner_bytes = tuple_obj.values[0].as_const_type::<VMBytes>();
+        } else if target_obj.isinstance::<VMBytes>() {
+            let inner_bytes = target_obj.as_const_type::<VMBytes>();
             let obj = gc_system.new_object(VMInt::new(inner_bytes.value.len() as i64));
             return Ok(obj);
         } else {
             return Err(VMVariableError::TypeError(
-                tuple.clone(),
-                "len function's input should be a string or a tuple".to_string(),
+                target_obj.clone(), // Error points to the specific object
+                "Argument for len must be a string, bytes, or tuple".to_string(),
             ));
         }
     }
@@ -732,31 +1043,32 @@ pub mod native_functions {
         if tuple_obj.values.len() != 1 {
             return Err(VMVariableError::TypeError(
                 tuple.clone(),
-                "to_int function's input should be one element".to_string(),
+                format!("int expected 1 argument, got {}", tuple_obj.values.len()),
             ));
         }
-        if tuple_obj.values[0].isinstance::<VMInt>() {
-            let data = tuple_obj.values[0].as_const_type::<VMInt>().to_int()?;
+        let target_obj = &tuple_obj.values[0];
+        if target_obj.isinstance::<VMInt>() {
+            let data = target_obj.as_const_type::<VMInt>().to_int()?;
             return Ok(gc_system.new_object(VMInt::new(data)));
         }
-        if tuple_obj.values[0].isinstance::<VMFloat>() {
-            let data = tuple_obj.values[0].as_const_type::<VMFloat>().to_int()?;
+        if target_obj.isinstance::<VMFloat>() {
+            let data = target_obj.as_const_type::<VMFloat>().to_int()?;
             return Ok(gc_system.new_object(VMInt::new(data)));
         }
-        if tuple_obj.values[0].isinstance::<VMString>() {
-            let data = tuple_obj.values[0].as_const_type::<VMString>().to_int()?;
+        if target_obj.isinstance::<VMString>() {
+            let data = target_obj.as_const_type::<VMString>().to_int()?;
             return Ok(gc_system.new_object(VMInt::new(data)));
         }
-        if tuple_obj.values[0].isinstance::<VMNull>() {
+        if target_obj.isinstance::<VMNull>() {
             return Ok(gc_system.new_object(VMInt::new(0)));
         }
-        if tuple_obj.values[0].isinstance::<VMBoolean>() {
-            let data = tuple_obj.values[0].as_const_type::<VMBoolean>().to_int()?;
+        if target_obj.isinstance::<VMBoolean>() {
+            let data = target_obj.as_const_type::<VMBoolean>().to_int()?;
             return Ok(gc_system.new_object(VMInt::new(data)));
         }
         Err(VMVariableError::TypeError(
-            tuple.clone(),
-            "to_int function's input should be a int-able value".to_string(),
+            target_obj.clone(), // Error points to the specific object
+            "Argument for int must be convertible to an integer".to_string(),
         ))
     }
 
@@ -766,33 +1078,34 @@ pub mod native_functions {
         if tuple_obj.values.len() != 1 {
             return Err(VMVariableError::TypeError(
                 tuple.clone(),
-                "to_float function's input should be one element".to_string(),
+                format!("float expected 1 argument, got {}", tuple_obj.values.len()),
             ));
         }
-        if tuple_obj.values[0].isinstance::<VMInt>() {
-            let data = tuple_obj.values[0].as_const_type::<VMInt>().to_float()?;
+        let target_obj = &tuple_obj.values[0];
+        if target_obj.isinstance::<VMInt>() {
+            let data = target_obj.as_const_type::<VMInt>().to_float()?;
             return Ok(gc_system.new_object(VMFloat::new(data)));
         }
-        if tuple_obj.values[0].isinstance::<VMFloat>() {
-            let data = tuple_obj.values[0].as_const_type::<VMFloat>().to_float()?;
+        if target_obj.isinstance::<VMFloat>() {
+            let data = target_obj.as_const_type::<VMFloat>().to_float()?;
             return Ok(gc_system.new_object(VMFloat::new(data)));
         }
-        if tuple_obj.values[0].isinstance::<VMString>() {
-            let data = tuple_obj.values[0].as_const_type::<VMString>().to_float()?;
+        if target_obj.isinstance::<VMString>() {
+            let data = target_obj.as_const_type::<VMString>().to_float()?;
             return Ok(gc_system.new_object(VMFloat::new(data)));
         }
-        if tuple_obj.values[0].isinstance::<VMNull>() {
+        if target_obj.isinstance::<VMNull>() {
             return Ok(gc_system.new_object(VMFloat::new(0.0)));
         }
-        if tuple_obj.values[0].isinstance::<VMBoolean>() {
-            let data = tuple_obj.values[0]
+        if target_obj.isinstance::<VMBoolean>() {
+            let data = target_obj
                 .as_const_type::<VMBoolean>()
                 .to_float()?;
             return Ok(gc_system.new_object(VMFloat::new(data)));
         }
         Err(VMVariableError::TypeError(
-            tuple.clone(),
-            "to_float function's input should be a float-able value".to_string(),
+            target_obj.clone(), // Error points to the specific object
+            "Argument for float must be convertible to a float".to_string(),
         ))
     }
 
@@ -802,40 +1115,13 @@ pub mod native_functions {
         if tuple_obj.values.len() != 1 {
             return Err(VMVariableError::TypeError(
                 tuple.clone(),
-                "to_string function's input should be one element".to_string(),
+                format!("string expected 1 argument, got {}", tuple_obj.values.len()),
             ));
         }
-        if tuple_obj.values[0].isinstance::<VMInt>() {
-            let data = tuple_obj.values[0].as_const_type::<VMInt>().to_string()?;
-            return Ok(gc_system.new_object(VMString::new(&data)));
-        }
-        if tuple_obj.values[0].isinstance::<VMFloat>() {
-            let data = tuple_obj.values[0].as_const_type::<VMFloat>().to_string()?;
-            return Ok(gc_system.new_object(VMString::new(&data)));
-        }
-        if tuple_obj.values[0].isinstance::<VMString>() {
-            let data = tuple_obj.values[0]
-                .as_const_type::<VMString>()
-                .to_string()?;
-            return Ok(gc_system.new_object(VMString::new(&data)));
-        }
-        if tuple_obj.values[0].isinstance::<VMNull>() {
-            return Ok(gc_system.new_object(VMString::new("null")));
-        }
-        if tuple_obj.values[0].isinstance::<VMBoolean>() {
-            let data = tuple_obj.values[0]
-                .as_const_type::<VMBoolean>()
-                .to_string()?;
-            return Ok(gc_system.new_object(VMString::new(&data)));
-        }
-        if tuple_obj.values[0].isinstance::<VMBytes>() {
-            let data = tuple_obj.values[0].as_const_type::<VMBytes>().to_string()?;
-            return Ok(gc_system.new_object(VMString::new(&data)));
-        }
-        Err(VMVariableError::TypeError(
-            tuple.clone(),
-            "to_string function's input should be a string-able value".to_string(),
-        ))
+        let target_obj = &tuple_obj.values[0];
+        // Use the existing try_to_string_vmobject helper which handles various types
+        let data = try_to_string_vmobject(target_obj.clone(), None)?;
+        Ok(gc_system.new_object(VMString::new(&data)))
     }
 
     pub fn to_bool(tuple: GCRef, gc_system: &mut GCSystem) -> Result<GCRef, VMVariableError> {
@@ -844,31 +1130,32 @@ pub mod native_functions {
         if tuple_obj.values.len() != 1 {
             return Err(VMVariableError::TypeError(
                 tuple.clone(),
-                "to_bool function's input should be one element".to_string(),
+                format!("bool expected 1 argument, got {}", tuple_obj.values.len()),
             ));
         }
-        if tuple_obj.values[0].isinstance::<VMInt>() {
-            let data = tuple_obj.values[0].as_const_type::<VMInt>().to_bool()?;
+        let target_obj = &tuple_obj.values[0];
+        if target_obj.isinstance::<VMInt>() {
+            let data = target_obj.as_const_type::<VMInt>().to_bool()?;
             return Ok(gc_system.new_object(VMBoolean::new(data)));
         }
-        if tuple_obj.values[0].isinstance::<VMFloat>() {
-            let data = tuple_obj.values[0].as_const_type::<VMFloat>().to_bool()?;
+        if target_obj.isinstance::<VMFloat>() {
+            let data = target_obj.as_const_type::<VMFloat>().to_bool()?;
             return Ok(gc_system.new_object(VMBoolean::new(data)));
         }
-        if tuple_obj.values[0].isinstance::<VMString>() {
-            let data = tuple_obj.values[0].as_const_type::<VMString>().to_bool()?;
+        if target_obj.isinstance::<VMString>() {
+            let data = target_obj.as_const_type::<VMString>().to_bool()?;
             return Ok(gc_system.new_object(VMBoolean::new(data)));
         }
-        if tuple_obj.values[0].isinstance::<VMNull>() {
+        if target_obj.isinstance::<VMNull>() {
             return Ok(gc_system.new_object(VMBoolean::new(false)));
         }
-        if tuple_obj.values[0].isinstance::<VMBoolean>() {
-            let data = tuple_obj.values[0].as_const_type::<VMBoolean>().to_bool()?;
+        if target_obj.isinstance::<VMBoolean>() {
+            let data = target_obj.as_const_type::<VMBoolean>().to_bool()?;
             return Ok(gc_system.new_object(VMBoolean::new(data)));
         }
         Err(VMVariableError::TypeError(
-            tuple.clone(),
-            "to_bool function's input should be a bool-able value".to_string(),
+            target_obj.clone(), // Error points to the specific object
+            "Argument for bool must be convertible to a boolean".to_string(),
         ))
     }
     pub fn to_bytes(tuple: GCRef, gc_system: &mut GCSystem) -> Result<GCRef, VMVariableError> {
@@ -877,33 +1164,34 @@ pub mod native_functions {
         if tuple_obj.values.len() != 1 {
             return Err(VMVariableError::TypeError(
                 tuple.clone(),
-                "to_bytes function's input should be one element".to_string(),
+                format!("bytes expected 1 argument, got {}", tuple_obj.values.len()),
             ));
         }
-        if tuple_obj.values[0].isinstance::<VMBytes>() {
+        let target_obj = &tuple_obj.values[0];
+        if target_obj.isinstance::<VMBytes>() {
             return Ok(gc_system.new_object(VMBytes::new(
-                &tuple_obj.values[0].as_const_type::<VMBytes>().value,
+                &target_obj.as_const_type::<VMBytes>().value,
             )));
-        } else if tuple_obj.values[0].isinstance::<VMString>() {
+        } else if target_obj.isinstance::<VMString>() {
             // 将字符串转换为字节序列
-            let string_value = tuple_obj.values[0]
+            let string_value = target_obj
                 .as_const_type::<VMString>()
                 .value
                 .clone();
             return Ok(gc_system.new_object(VMBytes::new(&string_value.as_bytes().to_vec())));
-        } else if tuple_obj.values[0].isinstance::<VMInt>() {
+        } else if target_obj.isinstance::<VMInt>() {
             // 支持单字节的整数转字节
-            let int_value = tuple_obj.values[0].as_const_type::<VMInt>().value;
+            let int_value = target_obj.as_const_type::<VMInt>().value;
             if !(0..=255).contains(&int_value) {
                 return Err(VMVariableError::ValueError(
-                    tuple_obj.values[0].clone(),
+                    target_obj.clone(),
                     "Integer values for bytes conversion must be between 0 and 255".to_string(),
                 ));
             }
             return Ok(gc_system.new_object(VMBytes::new(&vec![int_value as u8])));
-        } else if tuple_obj.values[0].isinstance::<VMTuple>() {
+        } else if target_obj.isinstance::<VMTuple>() {
             // 支持整数元组转字节序列
-            let inner_tuple = tuple_obj.values[0].as_const_type::<VMTuple>();
+            let inner_tuple = target_obj.as_const_type::<VMTuple>();
             let mut byte_vec = Vec::with_capacity(inner_tuple.values.len());
 
             for value in &inner_tuple.values {
@@ -929,8 +1217,8 @@ pub mod native_functions {
         }
 
         Err(VMVariableError::TypeError(
-            tuple.clone(),
-            "to_bytes function's input should be a bytes, string, integer, or tuple of integers"
+            target_obj.clone(), // Error points to the specific object
+            "Argument for bytes must be bytes, string, integer (0-255), or tuple of integers (0-255)"
                 .to_string(),
         ))
     }
@@ -938,29 +1226,34 @@ pub mod native_functions {
     pub fn input(tuple: GCRef, gc_system: &mut GCSystem) -> Result<GCRef, VMVariableError> {
         check_if_tuple(tuple.clone())?;
         let tuple_obj = tuple.as_const_type::<VMTuple>();
-        if tuple_obj.values.len() != 1 {
-            return Err(VMVariableError::TypeError(
+        if tuple_obj.values.len() > 1 {
+             return Err(VMVariableError::TypeError(
                 tuple.clone(),
-                "input function's input should be one element".to_string(),
+                format!("input expected 0 or 1 arguments, got {}", tuple_obj.values.len()),
             ));
         }
-        if tuple_obj.values[0].isinstance::<VMString>() {
-            let data = tuple_obj.values[0]
-                .as_const_type::<VMString>()
-                .to_string()?;
-            print!("{} ", data);
-            std::io::stdout().flush().unwrap_or(());
-            let mut input = String::new();
-            std::io::stdin()
-                .read_line(&mut input)
-                .expect("Failed to read line");
-            let data = input.trim().to_string();
-            return Ok(gc_system.new_object(VMString::new(&data)));
-        }
-        Err(VMVariableError::TypeError(
-            tuple.clone(),
-            "input function's input should be a string".to_string(),
-        ))
+
+        let prompt = if tuple_obj.values.len() == 1 {
+            let prompt_obj = &tuple_obj.values[0];
+             if !prompt_obj.isinstance::<VMString>() {
+                 return Err(VMVariableError::TypeError(
+                    prompt_obj.clone(),
+                    "Argument to input (prompt) must be a string".to_string(),
+                ));
+            }
+            prompt_obj.as_const_type::<VMString>().value.clone()
+        } else {
+            "".to_string() // Default empty prompt
+        };
+
+        print!("{}", prompt); // Use {} instead of "{ } "
+        std::io::stdout().flush().unwrap_or(());
+        let mut input = String::new();
+        std::io::stdin()
+            .read_line(&mut input)
+            .expect("Failed to read line");
+        let data = input.trim_end_matches(|c| c == '\r' || c == '\n').to_string(); // Trim newline/CRLF
+        return Ok(gc_system.new_object(VMString::new(&data)));
     }
 
     pub fn load_clambda(tuple: GCRef, gc_system: &mut GCSystem) -> Result<GCRef, VMVariableError> {
@@ -969,17 +1262,18 @@ pub mod native_functions {
         if tuple_obj.values.len() != 1 {
             return Err(VMVariableError::TypeError(
                 tuple.clone(),
-                "load_clambda function's input should be one element".to_string(),
+                format!("load_clambda expected 1 argument, got {}", tuple_obj.values.len()),
             ));
         }
-        if tuple_obj.values[0].isinstance::<VMString>() {
-            let data = tuple_obj.values[0]
+        let target_obj = &tuple_obj.values[0];
+        if target_obj.isinstance::<VMString>() {
+            let data = target_obj
                 .as_const_type::<VMString>()
                 .to_string()?;
             let mut clambda = unsafe {
                 vm_clambda_loading::load_clambda(&data).map_err(|e| {
                     VMVariableError::ValueError(
-                        tuple.clone(),
+                        target_obj.clone(), // Error points to the specific object
                         format!("Failed to load clambda: {}", e),
                     )
                 })?
@@ -991,8 +1285,8 @@ pub mod native_functions {
             return Ok(vm_clambda);
         }
         Err(VMVariableError::TypeError(
-            tuple.clone(),
-            "load_clambda function's input should be a string".to_string(),
+            target_obj.clone(), // Error points to the specific object
+            "Argument for load_clambda must be a string (path)".to_string(),
         ))
     }
 }
