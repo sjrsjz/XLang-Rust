@@ -463,7 +463,8 @@ impl VMExecutor {
         if !lambda_object.isinstance::<VMLambda>() {
             return Err(VMError::TryEnterNotLambda(lambda_object.clone()));
         }
-        if let VMLambdaBody::VMAsyncNativeFunction(_) = &lambda_object.as_const_type::<VMLambda>().lambda_body
+        if let VMLambdaBody::VMNativeGeneratorFunction(_) =
+            &lambda_object.as_const_type::<VMLambda>().lambda_body
         {
             self.lambda_instructions.push(lambda_object.clone());
             return Ok(());
@@ -564,17 +565,18 @@ impl VMExecutor {
     ) -> Result<(), VMError> {
         self.enter_lambda(lambda_object, gc_system)?;
 
-        if let VMLambdaBody::VMInstruction(_) = &lambda_object.as_const_type::<VMLambda>().lambda_body
+        if let VMLambdaBody::VMInstruction(_) =
+            &lambda_object.as_const_type::<VMLambda>().lambda_body
         {
             self.ip = *self
-            .lambda_instructions
-            .last()
-            .unwrap()
-            .as_const_type::<VMInstructions>()
-            .vm_instructions_package
-            .get_table()
-            .get(&lambda_object.as_const_type::<VMLambda>().signature)
-            .unwrap() as isize;
+                .lambda_instructions
+                .last()
+                .unwrap()
+                .as_const_type::<VMInstructions>()
+                .vm_instructions_package
+                .get_table()
+                .get(&lambda_object.as_const_type::<VMLambda>().signature)
+                .unwrap() as isize;
         }
         Ok(())
     }
@@ -593,13 +595,86 @@ impl VMExecutor {
         let mut spawned_coroutines = None;
         if !self.lambda_instructions.is_empty() && *coroutine_status != VMCoroutineStatus::Finished
         {
-            if self.lambda_instructions.last().unwrap().isinstance::<VMLambda>() {
-                let lambda = self.lambda_instructions.last_mut().unwrap().as_type::<VMLambda>();
-                if let VMLambdaBody::VMAsyncNativeFunction(func) = &mut lambda.lambda_body{
-                    
+            // Check if the current instruction is a native generator lambda
+            if self
+                .lambda_instructions
+                .last()
+                .unwrap()
+                .isinstance::<VMLambda>()
+            {
+                // Temporarily store results outside the lambda borrow scope
+                let step_outcome: Result<Option<GCRef>, VMVariableError>;
+                let mut generator_is_done = false;
+
+                // Scope for borrowing lambda.lambda_body mutably
+                {
+                    let lambda = self
+                        .lambda_instructions
+                        .last_mut()
+                        .unwrap()
+                        .as_type::<VMLambda>();
+
+                    if let VMLambdaBody::VMNativeGeneratorFunction(ref mut generator_arc) =
+                        lambda.lambda_body
+                    {
+                        // Step the generator
+                        let result = match std::sync::Arc::get_mut(generator_arc) {
+                            Some(boxed_generator) => boxed_generator.as_mut().step(gc_system),
+                            None => {
+                                // Store error instead of returning immediately
+                                return Err(VMError::DetailedError(
+                                    "Internal Error: Attempted to step a shared generator."
+                                        .to_string(),
+                                ));
+                            }
+                        };
+
+                        // Only process result if no Arc::get_mut error occurred
+                        step_outcome = result.map(Some); // Store Ok(yielded) as Ok(Some(yielded)) or Err
+
+                        // Check if done using immutable borrow *after* mutable step
+                        if generator_arc.is_done() {
+                            generator_is_done = true;
+                        }
+                    } else {
+                        // Store error instead of returning immediately
+                        return Err(VMError::DetailedError(
+                            "Internal Error: Expected VMNativeGeneratorFunction.".to_string(),
+                        ));
+                    }
                 }
-                return Ok(None)
+
+                // Process the outcome of the step (yield or error)
+                match step_outcome {
+                    Ok(Some(mut yielded)) => {
+                        // Now borrow lambda mutably again to set the result - this is safe now
+                        let lambda = self
+                            .lambda_instructions
+                            .last_mut()
+                            .unwrap()
+                            .as_type::<VMLambda>();
+                        lambda.set_result(&mut yielded);
+                        yielded.drop_ref(); // set_result clones, drop original ref
+                    }
+                    Ok(None) => {
+                        // Generator yielded nothing, or was already done before step.
+                        // If it was done, generator_is_done should be true and handled below.
+                    }
+                    Err(err) => {
+                        // Handle the error from the generator step() or get_result()
+                        return Err(VMError::VMVariableError(err));
+                    }
+                }
+
+                // Handle generator completion
+                if generator_is_done {
+                    self.lambda_instructions.pop(); // Pop the generator lambda instruction
+                }
+
+                return Ok(None); // Native generator step doesn't spawn new coroutines
             }
+
+            // --- Regular VM Instruction Execution ---
             let vm_instruction = self
                 .lambda_instructions
                 .last()
@@ -615,7 +690,8 @@ impl VMExecutor {
                 // Check if decoding failed (should ideally not happen with valid bytecode)
                 if decoded_option.is_none() {
                     // Store the original error context
-                    let original_error = VMError::DetailedError("Bytecode decoding failed".to_string());
+                    let original_error =
+                        VMError::DetailedError("Bytecode decoding failed".to_string());
 
                     // Attempt to create and raise the error object
                     let raise_result = (|| -> Result<Option<Vec<SpawnedCoroutine>>, VMError> {
@@ -626,14 +702,17 @@ impl VMExecutor {
                         let mut ip_key_obj = gc_system.new_object(VMString::new("ip"));
                         let mut ip_val_obj = gc_system.new_object(VMInt::new(curr_ip as i64));
 
-                        let mut msg_kv_obj = gc_system.new_object(VMKeyVal::new(&mut msg_key_obj, &mut msg_val_obj));
-                        let mut ip_kv_obj = gc_system.new_object(VMKeyVal::new(&mut ip_key_obj, &mut ip_val_obj));
+                        let mut msg_kv_obj =
+                            gc_system.new_object(VMKeyVal::new(&mut msg_key_obj, &mut msg_val_obj));
+                        let mut ip_kv_obj =
+                            gc_system.new_object(VMKeyVal::new(&mut ip_key_obj, &mut ip_val_obj));
 
                         // Create the error tuple
                         let mut tuple_elements = vec![&mut msg_kv_obj, &mut ip_kv_obj];
-                        let error_tuple_obj =
-                        gc_system.new_object(VMTuple::new_with_alias(&mut tuple_elements,&vec!["VMError".to_string(), "Err".to_string()]));
-
+                        let error_tuple_obj = gc_system.new_object(VMTuple::new_with_alias(
+                            &mut tuple_elements,
+                            &vec!["VMError".to_string(), "Err".to_string()],
+                        ));
 
                         self.push_vmobject(error_tuple_obj)?; // Push the error object
 
@@ -644,7 +723,6 @@ impl VMExecutor {
                         ip_val_obj.drop_ref();
                         msg_kv_obj.drop_ref();
                         ip_kv_obj.drop_ref();
-
 
                         // Manually call the raise logic after pushing the error object
                         let dummy_opcode = ProcessedOpcode {
@@ -686,41 +764,49 @@ impl VMExecutor {
                         self.ip = curr_ip;
 
                         // Attempt to create and raise the error object
-                        let raise_result = (|| -> Result<Option<Vec<SpawnedCoroutine>>, VMError> {
-                            // Create KeyVals for the error tuple
-                            let error_message = original_vm_error.to_string();
-                            let mut msg_key_obj = gc_system.new_object(VMString::new("message"));
-                            let mut msg_val_obj = gc_system.new_object(VMString::new(&error_message));
-                            let mut ip_key_obj = gc_system.new_object(VMString::new("ip"));
-                            let mut ip_val_obj = gc_system.new_object(VMInt::new(curr_ip as i64));
+                        let raise_result =
+                            (|| -> Result<Option<Vec<SpawnedCoroutine>>, VMError> {
+                                // Create KeyVals for the error tuple
+                                let error_message = original_vm_error.to_string();
+                                let mut msg_key_obj =
+                                    gc_system.new_object(VMString::new("message"));
+                                let mut msg_val_obj =
+                                    gc_system.new_object(VMString::new(&error_message));
+                                let mut ip_key_obj = gc_system.new_object(VMString::new("ip"));
+                                let mut ip_val_obj =
+                                    gc_system.new_object(VMInt::new(curr_ip as i64));
 
-                            let mut msg_kv_obj = gc_system.new_object(VMKeyVal::new(&mut msg_key_obj, &mut msg_val_obj));
-                            let mut ip_kv_obj = gc_system.new_object(VMKeyVal::new(&mut ip_key_obj, &mut ip_val_obj));
+                                let mut msg_kv_obj = gc_system
+                                    .new_object(VMKeyVal::new(&mut msg_key_obj, &mut msg_val_obj));
+                                let mut ip_kv_obj = gc_system
+                                    .new_object(VMKeyVal::new(&mut ip_key_obj, &mut ip_val_obj));
 
-                            // Create the error tuple
-                            let mut tuple_elements = vec![&mut msg_kv_obj, &mut ip_kv_obj];
-                            let error_tuple_obj =
-                                gc_system.new_object(VMTuple::new_with_alias(&mut tuple_elements,&vec!["VMError".to_string(), "Err".to_string()]));
+                                // Create the error tuple
+                                let mut tuple_elements = vec![&mut msg_kv_obj, &mut ip_kv_obj];
+                                let error_tuple_obj =
+                                    gc_system.new_object(VMTuple::new_with_alias(
+                                        &mut tuple_elements,
+                                        &vec!["VMError".to_string(), "Err".to_string()],
+                                    ));
 
-                            self.push_vmobject(error_tuple_obj)?; // Push the error object
+                                self.push_vmobject(error_tuple_obj)?; // Push the error object
 
-                            // Drop local refs as tuple now holds them
-                            msg_key_obj.drop_ref();
-                            msg_val_obj.drop_ref();
-                            ip_key_obj.drop_ref();
-                            ip_val_obj.drop_ref();
-                            msg_kv_obj.drop_ref();
-                            ip_kv_obj.drop_ref();
+                                // Drop local refs as tuple now holds them
+                                msg_key_obj.drop_ref();
+                                msg_val_obj.drop_ref();
+                                ip_key_obj.drop_ref();
+                                ip_val_obj.drop_ref();
+                                msg_kv_obj.drop_ref();
+                                ip_kv_obj.drop_ref();
 
-                            // Manually call the raise logic after pushing the error object
-                            vm_instructions::raise(self, &decoded, gc_system)
-                        })();
+                                // Manually call the raise logic after pushing the error object
+                                vm_instructions::raise(self, &decoded, gc_system)
+                            })();
 
                         // If the raise operation itself failed, return the original error
                         return raise_result.map_err(|_raise_error| original_vm_error);
                     }
                 }
-
             }
         } else if *coroutine_status != VMCoroutineStatus::Finished {
             let mut result = self.pop_object_and_check()?;
@@ -748,6 +834,25 @@ impl VMExecutor {
         use unicode_segmentation::UnicodeSegmentation;
 
         let context_lines = context_lines.unwrap_or(2); // Default to 2 lines of context
+
+        if self.lambda_instructions.is_empty() {
+            return String::from("[No instructions available]")
+                .bright_yellow()
+                .italic()
+                .to_string();
+        }
+
+        if self
+            .lambda_instructions
+            .last()
+            .unwrap()
+            .isinstance::<VMLambda>()
+        {
+            return String::from("[Source code information not available]")
+                .bright_yellow()
+                .italic()
+                .to_string();
+        }
 
         let instruction_package = self
             .lambda_instructions
