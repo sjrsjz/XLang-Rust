@@ -604,6 +604,7 @@ impl VMExecutor {
             {
                 // Temporarily store results outside the lambda borrow scope
                 let step_outcome: Result<Option<GCRef>, VMVariableError>;
+                let mut generator_result: Option<GCRef> = None;
                 let mut generator_is_done = false;
 
                 // Scope for borrowing lambda.lambda_body mutably
@@ -634,6 +635,19 @@ impl VMExecutor {
 
                         // Check if done using immutable borrow *after* mutable step
                         if generator_arc.is_done() {
+                            generator_result = Some(match std::sync::Arc::get_mut(generator_arc) {
+                                Some(boxed_generator) => boxed_generator
+                                    .as_mut()
+                                    .get_result(gc_system)
+                                    .map_err(|e| VMError::VMVariableError(e))?,
+                                None => {
+                                    // Store error instead of returning immediately
+                                    return Err(VMError::DetailedError(
+                                        "Internal Error: Attempted to get result from a shared generator."
+                                            .to_string(),
+                                    ));
+                                }
+                            });
                             generator_is_done = true;
                         }
                     } else {
@@ -668,6 +682,25 @@ impl VMExecutor {
 
                 // Handle generator completion
                 if generator_is_done {
+                    match generator_result {
+                        Some(mut result) => {
+                            // Set the result of the generator lambda
+                            let lambda = self
+                                .lambda_instructions
+                                .last_mut()
+                                .unwrap()
+                                .as_type::<VMLambda>();
+                            lambda.set_result(&mut result);
+                            self.push_vmobject(result.clone())?; // Push the result to the stack
+                        }
+                        None => {
+                            // If the generator is done but no result was set, this is an error
+                            return Err(VMError::DetailedError(
+                                "Internal Error: Generator completed but no result was set."
+                                    .to_string(),
+                            ));
+                        }
+                    }
                     self.lambda_instructions.pop(); // Pop the generator lambda instruction
                 }
 

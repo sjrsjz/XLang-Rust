@@ -263,13 +263,18 @@ fn run_file(path: &PathBuf) -> Result<(), String> {
             // Assume it's a source file, compile and execute
             match fs::read_to_string(path) {
                 Ok(code) => {
-                    let mut dir_stack = DirStack::new(Some(
+                    let dir_stack = DirStack::new(Some(
                         &path
                             .parent()
                             .unwrap_or_else(|| Path::new("."))
                             .to_path_buf(),
-                    ))
-                    .unwrap();
+                    ));
+                    if dir_stack.is_err() {
+                        return Err(format!("Error creating directory stack: {}", dir_stack.err().unwrap())
+                            .bright_red()
+                            .to_string());
+                    }
+                    let mut dir_stack = dir_stack.unwrap();
                     match build_code(&code, &mut dir_stack) {
                         Ok(package) => {
                             let mut translator = IRTranslator::new(&package);
