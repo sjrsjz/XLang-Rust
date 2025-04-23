@@ -1056,12 +1056,35 @@ pub mod vm_instructions {
                 lambda.drop_ref();
                 Ok(None)
             }
+            VMLambdaBody::VMNativeGeneratorFunction(ref mut generator) => {
+                let result = match std::sync::Arc::get_mut(generator) {
+                    Some(generator) => generator.init(&mut arg_tuple.clone(), gc_system),
+                    None => {
+                        return Err(VMError::VMVariableError(
+                            VMVariableError::TypeError(
+                                lambda.clone(),
+                                "Async function is not mutable".to_string(),
+                            ),
+                        ))
+                    }
+                };
+                if result.is_err() {
+                    return Err(VMError::VMVariableError(result.unwrap_err()));
+                }
+                let result = vm.enter_lambda(lambda, gc_system);
+                if result.is_err() {
+                    return Err(result.unwrap_err());
+                }
+                arg_tuple.drop_ref();
+                lambda.drop_ref();
+                Ok(None)
+            }
         }
     }
     pub fn async_call_lambda(
         vm: &mut VMExecutor,
         _opcode: &ProcessedOpcode,
-        _gc_system: &mut GCSystem,
+        gc_system: &mut GCSystem,
     ) -> Result<Option<Vec<SpawnedCoroutine>>, VMError> {
         let arg_tuple = &mut vm.pop_object_and_check()?;
         let lambda = &mut vm.pop_object_and_check()?;
@@ -1091,17 +1114,39 @@ pub mod vm_instructions {
                 let spawned_coroutines = vec![SpawnedCoroutine {
                     lambda_ref: lambda.clone_ref(),
                 }];
-                vm.push_vmobject(lambda.clone_ref())?;
-
+                vm.push_vmobject(lambda.clone())?;
                 arg_tuple.drop_ref();
-                lambda.drop_ref();
-
                 Ok(Some(spawned_coroutines))
             }
             VMLambdaBody::VMNativeFunction(_) => Err(VMError::InvalidArgument(
                 arg_tuple.clone(),
                 "Native function cannot be async".to_string(),
             )),
+            VMLambdaBody::VMNativeGeneratorFunction(ref mut generator) => {
+                match std::sync::Arc::get_mut(generator) {
+                    Some(generator) => {
+                        let result = generator.init(&mut arg_tuple.clone(), gc_system);
+                        if result.is_err() {
+                            return Err(VMError::VMVariableError(result.unwrap_err()));
+                        }
+                    }
+                    None => {
+                        return Err(VMError::VMVariableError(
+                            VMVariableError::TypeError(
+                                lambda.clone(),
+                                "Async function is not mutable".to_string(),
+                            ),
+                        ))
+                    }
+                }
+                let spawned_coroutines = vec![SpawnedCoroutine {
+                    lambda_ref: lambda.clone_ref(),
+                }];
+                vm.push_vmobject(lambda.clone())?;
+                arg_tuple.drop_ref();
+
+                Ok(Some(spawned_coroutines))
+            }
         }
     }
     pub fn wrap(

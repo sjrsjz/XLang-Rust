@@ -12,7 +12,7 @@ use colored::Colorize;
  * - 任何new对象的行为都需要使用gc_system，并且会产生一个native_gcref_object_count，虚拟机必须在某处drop_ref直到为0
  *
  */
-use std::{fmt::Debug, future::Future, pin::Pin};
+use std::{fmt::Debug, sync::Arc};
 
 #[derive(Debug, Clone)]
 pub enum VMStackObject {
@@ -32,6 +32,7 @@ pub enum VMVariableError {
     AssignError(GCRef, String),
     ReferenceError(GCRef, String),
     OverflowError(GCRef, GCRef, String),
+    DetailedError(String)
 }
 
 impl VMVariableError {
@@ -87,6 +88,10 @@ impl VMVariableError {
                 msg,
                 try_repr_vmobject(gc_ref.clone(), None).unwrap_or(format!("{:?}", gc_ref)),
                 try_repr_vmobject(other.clone(), None).unwrap_or(format!("{:?}", other)),
+            ),
+            VMVariableError::DetailedError(msg) => format!(
+                "DetailedError: {}",
+                msg
             ),
         }
     }
@@ -2629,6 +2634,13 @@ pub enum VMCoroutineStatus {
     Crashed,
 }
 
+pub trait VMNativeGeneratorFunction: Debug {
+    fn init(&mut self, arg: &mut GCRef, gc_system: &mut GCSystem) -> Result<(), VMVariableError>; // 初始化函数
+    fn step(&mut self, gc_system: &mut GCSystem) -> Result<GCRef, VMVariableError>; // 执行一步，返回yield值
+    fn is_done(&self) -> bool; // 检查是否完成
+    fn clone_generator(&self) -> Arc<Box<dyn VMNativeGeneratorFunction>>; // 克隆生成器
+}
+
 impl VMCoroutineStatus {
     pub fn to_string(&self) -> String {
         match self {
@@ -2639,16 +2651,44 @@ impl VMCoroutineStatus {
     }
 }
 
-#[derive(Debug, Clone, PartialEq)]
 pub enum VMLambdaBody {
     VMInstruction(GCRef),
     VMNativeFunction(fn(GCRef, &mut GCSystem) -> Result<GCRef, VMVariableError>),
-    VMAsyncNativeFunction(
-        fn(GCRef, &mut GCSystem) -> Pin<Box<dyn Future<Output = Result<GCRef, VMVariableError>> + Send + 'static>>,
-    ),
+    VMNativeGeneratorFunction(Arc<Box<dyn VMNativeGeneratorFunction>>),
 }
 
-#[derive(Debug)]
+impl Debug for VMLambdaBody {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        match self {
+            VMLambdaBody::VMInstruction(gc_ref) => f.debug_tuple("VMInstruction").field(gc_ref).finish(),
+            VMLambdaBody::VMNativeFunction(_) => f.debug_tuple("VMNativeFunction").field(&"<fn>").finish(), // 函数指针不直接可调试
+            VMLambdaBody::VMNativeGeneratorFunction(gen) => f.debug_tuple("VMNativeGeneratorFunction").field(gen).finish(), // 使用 trait object 的 Debug
+        }
+    }
+}
+
+
+impl Clone for VMLambdaBody {
+    fn clone(&self) -> Self {
+        match self {
+            VMLambdaBody::VMInstruction(gc_ref) => VMLambdaBody::VMInstruction(gc_ref.clone()),
+            VMLambdaBody::VMNativeFunction(func) => VMLambdaBody::VMNativeFunction(*func), // 函数指针是 Copy
+            VMLambdaBody::VMNativeGeneratorFunction(gen) => VMLambdaBody::VMNativeGeneratorFunction(gen.clone()), // 使用 Box 的 Clone
+        }
+    }
+}
+
+impl PartialEq for VMLambdaBody {
+    fn eq(&self, other: &Self) -> bool {
+        match (self, other) {
+            (VMLambdaBody::VMInstruction(a), VMLambdaBody::VMInstruction(b)) => a == b, // 假设 GCRef 实现 PartialEq
+            (VMLambdaBody::VMNativeFunction(a), VMLambdaBody::VMNativeFunction(b)) => a == b, // 比较函数指针
+            (VMLambdaBody::VMNativeGeneratorFunction(_), VMLambdaBody::VMNativeGeneratorFunction(_)) => false, // 通常不比较 trait object 的内容
+            _ => false, // 不同变体不相等
+        }
+    }
+}
+// Manual implementation of Debug for VMLambda since Future doesn't implement Debug
 pub struct VMLambda {
     pub code_position: usize,
     pub signature: String,
@@ -2660,6 +2700,23 @@ pub struct VMLambda {
     traceable: GCTraceable,
     pub coroutine_status: VMCoroutineStatus,
     alias: Vec<String>,
+}
+
+impl std::fmt::Debug for VMLambda {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        f.debug_struct("VMLambda")
+            .field("code_position", &self.code_position)
+            .field("signature", &self.signature)
+            .field("default_args_tuple", &self.default_args_tuple)
+            .field("capture", &self.capture)
+            .field("self_object", &self.self_object)
+            .field("lambda_body", &self.lambda_body)
+            .field("result", &self.result)
+            .field("traceable", &self.traceable)
+            .field("coroutine_status", &self.coroutine_status)
+            .field("alias", &self.alias)
+            .finish()
+    }
 }
 
 impl VMLambda {
@@ -2689,7 +2746,7 @@ impl VMLambda {
             VMLambdaBody::VMNativeFunction(_) => {
                 vec![&mut cloned_default_args_tuple, &mut cloned_result]
             }
-            VMLambdaBody::VMAsyncNativeFunction(_) => {
+            VMLambdaBody::VMNativeGeneratorFunction(_) => {
                 vec![&mut cloned_default_args_tuple, &mut cloned_result]
             }
         };
@@ -2755,7 +2812,7 @@ impl VMLambda {
             VMLambdaBody::VMNativeFunction(_) => {
                 vec![&mut cloned_default_args_tuple, &mut cloned_result]
             }
-            VMLambdaBody::VMAsyncNativeFunction(_) => {
+            VMLambdaBody::VMNativeGeneratorFunction(_) => {
                 vec![&mut cloned_default_args_tuple, &mut cloned_result]
             }
         };
@@ -2834,7 +2891,7 @@ impl GCObject for VMLambda {
                 self.traceable.remove_reference(instructions);
             }
             VMLambdaBody::VMNativeFunction(_) => {}
-            VMLambdaBody::VMAsyncNativeFunction(_) => {}
+            VMLambdaBody::VMNativeGeneratorFunction(_) => {}
         }
         self.traceable.remove_reference(&mut self.result);
         if self.self_object.is_some() {
@@ -2869,7 +2926,15 @@ impl VMObject for VMLambda {
                 VMLambdaBody::VMInstruction(try_deepcopy_as_vmobject(instructions, gc_system)?)
             }
             VMLambdaBody::VMNativeFunction(_) => self.lambda_body.clone(),
-            VMLambdaBody::VMAsyncNativeFunction(_) => self.lambda_body.clone(),
+            VMLambdaBody::VMNativeGeneratorFunction(_) => {
+                let VMLambdaBody::VMNativeGeneratorFunction(ref gen) = self.lambda_body else {
+                    return Err(VMVariableError::ValueError(
+                        GCRef::wrap(self),
+                        "Invalid lambda body type".to_string(),
+                    ));
+                };
+                VMLambdaBody::VMNativeGeneratorFunction(gen.clone_generator())
+            },
         };
 
         let new_lambda = gc_system.new_object(VMLambda::new_with_alias(
@@ -2888,7 +2953,8 @@ impl VMObject for VMLambda {
                 instructions.drop_ref();
             }
             VMLambdaBody::VMNativeFunction(_) => {}
-            VMLambdaBody::VMAsyncNativeFunction(_) => {}
+            VMLambdaBody::VMNativeGeneratorFunction(_) => {
+            }
         }
         new_result.drop_ref();
         Ok(new_lambda)
@@ -2902,13 +2968,30 @@ impl VMObject for VMLambda {
 
         let mut new_result = try_copy_as_vmobject(&mut self.result, gc_system)?;
 
+        let mut new_lambda_body = match self.lambda_body {
+            VMLambdaBody::VMInstruction(ref mut instructions) => {
+                VMLambdaBody::VMInstruction(try_copy_as_vmobject(instructions, gc_system)?)
+            }
+            VMLambdaBody::VMNativeFunction(_) => self.lambda_body.clone(),
+            VMLambdaBody::VMNativeGeneratorFunction(_) => {
+                let VMLambdaBody::VMNativeGeneratorFunction(ref gen) = self.lambda_body else {
+                    return Err(VMVariableError::ValueError(
+                        GCRef::wrap(self),
+                        "Invalid lambda body type".to_string(),
+                    ));
+                };
+                VMLambdaBody::VMNativeGeneratorFunction(gen.clone_generator())
+            },
+        };
+
+
         Ok(gc_system.new_object(VMLambda::new_with_alias(
             self.code_position,
             self.signature.clone(),
             &mut new_default_args_tuple,
             self.capture.as_mut(), // 捕获对象不会被复制
             None,
-            &mut self.lambda_body,
+            &mut new_lambda_body,
             &mut new_result,
             &self.alias,
         )))
