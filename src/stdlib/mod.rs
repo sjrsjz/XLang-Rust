@@ -141,6 +141,7 @@ pub fn inject_builtin_functions(
     for (name, module) in &mut builtins_map {
         context.let_var(name,  module, gc_system)
             .map_err(|e| VMError::ContextError(e))?;
+        module.drop_ref(); // Drop the ref created by build_module
     }
 
     // 构建 load_clambda 函数
@@ -148,6 +149,7 @@ pub fn inject_builtin_functions(
     context
         .let_var("load_clambda", &mut load_clambda_ref, gc_system)
         .map_err(|e| VMError::ContextError(e))?;
+    load_clambda_ref.drop_ref(); // Drop the ref created by create_native_lambda
 
     Ok(())
 

@@ -10,6 +10,10 @@ try_catch := stdlib.try_catch;
 promise := stdlib.promise;
 request := stdlib.builtins.request;
 response := request.get(url => "https://www.baidu.com");
-async response();
-await response;
-builtins.print(valueof response);
+
+// 异步请求
+async response(); // 启动异步任务
+builtins.print(builtins.string((await response)[1]));
+
+// 同步请求
+builtins.print(builtins.string(response()[1]));

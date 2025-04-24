@@ -20,7 +20,7 @@
             "args": [
                 //"repl"
                 "run",
-                "examples/test.x"
+                "examples/use_stdlib.x"
             ],
             "cwd": "${workspaceFolder}",
             "env": {

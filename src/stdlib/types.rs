@@ -121,6 +121,10 @@ pub fn to_string(tuple: GCRef, gc_system: &mut GCSystem) -> Result<GCRef, VMVari
         ));
     }
     let target_obj = &tuple_obj.values[0];
+    if target_obj.isinstance::<VMBytes>() {
+        let data = target_obj.as_const_type::<VMBytes>().to_string()?;
+        return Ok(gc_system.new_object(VMString::new(&data)));
+    }
     // Use the try_to_string_vmobject helper defined/re-exported in this module
     let data = try_to_string_vmobject(target_obj.clone(), None)?;
     Ok(gc_system.new_object(VMString::new(&data)))
