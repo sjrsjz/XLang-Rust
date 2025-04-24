@@ -5,9 +5,11 @@ try_catch := (pair?) -> {
 };
 
 result := #try_catch {
-    () -> "A"[-1]
+    () -> {
+        "A"[-1]
+    }
 } : {
     (f?, err?) -> {
-        @dynamic print("Error occurred:", err, "in", f);
+        @dynamic io.print("Error occurred:", err, "in", f);
     }
 }

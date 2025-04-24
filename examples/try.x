@@ -1,3 +1,4 @@
+print := @dynamic io.print;
 try := (f?) -> bind {
     'result': wrap null,
     value => () -> return valueof self.result,

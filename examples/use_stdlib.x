@@ -30,7 +30,7 @@ result := #(try_catch.try_catch) {
     () -> "A"[-1]
 } : {
     (f?, err?) -> {
-        @dynamic print("Error occurred:", err, "in", f);
+        @dynamic builtins.print("Error occurred:", err, "in", f);
     }
 };
 
@@ -53,8 +53,8 @@ my_promise := promise.promise(
     }
 );
 
-async my_promise();
-await my_promise;
+// async my_promise();
+// await my_promise;
 
 match := #(stdlib.match.match_alias) cases => {
     A => (x?) -> {

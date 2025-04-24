@@ -40,11 +40,11 @@ object := object_builder();
 
 // 通过接口调用对象的方法
 interface := #interface object;
-@dynamic print(interface.say());
+@dynamic io.print(interface.say());
 
 object2 := object_builder();
 #impl object2 : say => () -> return 'Hello, Universe!';
 
 // 替换对象
 interface.object.replace(object2);
-@dynamic print(interface.say());
+@dynamic io.print(interface.say());

@@ -540,8 +540,7 @@ my_task := () -> {
 其他任务可以随时使用 `valueof task_lambda` 来获取目标任务*当前*缓存的返回值（可能是 `emit` 设置的，也可能是最终 `return` 的）。
 
 === await 语句
-使用 `await task_lambda` 语句会暂停*当前*异步任务的执行，并将控制权交还给 VM 调度器，直到被 `await` 的 `task_lambda` 任务执行*完成*。`await` 语句本身的求值结果是 `null`。要获取已完成任务的最终返回值，应在 `await` 之后使用 `valueof task_lambda`。
-
+使用 `await task_lambda` 语句会暂停*当前*异步任务的执行，并将控制权交还给 VM 调度器，直到被 `await` 的 `task_lambda` 任务执行*完成*。`await` 语句本身的求值结果是已完成任务的最终返回值。
 `await` 是实现协作式调度的关键，它允许任务在等待其他任务时主动让出执行权。
 
 === 行为特性

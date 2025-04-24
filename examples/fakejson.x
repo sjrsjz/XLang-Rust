@@ -22,4 +22,4 @@ fake_json := {
     ],
 };
 
-@dynamic print(fake_json)
+@dynamic io.print(fake_json)

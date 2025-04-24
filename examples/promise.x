@@ -1,3 +1,4 @@
+print := @dynamic io.print;
 promise := (f?, then => (result?) -> {}, catch => (err?) -> {}) -> {
     wrapper := (f => f, then => then, catch => catch) -> {
         result := boundary f();

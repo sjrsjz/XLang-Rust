@@ -1,4 +1,4 @@
-builtins := (() -> dyn import "./builtins.xbc")();
+builtins := (() -> dyn import "./stdlib/builtins.xbc")();
 print := builtins.print;
 
 iter := (start => 0, end => 0, idx?, n => wrap(null)) -> {

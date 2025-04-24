@@ -1,7 +1,7 @@
 my_object := bind Object1::{
     'attribute': 'Hello, I am Object 1!',
     print => () -> {
-        @dynamic print(self.attribute);
+        @dynamic io.print(self.attribute);
     }
 };
 

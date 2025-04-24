@@ -1,4 +1,4 @@
-builtins := (() -> dyn import "./builtins.xbc")();
+builtins := (() -> dyn import "./stdlib/builtins.xbc")();
 print := builtins.print;
 
 

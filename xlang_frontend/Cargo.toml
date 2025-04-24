@@ -1,6 +1,6 @@
 [package]
 name = "xlang_frontend"
-version = "0.1.0"
+version = "0.1.1"
 edition = "2021"
 authors = ["sjrsjz <sjrsjz@gmail.com>"]
 description = "Frontend for XLang-Rust"
@@ -14,4 +14,4 @@ base64 = "0.22.1"
 colored = "3.0.0"
 regex = "1.11.1"
 unicode-segmentation = "1.12.0"
-xlang_vm_core = { version = "0.1.0", path = "../xlang_vm_core" }
+xlang_vm_core = { version = "0.1.1", path = "../xlang_vm_core" }

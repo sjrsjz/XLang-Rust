@@ -1,6 +1,8 @@
 bytes := $"SGVsbG8sIFdvcmxkIQ==";
 
 @dynamic {
+    print := io.print;
+    string := types.string;
     print("Base64:");
     print(bytes); // Base64 encoded string
     print(string(bytes)); // Decoded string
