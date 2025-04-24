@@ -1,4 +1,4 @@
-builtins := (() -> dyn import "./builtins.xbc")();
+builtins := (() -> dyn import "./stdlib/builtins.xbc")();
 print := builtins.print;
 
 inject_sub := (super?) -> super + (sub => () -> valueof self.subclass,);

@@ -30,7 +30,7 @@ result := #(try_catch.try_catch) {
     () -> "A"[-1]
 } : {
     (f?, err?) -> {
-        @dynamic print("Error occurred:", err, "in", f);
+        @dynamic builtins.print("Error occurred:", err, "in", f);
     }
 };
 

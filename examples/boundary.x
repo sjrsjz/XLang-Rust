@@ -1,6 +1,5 @@
-builtins := (() -> dyn import "./builtins.xbc")();
+builtins := (() -> dyn import "./stdlib/builtins.xbc")();
 print := builtins.print;
-
 retry := (f?, args => ()) -> (max_retry => 0, f => f, args => args, retry => 0) -> {
     while (retry < max_retry) {
         result := boundary f(...args);

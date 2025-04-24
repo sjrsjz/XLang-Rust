@@ -8,6 +8,7 @@ node1(next_node => node2);
 node2(next_node => node3);
 
 @dynamic {
+    print := io.print;
     print((keyof node1).v); // 1
     print((keyof node1()).v); // 2
     print((keyof node1()()).v); // 3

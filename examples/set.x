@@ -1,3 +1,4 @@
+print := @dynamic io.print;
 set := 0..10 | (x?) -> x >= 3;
 @dynamic print(0 in set);
 @dynamic print(collect set);

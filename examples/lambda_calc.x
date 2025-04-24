@@ -43,4 +43,4 @@ CONS := (x?, y?) -> (f?, x!, y!) -> f(x, y);
 
 PRED := (p?, CONS!, CAR!, CDR!, SUCC!) -> CONS(SUCC(CAR(p)), CAR(p));
 
-@dynamic print(to_int(CDR(CONS(NUM(10), NUM(2)))));
+@dynamic io.print(to_int(CDR(CONS(NUM(10), NUM(2)))));

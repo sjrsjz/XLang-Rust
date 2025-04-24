@@ -2,7 +2,8 @@ mod lsp;
 use colored::Colorize;
 use rustyline::highlight::CmdKind;
 
-use xlang_vm_core::executor::native_function::native_functions::inject_builtin_functions;
+mod stdlib;
+use crate::stdlib::inject_builtin_functions;
 use xlang_vm_core::executor::variable::VMInstructions;
 use xlang_vm_core::executor::variable::VMLambda;
 use xlang_vm_core::executor::variable::VMTuple;

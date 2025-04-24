@@ -48,8 +48,8 @@ return #try_catch {
     }
 } : {
     (f?, err?) -> {
-        @dynamic print("Error occurred:", err);
-        @dynamic print("Make sure you have call this module in the right way.");
+        @dynamic io.print("Error occurred:", err);
+        @dynamic io.print("Make sure you have call this module in the right way.");
         return null;
     }    
 }
