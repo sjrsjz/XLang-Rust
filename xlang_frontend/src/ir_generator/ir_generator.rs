@@ -677,17 +677,21 @@ impl<'t> IRGenerator<'t> {
                     }
                     ASTNodeModifier::Await => {
                         let (label, _) = self.new_label();
+                        instructions.extend(self.generate_without_redirect(&ast_node.children[0])?);
                         instructions.push((
                             self.generate_debug_info(ast_node),
                             IR::RedirectLabel(label.clone()),
                         ));
-                        instructions.extend(self.generate_without_redirect(&ast_node.children[0])?);
+                        instructions.push((
+                            self.generate_debug_info(ast_node),
+                            IR::ForkStackObjectRef(0),
+                        ));
                         instructions.push((self.generate_debug_info(ast_node), IR::IsFinished));
                         instructions.push((
                             self.generate_debug_info(ast_node),
                             IR::RedirectJumpIfFalse(label),
                         ));
-                        instructions.push((self.generate_debug_info(ast_node), IR::LoadNull));
+                        instructions.push((self.generate_debug_info(ast_node), IR::ValueOf));
                     }
                     ASTNodeModifier::Wipe => {
                         instructions.extend(self.generate_without_redirect(&ast_node.children[0])?);

@@ -53,8 +53,8 @@ my_promise := promise.promise(
     }
 );
 
-async my_promise();
-await my_promise;
+// async my_promise();
+// await my_promise;
 
 match := #(stdlib.match.match_alias) cases => {
     A => (x?) -> {

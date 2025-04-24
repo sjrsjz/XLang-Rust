@@ -204,15 +204,15 @@ builtins := bind {
     },
     request => bind {
         'builtin_request' : @dynamic async_request,
-        get => (url?) -> {
-            result := self.builtin_request.request(url, 'GET');
-            keyof this = (url?,);
+        get => (url?, headers?, body?) -> {
+            result := self.builtin_request.request(url!, method => 'GET', headers!, body!);
+            keyof this = (url?, headers?, body?);
             keyof self.builtin_request.request = ();
             return result;
         },
-        post => (url?) -> {
-            result := self.builtin_request.request(url, 'POST');
-            keyof this = (url?,);
+        post => (url?, headers?, body?) -> {
+            result := self.builtin_request.request(url!, method => 'POST', headers!, body!);
+            keyof this = (url?, headers?, body?);
             keyof self.builtin_request.request = ();
             return result;
         },

@@ -1,7 +1,7 @@
 builtins := (() -> dyn import "./stdlib/builtins.xbc")();
 print := builtins.print;
 
-my_async_func1 := () -> {
+my_async_func1 := (print!) -> {
     n := 0;
     while (n = n + 1; n < 100){
         @dynamic print("my_async_func1: ", n);
@@ -9,7 +9,7 @@ my_async_func1 := () -> {
     return "my_async_func1 done";
 };
 
-my_async_func2 := () -> {
+my_async_func2 := (print!) -> {
     n := 0;
     while (n = n + 1; n < 100){
         @dynamic print("my_async_func2: ", n);

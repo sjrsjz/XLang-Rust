@@ -2227,6 +2227,31 @@ impl VMTuple {
         Err(VMVariableError::KeyNotFound(key.clone(), GCRef::wrap(self)))
     }
 
+    pub fn get_member_by_string(
+        &mut self,
+        key: &str,
+        _gc_system: &mut GCSystem,
+    ) -> Result<GCRef, VMVariableError> {
+        for i in 0..self.values.len() {
+            if self.values[i].isinstance::<VMKeyVal>() {
+                let kv = self.values[i].as_const_type::<VMKeyVal>();
+                if kv.get_const_key().isinstance::<VMString>() && 
+                   kv.get_const_key().as_const_type::<VMString>().value == key {
+                    return Ok(self.values[i].as_type::<VMKeyVal>().get_value().clone());
+                }
+            } else if self.values[i].isinstance::<VMNamed>() {
+                let named = self.values[i].as_const_type::<VMNamed>();
+                if named.get_const_key().isinstance::<VMString>() && 
+                   named.get_const_key().as_const_type::<VMString>().value == key {
+                    return Ok(self.values[i].as_type::<VMNamed>().get_value().clone());
+                }
+            }
+        }
+        Err(VMVariableError::DetailedError(
+            format!("Key '{}' not found in {}", key, try_repr_vmobject(GCRef::wrap(self), None)?),
+        ))
+    }
+
     pub fn index_of(
         &mut self,
         index: &GCRef,
