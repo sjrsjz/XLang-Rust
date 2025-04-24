@@ -204,16 +204,31 @@ builtins := bind {
     },
     request => bind {
         'builtin_request' : @dynamic async_request,
-        get => (url?, headers?, body?) -> {
-            result := self.builtin_request.request(url!, method => 'GET', headers!, body!);
-            keyof this = (url?, headers?, body?);
+        get => (url?, headers?, body?, timeout?) -> {
+            result := self.builtin_request.request(url!, method => 'GET', headers!, body!, timeout_ms => timeout);
+            keyof this = (url?, headers?, body?, timeout?);
             keyof self.builtin_request.request = ();
             return result;
         },
-        post => (url?, headers?, body?) -> {
-            result := self.builtin_request.request(url!, method => 'POST', headers!, body!);
-            keyof this = (url?, headers?, body?);
+        post => (url?, headers?, body?, timeout?) -> {
+            result := self.builtin_request.request(url!, method => 'POST', headers!, body!, timeout_ms => timeout);
+            keyof this = (url?, headers?, body?, timeout?);
             keyof self.builtin_request.request = ();
+            return result;
+        },
+    },
+    time => bind {
+        'builtin_time' : @dynamic time,
+        sleep => (seconds?) -> {
+            result := self.builtin_time.sleep(seconds);
+            keyof this = (seconds?,);
+            keyof self.builtin_time.sleep = ();
+            return result;
+        },
+        timestamp => () -> {
+            result := self.builtin_time.timestamp();
+            keyof this = ();
+            keyof self.builtin_time.timestamp = ();
             return result;
         },
     },

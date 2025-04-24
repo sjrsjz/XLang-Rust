@@ -55,6 +55,7 @@ enum Commands {
         input: PathBuf,
     },
 
+    /// Display IR file content
     DisplayIR {
         /// Input IR file path
         #[arg(required = true)]
