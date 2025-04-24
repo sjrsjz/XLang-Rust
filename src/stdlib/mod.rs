@@ -4,6 +4,7 @@ mod io;
 mod types;
 mod serialization;
 mod async_request;
+mod time;
 
 use rustc_hash::FxHashMap;
 use xlang_vm_core::executor::context::Context;
@@ -65,6 +66,21 @@ pub(crate) fn build_module(
         kv_pair.drop_ref(); // Drop the ref created by VMKeyVal::new
     }
     module
+}
+
+pub(crate) fn build_dict(
+    keyvals: &mut FxHashMap<&str, GCRef>,
+    gc_system: &mut GCSystem,
+) -> GCRef {
+    let mut dict = gc_system.new_object(VMTuple::new(&mut vec![]));
+    for (key, value) in keyvals {
+        let mut key_ref = gc_system.new_object(VMString::new(key));
+        let mut kv_pair = gc_system.new_object(VMKeyVal::new(&mut key_ref, value));
+        let _ = dict.as_type::<VMTuple>().append(&mut kv_pair);
+        key_ref.drop_ref(); // Drop the ref created by VMString::new
+        kv_pair.drop_ref(); // Drop the ref created by VMKeyVal::new
+    }
+    dict
 }
 
 
@@ -130,6 +146,10 @@ pub fn inject_builtin_functions(
     let async_request_map = async_request.into_iter().collect::<FxHashMap<_, _>>();
     let async_request_module = build_module(&async_request_map, gc_system);
 
+    let time = time::get_time_function();
+    let time_map = time.into_iter().collect::<FxHashMap<_, _>>();
+    let time_module = build_module(&time_map, gc_system);
+
     let mut builtins_map = FxHashMap::default();
     builtins_map.insert("fs", fs_module);
     builtins_map.insert("io", io_module);
@@ -137,6 +157,7 @@ pub fn inject_builtin_functions(
     builtins_map.insert("serialization", serialization_module);
     builtins_map.insert("string_utils", string_utils_module);
     builtins_map.insert("async_request", async_request_module);
+    builtins_map.insert("time", time_module);
 
     for (name, module) in &mut builtins_map {
         context.let_var(name,  module, gc_system)

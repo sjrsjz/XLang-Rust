@@ -1,7 +1,9 @@
 use std::{
     fmt::{self, Debug},
     sync::{Arc, Mutex},
+    time::Duration, // Import Duration
 };
+use rustc_hash::FxHashMap;
 use tokio::runtime::Runtime;
 use xlang_vm_core::{
     executor::variable::{
@@ -11,6 +13,7 @@ use xlang_vm_core::{
     gc::{GCRef, GCSystem},
 };
 use super::check_if_tuple;
+use super::build_dict;
 use once_cell::sync::Lazy;
 use reqwest::{
     header::{HeaderMap, HeaderName, HeaderValue},
@@ -46,8 +49,8 @@ enum RequestState {
 #[derive(Clone)]
 struct RequestResult {
     status_code: i64,
+    headers: HeaderMap, // Store response headers
     body_bytes: Vec<u8>,
-    // 可以添加 headers 等
 }
 
 // Debug 手动实现，因为 reqwest::Response 不支持 Debug 或 Clone
@@ -59,8 +62,9 @@ impl Debug for RequestState {
             RequestState::Done(Ok(result)) => f
                 .debug_tuple("Done")
                 .field(&format!(
-                    "Ok(status={}, body_len={})",
+                    "Ok(status={}, headers={:?}, body_len={})", // Include headers in debug
                     result.status_code,
+                    result.headers, // Debug print headers
                     result.body_bytes.len()
                 ))
                 .finish(),
@@ -74,18 +78,26 @@ impl Debug for RequestState {
 struct RequestGenerator {
     url: Url,
     method: Method,
-    headers: HeaderMap, // Store parsed headers
-    body: Option<Vec<u8>>, // Store body bytes
+    headers: HeaderMap, // Request headers
+    body: Option<Vec<u8>>,
+    timeout: Option<Duration>, // Optional request timeout
     state: Arc<Mutex<RequestState>>,
 }
 
 impl RequestGenerator {
-    fn new(url: Url, method: Method, headers: HeaderMap, body: Option<Vec<u8>>) -> Self {
+    fn new(
+        url: Url,
+        method: Method,
+        headers: HeaderMap,
+        body: Option<Vec<u8>>,
+        timeout: Option<Duration>, // Add timeout parameter
+    ) -> Self {
         RequestGenerator {
             url,
             method,
             headers,
             body,
+            timeout, // Store timeout
             state: Arc::new(Mutex::new(RequestState::Idle)),
         }
     }
@@ -95,11 +107,17 @@ impl RequestGenerator {
         client: &'static Client,
         method: Method,
         url: Url,
-        headers: HeaderMap, // Pass headers
-        body: Option<Vec<u8>>, // Pass body
+        headers: HeaderMap,
+        body: Option<Vec<u8>>,
+        timeout: Option<Duration>, // Pass timeout
         state: Arc<Mutex<RequestState>>,
     ) {
-        log::debug!("Starting request: {} {}", method, url); // 使用 log crate
+        log::debug!(
+            "Starting request: {} {} with timeout {:?}",
+            method,
+            url,
+            timeout
+        ); // Log timeout
 
         let mut request_builder = client.request(method.clone(), url.clone());
 
@@ -111,13 +129,20 @@ impl RequestGenerator {
             request_builder = request_builder.body(Body::from(body_bytes));
         }
 
+        // Add timeout if present
+        if let Some(duration) = timeout {
+            request_builder = request_builder.timeout(duration);
+        }
+
         let result = match request_builder.send().await {
             Ok(response) => {
                 log::debug!("Request finished: {}", response.status());
                 let status = response.status().as_u16() as i64;
+                let response_headers = response.headers().clone(); // Clone response headers
                 match response.bytes().await {
                     Ok(body_bytes) => Ok(RequestResult {
                         status_code: status,
+                        headers: response_headers, // Store response headers
                         body_bytes: body_bytes.to_vec(),
                     }),
                     Err(e) => {
@@ -128,7 +153,12 @@ impl RequestGenerator {
             }
             Err(e) => {
                 log::error!("Request failed for {}: {}", url, e);
-                Err(format!("Request failed: {}", e))
+                // Check if the error is a timeout
+                if e.is_timeout() {
+                    Err("Request timed out".to_string())
+                } else {
+                    Err(format!("Request failed: {}", e))
+                }
             }
         };
 
@@ -148,37 +178,31 @@ impl VMNativeGeneratorFunction for RequestGenerator {
             let state_clone = self.state.clone();
             let url_clone = self.url.clone();
             let method_clone = self.method.clone();
-            let headers_clone = self.headers.clone(); // Clone headers
-            let body_clone = self.body.clone(); // Clone body
+            let headers_clone = self.headers.clone();
+            let body_clone = self.body.clone();
+            let timeout_clone = self.timeout; // Clone timeout
 
             // 在 Tokio Runtime 中异步执行请求
             RUNTIME.spawn(Self::perform_request(
-                &CLIENT, // 使用全局 Client
+                &CLIENT,
                 method_clone,
                 url_clone,
-                headers_clone, // Pass headers
-                body_clone, // Pass body
+                headers_clone,
+                body_clone,
+                timeout_clone, // Pass timeout
                 state_clone,
             ));
             log::trace!("Request generator initialized and task spawned.");
         } else {
             log::warn!("Request generator init called on non-idle state.");
-            // 或者返回错误？取决于 VM 期望的行为
-            // return Err(VMVariableError::DetailedError("Generator already initialized".to_string()));
         }
         Ok(())
     }
 
     fn step(&mut self, gc_system: &mut GCSystem) -> Result<GCRef, VMVariableError> {
-        // step 仅用于轮询，检查是否完成。
-        // 如果 VM 支持更高级的异步集成（例如暂停执行直到 Future 完成），
-        // 则可以采用不同的方法。
-        // 对于基于轮询的生成器，返回 Null 表示“尚未完成，请稍后重试”。
         let state = self.state.lock().unwrap();
         match *state {
             RequestState::Pending => Ok(gc_system.new_object(VMNull::new())),
-            // 如果已完成或处于空闲状态（理论上不应在 step 中发生），也返回 Null。
-            // get_result 将处理最终结果。
             _ => Ok(gc_system.new_object(VMNull::new())),
         }
     }
@@ -187,33 +211,72 @@ impl VMNativeGeneratorFunction for RequestGenerator {
         let state = self.state.lock().unwrap();
         match &*state {
             RequestState::Done(Ok(result)) => {
-                // 成功：返回 (status_code: int, body: bytes)
+                // 成功：返回 {status_code: int, headers: {key:str, ...}, body: bytes, error_message: null}
                 let mut status_obj = gc_system.new_object(VMInt::new(result.status_code));
-                let mut body_obj = gc_system.new_object(VMBytes::new(&result.body_bytes)); // 使用引用创建
-                let mut tuple_elements = vec![&mut status_obj, &mut body_obj];
-                let result_tuple = gc_system.new_object(VMTuple::new(&mut tuple_elements));
+                let mut body_obj = gc_system.new_object(VMBytes::new(&result.body_bytes));
+                let mut error_message = gc_system.new_object(VMNull::new());
+
+                // Convert HeaderMap to VM Dictionary
+                let mut headers_map = FxHashMap::default();
+                for (name, value) in &result.headers {
+                    // Header values might not be valid UTF-8, handle potential errors
+                    let value_str = match value.to_str() {
+                        Ok(s) => s.to_string(),
+                        Err(_) => {
+                            // Option 1: Skip non-UTF8 headers
+                            // log::warn!("Skipping non-UTF8 header value for key: {}", name.as_str());
+                            // continue;
+                            // Option 2: Use lossy conversion (might be unexpected for user)
+                            // value.to_str().unwrap_or_else(|_| String::from_utf8_lossy(value.as_bytes()).into_owned())
+                            // Option 3: Return bytes (requires VMBytes support in dict values)
+                            // For simplicity, let's use lossy conversion for now
+                            String::from_utf8_lossy(value.as_bytes()).into_owned()
+                        }
+                    };
+                    let mut key_gc = gc_system.new_object(VMString::new(name.as_str()));
+                    let mut val_gc = gc_system.new_object(VMString::new(&value_str));
+                    headers_map.insert(name.as_str(), val_gc.clone()); // Use String key for map
+                    key_gc.drop_ref(); // Drop temporary GCRefs
+                    val_gc.drop_ref();
+                }
+                let mut headers_dict = build_dict(&mut headers_map, gc_system);
+
+
+                let mut result_dict_map = FxHashMap::from_iter(vec![
+                    ("status_code", status_obj.clone()),
+                    ("headers", headers_dict.clone()), // Add headers dict
+                    ("body", body_obj.clone()),
+                    ("error_message", error_message.clone()),
+                ]);
+                let dict = build_dict(&mut result_dict_map, gc_system);
+
                 // 释放临时 GCRef
                 status_obj.drop_ref();
+                headers_dict.drop_ref(); // Drop headers dict ref
                 body_obj.drop_ref();
+                error_message.drop_ref();
                 log::trace!("Request generator returning successful result.");
-                Ok(result_tuple)
+                Ok(dict)
             }
             RequestState::Done(Err(e)) => {
-                // 失败：返回 (null, error_message: string)
+                // 失败：返回 {status_code: null, headers: null, body: null, error_message: string}
                 let mut null_obj = gc_system.new_object(VMNull::new());
-                let mut err_str_obj = gc_system.new_object(VMString::new(e));
-                let mut tuple_elements = vec![&mut null_obj, &mut err_str_obj];
-                let result_tuple = gc_system.new_object(VMTuple::new(&mut tuple_elements));
+                let mut error_message = gc_system.new_object(VMString::new(e));
+                let mut result_dict_map = FxHashMap::from_iter(vec![
+                    ("status_code", null_obj.clone()),
+                    ("headers", null_obj.clone()), // Headers are null on error
+                    ("body", null_obj.clone()), // Body is null on error
+                    ("error_message", error_message.clone()),
+                ]);
+                let result_dict = build_dict(&mut result_dict_map, gc_system);
+
                 // 释放临时 GCRef
                 null_obj.drop_ref();
-                err_str_obj.drop_ref();
+                error_message.drop_ref();
                 log::trace!("Request generator returning error result: {}", e);
-                Ok(result_tuple)
-                // 或者，如果 VM 应该因错误而停止：
-                // Err(VMVariableError::DetailedError(format!("Request failed: {}", e)))
+                Ok(result_dict)
             }
             RequestState::Idle | RequestState::Pending => {
-                // 在生成器完成之前调用了 get_result
                 log::warn!("get_result called before generator completed.");
                 Err(VMVariableError::DetailedError(
                     "Generator result requested before completion".to_string(),
@@ -228,15 +291,13 @@ impl VMNativeGeneratorFunction for RequestGenerator {
     }
 
     fn clone_generator(&self) -> Arc<Box<dyn VMNativeGeneratorFunction>> {
-        // 克隆生成器会创建一个新的、处于 Idle 状态的实例，
-        // 使用相同的初始参数（URL, method, headers, body）。
-        // 它不会复制正在进行的请求的状态。
         log::trace!("Cloning request generator.");
         Arc::new(Box::new(RequestGenerator::new(
             self.url.clone(),
             self.method.clone(),
-            self.headers.clone(), // Clone headers
-            self.body.clone(), // Clone body
+            self.headers.clone(),
+            self.body.clone(),
+            self.timeout, // Clone timeout
         )))
     }
 }
@@ -248,7 +309,8 @@ impl VMNativeGeneratorFunction for RequestGenerator {
 /// - url: string (必需)
 /// - method: string (可选, 默认 "GET")
 /// - header: tuple (可选, 元素为 key:value 或 key=>value, key/value 需为 string)
-/// - body: bytes | string (可选)
+/// - body: bytes | string | null (可选)
+/// - timeout_ms: int (可选, 超时毫秒数)
 pub fn request(mut tuple: GCRef, gc_system: &mut GCSystem) -> Result<GCRef, VMVariableError> {
     check_if_tuple(tuple.clone())?;
     let tuple_obj = tuple.as_type::<VMTuple>(); // Get mutable reference
@@ -323,12 +385,14 @@ pub fn request(mut tuple: GCRef, gc_system: &mut GCSystem) -> Result<GCRef, VMVa
             let header_name = HeaderName::from_bytes(h_key_str.as_bytes()).map_err(|e| {
                 VMVariableError::DetailedError(format!("Invalid header name '{}': {}", h_key_str, e))
             })?;
-            let header_value = HeaderValue::from_bytes(h_val_str.as_bytes()).map_err(|e| {
-                VMVariableError::DetailedError(format!(
+            // Use from_str for HeaderValue as it handles validation better for common cases
+            let header_value = HeaderValue::from_str(&h_val_str).map_err(|e| {
+                 VMVariableError::DetailedError(format!(
                     "Invalid header value for '{}': {}",
                     h_key_str, e
                 ))
             })?;
+            // HeaderMap::append allows multiple values for the same header name
             headers.append(header_name, header_value);
         }
     }
@@ -356,29 +420,60 @@ pub fn request(mut tuple: GCRef, gc_system: &mut GCSystem) -> Result<GCRef, VMVa
         }
     }
 
+    // --- 解析 Timeout (可选) ---
+    let mut timeout_opt: Option<Duration> = None;
+    if let Ok(timeout_ref) = tuple_obj.get_member_by_string("timeout_ms", gc_system) {
+        if timeout_ref.isinstance::<VMInt>() {
+            let ms = timeout_ref.as_const_type::<VMInt>().value;
+            if ms > 0 {
+                timeout_opt = Some(Duration::from_millis(ms as u64));
+            } else if ms == 0 {
+                 // Treat 0 as no timeout (or default Reqwest timeout)
+                 timeout_opt = None;
+            }
+             else {
+                return Err(VMVariableError::DetailedError(
+                    "Named argument 'timeout_ms' must be a non-negative integer".to_string(),
+                ));
+            }
+        } else if !timeout_ref.isinstance::<VMNull>() { // Allow null to explicitly mean no timeout
+             return Err(VMVariableError::TypeError(
+                timeout_ref.clone(),
+                "Named argument 'timeout_ms' must be an integer or null".to_string(),
+            ));
+        }
+    }
+
+
     // --- 创建 Generator ---
     log::debug!(
-        "Creating RequestGenerator for: {} {} with headers: {:?}, body: {:?}",
+        "Creating RequestGenerator for: {} {} with headers: {:?}, body: {:?}, timeout: {:?}",
         method,
         url,
         headers,
-        body_opt.is_some()
+        body_opt.is_some(),
+        timeout_opt // Log timeout
     );
-    let generator = RequestGenerator::new(url.clone(), method.clone(), headers, body_opt); // Pass headers and body
+    let generator = RequestGenerator::new(
+        url.clone(),
+        method.clone(),
+        headers,
+        body_opt,
+        timeout_opt, // Pass timeout
+    );
     let generator_arc: Arc<Box<dyn VMNativeGeneratorFunction>> = Arc::new(Box::new(generator));
 
     // --- 创建 Lambda 返回给 VM ---
     let mut lambda_body = VMLambdaBody::VMNativeGeneratorFunction(generator_arc);
-    // 生成器 lambda 通常没有默认参数或捕获（除非需要传递环境）
     let mut default_args = gc_system.new_object(VMTuple::new(&mut vec![]));
-    let mut result_placeholder = gc_system.new_object(VMNull::new()); // 结果占位符，通常不用于生成器
+    let mut result_placeholder = gc_system.new_object(VMNull::new());
 
     let lambda = gc_system.new_object(VMLambda::new(
-        0, // code_position 不适用
-        format!("request_generator(url='{}', ...)", url_str_for_sig), // Use stored url string
+        0,
+        format!("request_generator(url='{}', ...)", url_str_for_sig),
         &mut default_args,
-        None, // capture
-        None, // self_object
+        None,
+        None,
         &mut lambda_body,
         &mut result_placeholder,
     ));

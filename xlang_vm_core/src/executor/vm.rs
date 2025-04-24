@@ -5,7 +5,7 @@ use crate::opcode::ProcessedOpcode;
 use super::super::gc::*;
 use super::context::*;
 use super::variable::*;
-use super::vm_instructions::vm_instructions;
+use super::vm_instructions;
 
 #[derive(Debug)]
 pub enum VMError {
@@ -826,12 +826,12 @@ impl VMExecutor {
                                 self.push_vmobject(error_tuple_obj)?; // Push the error object
 
                                 // Drop local refs as tuple now holds them
-                                // msg_key_obj.drop_ref();
-                                // msg_val_obj.drop_ref();
-                                // ip_key_obj.drop_ref();
-                                // ip_val_obj.drop_ref();
-                                // msg_kv_obj.drop_ref();
-                                // ip_kv_obj.drop_ref();
+                                msg_key_obj.drop_ref();
+                                msg_val_obj.drop_ref();
+                                ip_key_obj.drop_ref();
+                                ip_val_obj.drop_ref();
+                                msg_kv_obj.drop_ref();
+                                ip_kv_obj.drop_ref();
 
                                 // Manually call the raise logic after pushing the error object
                                 vm_instructions::raise(self, &decoded, gc_system)
