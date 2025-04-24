@@ -1,4 +1,4 @@
-builtins := (() -> dyn import "./builtins.xbc")();
+builtins := (() -> dyn import "./stdlib/builtins.xbc")();
 print := builtins.print;
 my_dynamic_function := () -> {
     @dynamic print( // 由于动态语言无法确定闭包何时被调用，因此在闭包内静态分析不允许访问上一级作用域的变量（尽管它们在运行时是可用的）

@@ -1,3 +1,5 @@
+print := @dynamic io.print;
+
 object_builder := () -> bind {
     'name': 'object',
     'description': 'A generic object.',

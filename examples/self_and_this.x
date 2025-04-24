@@ -1,3 +1,4 @@
+print := @dynamic io.print;
 object1 := bind {
     fn => (x?) -> {
         @dynamic print(self); // self is the current object

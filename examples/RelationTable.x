@@ -1,4 +1,5 @@
 
+print := @dynamic io.print;
 RelationTable := (keys => ()) -> {
     return bind {
         "keys": keys,
@@ -8,9 +9,9 @@ RelationTable := (keys => ()) -> {
         },
         key_idx => (keys => ()) -> {
             idx := ();
-            n := 0; while(n < @dynamic len(keys)) {
+            n := 0; while(n < lengthof keys) {
                 found := false;
-                i := 0; while(i < @dynamic len(self.keys)) {
+                i := 0; while(i < lengthof self.keys) {
                     if (keys[n] == self.keys[i]) {
                         idx = idx + (i,);
                         found = true;
@@ -32,9 +33,9 @@ RelationTable := (keys => ()) -> {
                 return null;
             };
             new_table := @dynamic RelationTable(keys);
-            n := 0; while(n < @dynamic len(self.data)) {
+            n := 0; while(n < lengthof self.data) {
                 row := (,);
-                i := 0; while(i < @dynamic len(idx)) {
+                i := 0; while(i < lengthof idx) {
                     row = row + (self.data[n][idx[i]],);
                     i = i + 1;
                 };
@@ -46,7 +47,7 @@ RelationTable := (keys => ()) -> {
 
         filter => (condition => (v?, table?) -> false) -> {
             new_table := @dynamic RelationTable(self.keys);
-            n := 0; while(n < @dynamic len(self.data)) {
+            n := 0; while(n < lengthof self.data) {
                 if (condition(self.data[n], self) == true) {
                     new_table.append(self.data[n]);
                 };

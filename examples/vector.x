@@ -20,6 +20,8 @@ mathlib := {
         e => (e::() -> dyn clambda)(),
     }
 };
+print := @dynamic io.print;
+string := @dynamic types.string;
 
 @dynamic print(mathlib.sqrt(4));
 

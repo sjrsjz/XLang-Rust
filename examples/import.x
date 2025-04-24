@@ -1,4 +1,6 @@
-choice := @dynamic input("Select Module-1?(y/n): ");
+@compile "./module.x";
+@compile "./module-2.x";
+choice := @dynamic io.input("Select Module-1?(y/n): ");
 my_module := () -> dyn if (@dynamic choice == "y") {
     import "module.xbc"
 } else {

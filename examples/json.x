@@ -1,4 +1,4 @@
-v := @dynamic json_decode("""
+v := @dynamic serialization.json_decode("""
 
 {
     "name": "John",
@@ -24,6 +24,7 @@ v := @dynamic json_decode("""
 """);
 
 @dynamic {
+    print := io.print;
     print(v.name); // John
     print(v.age); // 30
     print(v.city); // New York

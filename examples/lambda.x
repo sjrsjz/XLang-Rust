@@ -25,6 +25,8 @@ factorial := Y((self?) -> (n?, self!) -> {
 });
 
 // 测试
+print := @dynamic io.print;
+string := @dynamic types.string;
 @dynamic print("3! = " + string(factorial(3)));  // 应输出: 3! = 6
 
 // Ω组合子 (自应用) - 理论上会导致无限循环

@@ -1,12 +1,12 @@
 /* 一个非常操蛋的用来禁止缓存参数的内置函数的包装 */
 builtins := bind {
-    'builtin_print' : @dynamic print,
-    'builtin_int' : @dynamic int,
-    'builtin_float' : @dynamic float,
-    'builtin_string' : @dynamic string,
-    'builtin_bool' : @dynamic bool,
-    'builtin_bytes' : @dynamic bytes,
-    'builtin_input' : @dynamic input,
+    'builtin_print' : @dynamic io.print,
+    'builtin_int' : @dynamic types.int,
+    'builtin_float' : @dynamic types.float,
+    'builtin_string' : @dynamic types.string,
+    'builtin_bool' : @dynamic types.bool,
+    'builtin_bytes' : @dynamic types.bytes,
+    'builtin_input' : @dynamic io.input,
     print => () -> {
         result := self.builtin_print(...keyof this);
         keyof this = ();
@@ -114,16 +114,16 @@ print("all asyncs finished");
 
 extend := (obj?, methods => (,)) -> {
     new_obj := (,);
-    n := 0; while(n < @dynamic len(obj)) {
+    n := 0; while(n < lengthof(obj)) {
         i := 0;
-        found := while(i < @dynamic len(methods)) {
+        found := while(i < lengthof(methods)) {
             if (typeof obj[n] == "named") { if (keyof obj[n] == keyof methods[i]) { break true } };
             i = i + 1;
         };
         if (found != true) { new_obj = new_obj + (obj[n],) };
         n = n + 1;
     };
-    n := 0; while(n < @dynamic len(methods)) {
+    n := 0; while(n < lengthof(methods)) {
         new_obj = new_obj + (methods[n],);
         n = n + 1;
     };
@@ -197,7 +197,7 @@ iter := (container?, wrapper?) ->
 		return () -> false;
 	} else {
 		return (container => container, wrapper => wrapper, n => 0) -> {
-			if (n >= @dynamic len(container)) {
+			if (n >= lengthof(container)) {
 				return false;
 			};
 			wrapper = container[n];
@@ -222,9 +222,9 @@ RelationTable := (keys => (,)) -> {
         },
         key_idx => (keys => (,)) -> {
             idx := (,);
-            n := 0; while(n < @dynamic len(keys)) {
+            n := 0; while(n < lengthof(keys)) {
                 found := false;
-                i := 0; while(i < @dynamic len(self.keys)) {
+                i := 0; while(i < lengthof(self.keys)) {
                     if (keys[n] == self.keys[i]) {
                         idx = idx + (i,);
                         found = true;
@@ -246,9 +246,9 @@ RelationTable := (keys => (,)) -> {
                 return null;
             };
             new_table := @dynamic RelationTable(keys);
-            n := 0; while(n < @dynamic len(self.data)) {
+            n := 0; while(n < lengthof(self.data)) {
                 row := (,);
-                i := 0; while(i < @dynamic len(idx)) {
+                i := 0; while(i < lengthof(idx)) {
                     row = row + (self.data[n][idx[i]],);
                     i = i + 1;
                 };
@@ -260,7 +260,7 @@ RelationTable := (keys => (,)) -> {
 
         filter => (condition => (v?, table?) -> false) -> {
             new_table := @dynamic RelationTable(self.keys);
-            n := 0; while(n < @dynamic len(self.data)) {
+            n := 0; while(n < lengthof(self.data)) {
                 if (condition(self.data[n], self) == true) {
                     new_table.append(self.data[n]);
                 };

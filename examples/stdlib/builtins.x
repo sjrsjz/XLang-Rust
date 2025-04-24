@@ -1,16 +1,16 @@
 /* 一个非常操蛋的用来禁止缓存参数的内置函数的包装 */
 builtins := bind {
-    'builtin_print' : @dynamic print,
-    'builtin_int' : @dynamic int,
-    'builtin_float' : @dynamic float,
-    'builtin_string' : @dynamic string,
-    'builtin_bool' : @dynamic bool,
-    'builtin_bytes' : @dynamic bytes,
-    'builtin_input' : @dynamic input,
-    'builtin_len' : @dynamic len,
+    'builtin_print' : @dynamic io.print,
+    'builtin_int' : @dynamic types.int,
+    'builtin_float' : @dynamic types.float,
+    'builtin_string' : @dynamic types.string,
+    'builtin_bool' : @dynamic types.bool,
+    'builtin_bytes' : @dynamic types.bytes,
+    'builtin_input' : @dynamic io.input,
+    'builtin_len' : @dynamic types.len,
     'builtin_load_clambda' : @dynamic load_clambda,
-    'builtin_json_decode' : @dynamic json_decode,
-    'builtin_json_encode' : @dynamic json_encode,
+    'builtin_json_decode' : @dynamic serialization.json_decode,
+    'builtin_json_encode' : @dynamic serialization.json_encode,
 
     print => () -> {
         result := self.builtin_print(...keyof this);
@@ -201,6 +201,21 @@ builtins := bind {
             keyof self.builtin_fs.append_bytes = ();
             return result;
         },
-    }
+    },
+    request => bind {
+        'builtin_request' : @dynamic async_request,
+        get => (url?) -> {
+            result := self.builtin_request.request(url, 'GET');
+            keyof this = (url?,);
+            keyof self.builtin_request.request = ();
+            return result;
+        },
+        post => (url?) -> {
+            result := self.builtin_request.request(url, 'POST');
+            keyof this = (url?,);
+            keyof self.builtin_request.request = ();
+            return result;
+        },
+    },
 };
 return builtins;
