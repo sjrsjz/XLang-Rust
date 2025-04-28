@@ -65,4 +65,16 @@ match := #(stdlib.match.match_alias) cases => {
     },
 };
 
-match(B::1)
+match(B::1);
+
+
+
+logger := stdlib.functools.with_reset_params(
+    (level => "info", msg => "") -> {
+        builtins.print("[" + stdlib.builtins.string(level) + "]" + stdlib.builtins.string(msg));
+    },
+);
+
+logger("info", "This is an info message");
+logger("error", "This is an error message");
+logger(msg => "This is a message with default level");

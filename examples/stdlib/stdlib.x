@@ -9,6 +9,7 @@
 @compile "./colored_text.x";
 @compile "./interface.x";
 @compile "./match.x";
+@compile "./functools.x";
 @required __stdlib_root;
 @required io;
 
@@ -38,6 +39,7 @@ return #try_catch {
         colored_text := #import_module "" : "colored_text";
         interface := #import_module "" : "interface";
         match := #import_module "" : "match";
+        functools := #import_module "" : "functools";
 
         return {
             builtins!,
@@ -46,6 +48,7 @@ return #try_catch {
             colored_text!,
             interface!,
             match!,
+            functools!,
         };
     }
 } : {
