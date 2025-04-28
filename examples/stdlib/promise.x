@@ -1,4 +1,5 @@
-try_catch := boundary (@dynamic (__stdlib_root!) -> dyn import (__stdlib_root + "/try_catch.xbc"))();
+@required __stdlib_root;
+try_catch := boundary ((__stdlib_root!) -> dyn import (__stdlib_root + "/try_catch.xbc"))();
 
 promise := (f?, then => (result?) -> {}, catch => (err?) -> {}, try_catch!) -> {
     wrapper := (f => f, then => then, catch => catch, try_catch!) -> {

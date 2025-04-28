@@ -1,3 +1,4 @@
+@required io;
 // 接口构造器
 interface_builder := Interface::(impls => ()) -> (obj?, impls!) -> bind {
     impl := (method?) 
@@ -40,11 +41,11 @@ object := object_builder();
 
 // 通过接口调用对象的方法
 interface := #interface object;
-@dynamic io.print(interface.say());
+io.print(interface.say());
 
 object2 := object_builder();
 #impl object2 : say => () -> return 'Hello, Universe!';
 
 // 替换对象
 interface.object.replace(object2);
-@dynamic io.print(interface.say());
+io.print(interface.say());

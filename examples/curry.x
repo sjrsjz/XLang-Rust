@@ -11,7 +11,7 @@ sum := (initial?) -> {
     self := wrap null;
     
     // 函数的实际实现
-    sum_fn := (next?, total => total, self => self) -> {
+    sum_fn := (next?, self => self) -> {
         if (next == null) {
             // 如果没有提供参数，返回当前总和
             return valueof total;

@@ -9,6 +9,8 @@
 @compile "./colored_text.x";
 @compile "./interface.x";
 @compile "./match.x";
+@required __stdlib_root;
+@required io;
 
 try_catch := (pair?) -> {
     Ok := (v?) -> bind Ok::{
@@ -23,11 +25,11 @@ try_catch := (pair?) -> {
 return #try_catch {
     () ->{
         // 模块载入的时候，__stdlib_root 变量会被传入当作模块自身所在目录
-        import_module := @dynamic (module?, __stdlib_root!) -> @static {
+        import_module := (module?) -> {
             // 这里的 module_dir 是一个字符串，表示模块所在的目录
             // module_name 是一个字符串，表示模块的名称
             // 返回模块执行的结果
-            return ((__stdlib_root!) -> dyn import(__stdlib_root + "/" + keyof module + "/" + valueof module + ".xbc"))();
+            return (() -> dyn import(__stdlib_root + "/" + keyof module + "/" + valueof module + ".xbc"))();
         };
 
         builtins := #import_module "" : "builtins";
@@ -48,8 +50,8 @@ return #try_catch {
     }
 } : {
     (f?, err?) -> {
-        @dynamic io.print("Error occurred:", err);
-        @dynamic io.print("Make sure you have call this module in the right way.");
+        io.print("Error occurred:", err);
+        io.print("Make sure you have call this module in the right way.");
         return null;
     }    
 }

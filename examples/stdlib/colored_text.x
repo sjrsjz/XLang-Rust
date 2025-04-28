@@ -2,9 +2,9 @@
 彩色文字构建库
 提供函数来为文本添加颜色和背景色
 */
-
-try_catch := boundary (@dynamic (__stdlib_root!) -> dyn import (__stdlib_root + "/try_catch.xbc"))();
-builtins := boundary (@dynamic (__stdlib_root!) -> dyn import (__stdlib_root + "/builtins.xbc"))();
+@required __stdlib_root;
+try_catch := boundary ((__stdlib_root!) -> dyn import (__stdlib_root + "/try_catch.xbc"))();
+builtins := boundary ((__stdlib_root!) -> dyn import (__stdlib_root + "/builtins.xbc"))();
 
 colors := {
     // 前景色
@@ -48,9 +48,9 @@ colors := {
 };
 
 // 核心函数：为文本添加颜色
-colorize := (text?, fg?, bg?, colors!, try_catch!, builtins!) -> {
+colorize := (text?, fg?, bg?) -> {
     prefix := "";
-    quick_check := (v?, colors!, try_catch!, builtins!) -> {
+    quick_check := (v?) -> {
         if (v == null) {
             return false; // 如果颜色为null，返回false
         };

@@ -1,5 +1,6 @@
-try_catch := boundary (@dynamic (__stdlib_root!) -> dyn import (__stdlib_root + "/try_catch.xbc"))();
-builtins := boundary (@dynamic (__stdlib_root!) -> dyn import (__stdlib_root + "/builtins.xbc"))();
+@required __stdlib_root;
+try_catch := boundary ((__stdlib_root!) -> dyn import (__stdlib_root + "/try_catch.xbc"))();
+builtins := boundary ((__stdlib_root!) -> dyn import (__stdlib_root + "/builtins.xbc"))();
 
 match_alias := (cases?) -> &(builtins!, try_catch!) {
     return (x?) -> &(cases!, builtins => $this.builtins, try_catch => $this.try_catch) {

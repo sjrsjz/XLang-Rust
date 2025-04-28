@@ -15,7 +15,7 @@ capture := {
     'C' : 3,
 };
 
-foo := (x?) -> &capture @dynamic print(x + $this.A);
+foo := (x?) -> &capture print(x + $this.A);
 
 foo(1);
 

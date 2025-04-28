@@ -8,7 +8,7 @@ if (stdlib == null) {
 };
 main_coroutine_stdlib := main_coroutine_stdlib.value();
 
-responses := 0..100 |> (i?, stdlib!) -> {
+responses := 0..100 |> (i?) -> {
     // create new instance of stdlib for each coroutine
     stdlib := stdlib();
     if (stdlib == null) {
@@ -20,8 +20,8 @@ responses := 0..100 |> (i?, stdlib!) -> {
     try_catch := stdlib.try_catch;
     
     // what the fuck
-    response := (stdlib!, request!, builtins!, try_catch!) -> #(try_catch.try_catch) {
-        (stdlib!, request!, builtins!) -> {
+    response := () -> #(try_catch.try_catch) {
+        () -> {
             result := request.get(url => "https://baidu.com", timeout => 10000)();
             if (result == null) {
                 raise Err::"Request failed";
@@ -30,7 +30,7 @@ responses := 0..100 |> (i?, stdlib!) -> {
             return result;
         }
     } : {
-        (f?, err?, builtins!) -> {
+        (f?, err?) -> {
             builtins.print("Error occurred");
         }
     };
@@ -44,5 +44,5 @@ responses := 0..100 |> (i?, stdlib!) -> {
 main_coroutine_stdlib.builtins.print("All requests sent.");
 
 responses |> (response?) -> {
-    @dynamic main_coroutine_stdlib.builtins.print("Response:", (await response).value().status_code);    
+    main_coroutine_stdlib.builtins.print("Response:", (await response).value().status_code);    
 };

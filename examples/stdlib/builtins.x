@@ -1,16 +1,24 @@
 /* 一个非常操蛋的用来禁止缓存参数的内置函数的包装 */
+@required io;
+@required types;
+@required serialization;
+@required async_request;
+@required string_utils;
+@required fs;
+@required time;
+@required load_clambda;
 builtins := bind {
-    'builtin_print' : @dynamic io.print,
-    'builtin_int' : @dynamic types.int,
-    'builtin_float' : @dynamic types.float,
-    'builtin_string' : @dynamic types.string,
-    'builtin_bool' : @dynamic types.bool,
-    'builtin_bytes' : @dynamic types.bytes,
-    'builtin_input' : @dynamic io.input,
-    'builtin_len' : @dynamic types.len,
-    'builtin_load_clambda' : @dynamic load_clambda,
-    'builtin_json_decode' : @dynamic serialization.json_decode,
-    'builtin_json_encode' : @dynamic serialization.json_encode,
+    'builtin_print' : io.print,
+    'builtin_int' : types.int,
+    'builtin_float' : types.float,
+    'builtin_string' : types.string,
+    'builtin_bool' : types.bool,
+    'builtin_bytes' : types.bytes,
+    'builtin_input' : io.input,
+    'builtin_len' : types.len,
+    'builtin_load_clambda' : load_clambda,
+    'builtin_json_decode' : serialization.json_decode,
+    'builtin_json_encode' : serialization.json_encode,
 
     print => () -> {
         result := self.builtin_print(...keyof this);
@@ -79,7 +87,7 @@ builtins := bind {
         return result;
     },
     string_utils => bind {
-        'builtin_string_utils' : @dynamic string_utils,
+        'builtin_string_utils' : string_utils,
         join => (sep?, arr?) -> {
             result := self.builtin_string_utils.join(sep, arr);
             keyof this = (sep?, arr?);
@@ -134,7 +142,7 @@ builtins := bind {
         },
     },
     fs => bind {
-        'builtin_fs' : @dynamic fs,
+        'builtin_fs' : fs,
         exists => (path?) -> {
             result := self.builtin_fs.exists(path);
             keyof this = (path?,);
@@ -203,7 +211,7 @@ builtins := bind {
         },
     },
     request => bind {
-        'builtin_request' : @dynamic async_request,
+        'builtin_request' : async_request,
         get => (url?, headers?, body?, timeout?) -> {
             result := self.builtin_request.request(url!, method => 'GET', headers!, body!, timeout_ms => timeout);
             keyof this = (url?, headers?, body?, timeout?);
@@ -218,7 +226,7 @@ builtins := bind {
         },
     },
     time => bind {
-        'builtin_time' : @dynamic time,
+        'builtin_time' : time,
         sleep => (seconds?) -> {
             result := self.builtin_time.sleep(seconds);
             keyof this = (seconds?,);

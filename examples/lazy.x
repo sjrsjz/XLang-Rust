@@ -1,3 +1,4 @@
+@required io;
 lazy_value := (expensive_computation?) -> {
     if (valueof expensive_computation == null) {
         expensive_computation()
@@ -7,8 +8,8 @@ lazy_value := (expensive_computation?) -> {
 };
 
 expensive_computation := () -> {
-    @dynamic io.print("Expensive computation executed");
+    io.print("Expensive computation executed");
     return 42;
 };
-@dynamic io.print(lazy_value(expensive_computation));
-@dynamic io.print(lazy_value(expensive_computation));
+io.print(lazy_value(expensive_computation));
+io.print(lazy_value(expensive_computation));

@@ -8,10 +8,10 @@ Ok := (v?) -> bind Ok::{
 };
 is_err := (v?) -> "Err" in {aliasof v | () -> true};
 
-try := (f?, is_err!) -> bind {
+try := (f?) -> bind {
     'result': wrap null,
     value => () -> return valueof self.result,
-    catch => (err_handler?, f!, is_err!) -> {
+    catch => (err_handler?) -> {
         result := boundary f(...(keyof f));
         if (is_err(result)) {
             err_handler(result);
@@ -26,7 +26,7 @@ try := (f?, is_err!) -> bind {
     },
 };
 
-try_catch := (pair?, Ok!) -> {
+try_catch := (pair?) -> {
     return (valueof pair)(keyof pair, boundary {
         return Ok((keyof pair)());
     });

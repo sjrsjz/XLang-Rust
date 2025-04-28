@@ -64,7 +64,7 @@ table.append(("Bob", 30),);
 table.append(("Charlie", 40),);
 table.append(("David", 50),);
 table.append(("Eve", 60),);
-@dynamic print(table.data);
-@dynamic print(table.project(("name",),).data);
+print(table.data);
+print(table.project(("name",),).data);
 
-@dynamic print(table.filter((row?, table?) -> {row[1] > 30}).project(("name",),).data);
+print(table.filter((row?, table?) -> {row[1] > 30}).project(("name",),).data);

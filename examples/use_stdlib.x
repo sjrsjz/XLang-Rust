@@ -18,11 +18,11 @@ try_catch.try(
     }
 ).catch(
     (err?) -> {
-        @dynamic builtins.print(colored_text.colorize("Error: " + err.value(), "red"));
+        builtins.print(colored_text.colorize("Error: " + err.value(), "red"));
     }
 ).finally(
     () -> {
-        @dynamic builtins.print(colored_text.colorize("Finally block executed", "green"));
+        builtins.print(colored_text.colorize("Finally block executed", "green"));
     }
 );
 
@@ -30,7 +30,7 @@ result := #(try_catch.try_catch) {
     () -> "A"[-1]
 } : {
     (f?, err?) -> {
-        @dynamic builtins.print("Error occurred:", err, "in", f);
+        builtins.print("Error occurred:", err, "in", f);
     }
 };
 
@@ -58,10 +58,10 @@ my_promise := promise.promise(
 
 match := #(stdlib.match.match_alias) cases => {
     A => (x?) -> {
-        @dynamic builtins.print("Matched case A with value:", x);
+        builtins.print("Matched case A with value:", x);
     },
     B => (x?) -> {
-        @dynamic builtins.print("Matched case B with value:", x);
+        builtins.print("Matched case B with value:", x);
     },
 };
 

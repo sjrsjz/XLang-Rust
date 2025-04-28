@@ -1,5 +1,5 @@
 // 接口构造器
-interface_builder := Interface::(impls => ()) -> (obj?, impls!) -> bind {
+interface_builder := Interface::(impls => ()) -> (obj?) -> bind {
     impl := (method?) 
         -> {method} 
         => (__method__ => method) 
@@ -13,7 +13,7 @@ interface_builder := Interface::(impls => ()) -> (obj?, impls!) -> bind {
             value => () -> valueof self.obj
         },
     ) + (
-        impls |> (name?, impl!) -> impl(name) // 映射
+        impls |> (name?) -> impl(name) // 映射
     )
 };
 

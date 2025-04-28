@@ -28,15 +28,15 @@ result := try(
     }
 ).catch(
     (err?) -> {
-        @dynamic print("Caught error:", err);
+        print("Caught error:", err);
     }
 ).finally(
     (finally?) -> {
-        @dynamic print("Finally block executed");
+        print("Finally block executed");
     }
 ).value();
 
-@dynamic print("Result:", result);
+print("Result:", result);
 
 
 x := 1;
@@ -50,12 +50,12 @@ result := try(
     }
 ).catch(
     (err?) -> {
-        @dynamic print("Caught error:", err);
+        print("Caught error:", err);
     }
 ).finally(
     (finally?) -> {
-        @dynamic print("Finally block executed");
+        print("Finally block executed");
     }
 ).value();
 
-@dynamic print("Result:", result);
+print("Result:", result);

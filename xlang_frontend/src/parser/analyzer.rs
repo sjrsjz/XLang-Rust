@@ -290,13 +290,15 @@ impl VariableContext {
     }
 
     pub fn get_variable(&self, name: &str) -> Option<&Variable> {
-        // 只在当前上下文的帧中从内到外查找变量
-        for frame in self.current_context().iter().rev() {
-            if let Some(var) = frame.variables.iter().find(|v| v.name == name) {
-                return Some(var);
+        for frames in self.contexts.iter().rev() {
+            for frame in frames.iter().rev() {
+                for var in frame.variables.iter().rev() {
+                    if var.name == name {
+                        return Some(var);
+                    }
+                }
             }
         }
-        // 不查找父级上下文
         None
     }
 
@@ -641,7 +643,7 @@ fn analyze_node<'t>(
                 // 处理 @required 注解的特殊情况，如果变量不存在，添加占位符
                 if let Some(first_child) = node.children.first() {
                     if let ASTNodeType::Variable(var_name) = &first_child.node_type {
-                        if context.get_variable(var_name).is_none() {
+                        if context.get_variable_current_context(var_name).is_none() {
                             // 如果变量不存在，添加一个占位符
                             let var = Variable {
                                 name: var_name.clone(),
@@ -682,13 +684,13 @@ fn analyze_node<'t>(
 
         ASTNodeType::Variable(var_name) => {
             // Check definition before potentially breaking
-            if context.get_variable(var_name).is_none() {
+            if context.get_variable_current_context(var_name).is_none() {
                 if !dynamic {
                     errors.push(AnalyzeError::UndefinedVariable(node)); // 使用 errors Vec
                 }
             }
             // Return variable type or Unknown
-            if let Some(var) = context.get_variable(var_name) {
+            if let Some(var) = context.get_variable_current_context(var_name) {
                 return var.assumed_type.clone();
             } else {
                 return AssumedType::Unknown;
@@ -1463,7 +1465,7 @@ pub fn auto_capture<'t>(
                 // If it's a required annotation, we need to capture the variable
                 if let Some(var_name) = node.children.get(0) {
                     if let ASTNodeType::Variable(var_name_str) = &var_name.node_type {
-                        if context.get_variable(var_name_str).is_none() {
+                        if context.get_variable_current_context(var_name_str).is_none() {
                             // If the variable is not defined in the current context, add it to required_vars
                             let _ = context.define_variable(&Variable {
                                 name: var_name_str.clone(),
@@ -1585,8 +1587,8 @@ pub fn auto_capture<'t>(
                         ASTNode {
                             node_type: ASTNodeType::Expressions,
                             children: vec![],
-                            start_token: None,
-                            end_token: None,
+                            start_token: node.start_token,
+                            end_token: node.end_token,
                         },
                     )
                 };
@@ -1640,26 +1642,26 @@ pub fn auto_capture<'t>(
                     body_vars.extend(child_vars); // These are requirements *within* the lambda's context
                     body_node = Some(child_node);
                 }
+                let _ = context.pop_context(); // 退出 Lambda，恢复到父上下文
 
                 // Determine actual captured variables needed from the outer scope
                 let mut captured_vars = HashSet::new();
                 for var_name in body_vars {
                     // Is this variable defined within the lambda's own context (args, this, self)?
-                    if context.get_variable_current_context(&var_name).is_none()
-                        && context.get_variable(&var_name).is_none()
+                    if context.get_variable(&var_name).is_some()
                     {
-                        // Not defined locally in the lambda's context.
-                        // It's required from an outer scope. Add to captured_vars.
                         captured_vars.insert(var_name.clone());
+                        if context.get_variable_current_context(&var_name).is_none() {
+                            // If not defined in the current context, it's a captured variable
+                            required_vars.insert(var_name.clone());
+                        }
                     } else {
-                        // Add the truly captured variables to the outer required_vars set
-                        required_vars.extend(captured_vars.clone());
+                        // If the variable is not defined in the current context, it's required from outside
+                        required_vars.insert(var_name.clone());
                     }
                 }
 
                 // Reconstruct parameter list, potentially adding captured variables
-                // (This part depends on how your runtime handles captures - are they implicit or explicit params?)
-                // Your original code adds them as NamedTo Variable nodes. Let's keep that for consistency.
                 let mut final_params_node =
                     params_node_opt.unwrap_or_else(|| node.children.first().unwrap().clone());
                 for var in &captured_vars {
@@ -1670,23 +1672,22 @@ pub fn auto_capture<'t>(
                             ASTNode {
                                 node_type: ASTNodeType::String(var.clone()),
                                 children: Vec::new(),
-                                start_token: None,
-                                end_token: None,
+                                start_token: node.end_token,
+                                end_token: node.end_token,
                             },
                             ASTNode {
                                 // This represents reading the captured var from the outer scope
                                 node_type: ASTNodeType::Variable(var.clone()),
                                 children: Vec::new(),
-                                start_token: None,
-                                end_token: None,
+                                start_token: node.end_token,
+                                end_token: node.end_token,
                             },
                         ],
-                        start_token: None,
-                        end_token: None,
+                        start_token: node.end_token,
+                        end_token: node.end_token,
                     });
                 }
 
-                let _ = context.pop_context(); // 退出 Lambda，恢复到父上下文
 
                 // Reconstruct children
                 let mut children = vec![final_params_node];

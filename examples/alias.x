@@ -4,14 +4,14 @@ print := builtins.print;
 my_object_1 := bind Object1::{
     'attribute': 'Hello, I am Object 1!',
     print => () -> {
-        @dynamic print(self.attribute);
+        print(self.attribute);
     }
 };
 
 my_object_2 := bind Object2::{
     'attribute': 'Hello, I am Object 2!',
     print => () -> {
-        @dynamic print(self.attribute);
+        print(self.attribute);
     }
 };
 

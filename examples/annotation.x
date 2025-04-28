@@ -31,6 +31,8 @@ my_dynamic_function := () -> {
 
         Compilation error: AST analysis failed
         */
+
+        // Fix: 现在前端会自动解析并捕获动态参数，也可以使用 @required 提供占位符
     );
 };
 my_dynamic_function(

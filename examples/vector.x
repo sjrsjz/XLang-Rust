@@ -1,5 +1,8 @@
+@required load_clambda;
+@required io;
+@required types;
 mathlib := {
-    clambda := @dynamic load_clambda("../modules/clambda_math_lib/clambda_math.so");
+    clambda := load_clambda("../modules/clambda_math_lib/clambda_math.so");
     {
         // 封装，由于 C 库一般不接受命名参数，所以这里包装一层
         sin => (x?) -> &clambda (sin::() -> dyn $this)(x),
@@ -20,10 +23,10 @@ mathlib := {
         e => (e::() -> dyn clambda)(),
     }
 };
-print := @dynamic io.print;
-string := @dynamic types.string;
+print := io.print;
+string := types.string;
 
-@dynamic print(mathlib.sqrt(4));
+print(mathlib.sqrt(4));
 
 Vector := (data => ()) -> &mathlib bind Vector::{
     constructor := this;
@@ -82,7 +85,7 @@ Vector := (data => ()) -> &mathlib bind Vector::{
         str := "[";
         n := 0;
         while (n < lengthof self.data) {
-            str = str + @dynamic string(self.data[n]);
+            str = str + string(self.data[n]);
             n = n + 1;
             if (n < lengthof self.data) {
                 str = str + ", ";
@@ -97,22 +100,22 @@ A := Vector((1, 2, 3),);
 B := Vector((4, 5, 6),);
 
 C := A.add(B);
-@dynamic print(C.data);
+print(C.data);
 
 D := A.sub(B);
-@dynamic print(D.data);
+print(D.data);
 
 E := A.dot(B);
-@dynamic print(E);
+print(E);
 
 F := A.norm();
-@dynamic print(F);
+print(F);
 
 G := A.scalar(2);
-@dynamic print(G.data);
+print(G.data);
 
 H := A.normalize();
-@dynamic print(H.data);
+print(H.data);
 
 I := A.to_string();
-@dynamic print(I);
+print(I);
