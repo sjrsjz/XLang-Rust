@@ -14,7 +14,7 @@ builtins.print("Hello, World!");
 
 try_catch.try(
     () -> {
-        @dynamic builtins.print(colored_text.colorize("Hello, World!", "r7ed"));
+        builtins.print(colored_text.colorize("Hello, World!", "r7ed"));
     }
 ).catch(
     (err?) -> {
