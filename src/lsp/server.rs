@@ -9,7 +9,7 @@ use url::Url;
 
 use xlang_frontend::dir_stack::DirStack;
 use crate::lsp::semantic::encode_semantic_tokens;
-use xlang_frontend::parser::analyzer;
+use xlang_frontend::parser::analyzer::{self, auto_capture_and_rebuild};
 use xlang_frontend::parser::ast::build_ast;
 use xlang_frontend::parser::lexer;
 
@@ -296,6 +296,7 @@ impl LspServer {
         let lex_result = lexer::lexer::reject_comment(&lex_result);
         let parse_result = build_ast(&lex_result);
         if let Ok(ast) = parse_result {
+            let ast = auto_capture_and_rebuild(&ast).1;
             // 2. 将 LSP Position 转换为字节偏移
             if let Some(byte_offset) = position_to_byte_offset(&document.content, position.clone())
             {

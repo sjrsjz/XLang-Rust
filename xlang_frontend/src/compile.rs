@@ -1,6 +1,7 @@
 use colored::Colorize;
 
 use crate::dir_stack::DirStack;
+use crate::parser::analyzer::auto_capture_and_rebuild;
 use crate::parser::lexer::lexer;
 use xlang_vm_core::instruction_set::VMInstructionPackage;
 use xlang_vm_core::ir::Functions;
@@ -26,6 +27,7 @@ pub fn build_code(code: &str, dir_stack: &mut DirStack) -> Result<IRPackage, Str
             return Err(err_token.format(&tokens, code.to_string()).to_string());
         }
     };
+    let ast = auto_capture_and_rebuild(&ast).1;
 
     let analyse_result = analyze_ast(&ast, None, dir_stack);
     for error in &analyse_result.errors {
