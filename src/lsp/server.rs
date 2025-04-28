@@ -7,8 +7,8 @@ use log::{debug, error, info, warn};
 use serde_json::Value;
 use url::Url;
 
-use xlang_frontend::dir_stack::DirStack;
 use crate::lsp::semantic::encode_semantic_tokens;
+use xlang_frontend::dir_stack::DirStack;
 use xlang_frontend::parser::analyzer::{self, auto_capture_and_rebuild};
 use xlang_frontend::parser::ast::build_ast;
 use xlang_frontend::parser::lexer;
@@ -249,10 +249,41 @@ impl LspServer {
 
         // 添加XLang关键字
         let keywords = vec![
-            "if", "else", "while", "return", "break", "continue", "and", "or", "not", "null", "in",
-            "async", "await", "emit", "deepcopy", "import", "keyof", "valueof", "typeof",
-            "selfof", "dyn", "copy", "ref", "deref", "assert", "wrap", "wipe", "aliasof", "bind",
-            "boundary", "collect", "raise", "xor", "captureof", "lengthof"
+            "if",
+            "else",
+            "while",
+            "return",
+            "break",
+            "continue",
+            "and",
+            "or",
+            "not",
+            "null",
+            "in",
+            "async",
+            "await",
+            "emit",
+            "deepcopy",
+            "import",
+            "keyof",
+            "valueof",
+            "typeof",
+            "selfof",
+            "dyn",
+            "copy",
+            "ref",
+            "deref",
+            "assert",
+            "wrap",
+            "wipe",
+            "aliasof",
+            "bind",
+            "boundary",
+            "collect",
+            "raise",
+            "xor",
+            "captureof",
+            "lengthof",
         ];
         for keyword in keywords {
             items.push(CompletionItem {
@@ -336,9 +367,8 @@ impl LspServer {
                 // 4. 如果分析器在断点处捕获了上下文，则提取变量
                 if let Some(context) = analysis_output.context_at_break {
                     // 从内到外遍历作用域帧
-                    let last_context = context.last_context();
-                    if let Some(last_context) = last_context {
-                        for frame in last_context.iter().rev() {
+                    for context in context.all_contexts().iter().rev() {
+                        for frame in context.iter().rev() {
                             for var in &frame.variables {
                                 // 添加到 HashSet 以确保唯一性
                                 if unique_vars.insert(var.name.clone()) {

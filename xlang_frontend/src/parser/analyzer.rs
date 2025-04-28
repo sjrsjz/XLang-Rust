@@ -44,6 +44,9 @@ impl VariableContext {
     pub fn last_context(&self) -> Option<&Vec<VariableFrame>> {
         self.contexts.last()
     }
+    pub fn all_contexts(&self) -> &Vec<Vec<VariableFrame>> {
+        &self.contexts
+    }
 }
 
 #[derive(Debug)]
