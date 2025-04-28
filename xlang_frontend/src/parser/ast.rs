@@ -530,7 +530,7 @@ pub enum ASTNodeModifier {
     LengthOf, // LengthOf
 }
 
-#[derive(Debug)]
+#[derive(Debug, Clone)]
 pub struct ASTNode<'t> {
     pub node_type: ASTNodeType,             // Type of the node
     pub start_token: Option<&'t Token<'t>>, // Start Token associated with the node

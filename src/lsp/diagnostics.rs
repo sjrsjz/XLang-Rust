@@ -1,5 +1,6 @@
 use log::{debug, error, info};
 use url::Url;
+use xlang_frontend::parser::analyzer::auto_capture_and_rebuild;
 
 use super::document::TextDocument;
 use super::protocol::*;
@@ -81,6 +82,7 @@ pub fn validate_document(document: &TextDocument) -> (Vec<Diagnostic>, Option<Ve
     
     match build_ast(gathered) {
         Ok(ast) => {
+            let ast = auto_capture_and_rebuild(&ast).1;
             // 解析成功，没有错误
             info!("文档解析成功: {}", document.uri);
             info!("分析变量定义: {}", document.uri);

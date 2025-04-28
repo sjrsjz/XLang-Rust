@@ -1,3 +1,5 @@
+use std::collections::HashSet;
+
 use crate::{
     compile::{build_code, compile_to_bytecode},
     dir_stack::DirStack,
@@ -298,6 +300,15 @@ impl VariableContext {
         None
     }
 
+    pub fn get_variable_last_context(&self, name: &str) -> Option<&Variable> {
+        // 只在当前上下文的最后一个帧中查找变量
+        if let Some(frame) = self.current_context().last() {
+            frame.variables.iter().find(|v| v.name == name)
+        } else {
+            None
+        }
+    }
+
     // 在当前上下文中推入一个新的帧
     pub fn push_frame(&mut self) {
         self.current_context_mut().push(VariableFrame {
@@ -494,52 +505,65 @@ fn analyze_node<'t>(
             let is_dynamic = match annotation.as_str() {
                 "dynamic" => true,
                 "static" => false,
-                "compile" => if break_at_position.is_none() {
-                    // 特殊处理 @compile 注解 (当非断点分析时)
-                    for child in &node.children {
-                        // 检查子节点是否为字符串
-                        if let ASTNodeType::String(file_path) = &child.node_type {
-                            let read_file = std::fs::read_to_string(file_path);
-                            if let Err(e) = read_file {
-                                // 使用 AnalyzeWarn::CompileError 记录读取错误
-                                let error_message =
-                                    format!("Failed to read file '{}': {}", file_path, e);
-                                warnings.push(AnalyzeWarn::CompileError(child, error_message));
-                            // 使用 child 作为错误关联的节点
-                            } else {
-                                let parent_dir = std::path::Path::new(file_path)
-                                    .parent()
-                                    .unwrap_or_else(|| std::path::Path::new("."))
-                                    .to_str()
-                                    .unwrap_or("");
-                                let _ = dir_stack.push(&parent_dir);
+                "compile" => {
+                    if break_at_position.is_none() {
+                        // 特殊处理 @compile 注解 (当非断点分析时)
+                        for child in &node.children {
+                            // 检查子节点是否为字符串
+                            if let ASTNodeType::String(file_path) = &child.node_type {
+                                let read_file = std::fs::read_to_string(file_path);
+                                if let Err(e) = read_file {
+                                    // 使用 AnalyzeWarn::CompileError 记录读取错误
+                                    let error_message =
+                                        format!("Failed to read file '{}': {}", file_path, e);
+                                    warnings.push(AnalyzeWarn::CompileError(child, error_message));
+                                // 使用 child 作为错误关联的节点
+                                } else {
+                                    let parent_dir = std::path::Path::new(file_path)
+                                        .parent()
+                                        .unwrap_or_else(|| std::path::Path::new("."))
+                                        .to_str()
+                                        .unwrap_or("");
+                                    let _ = dir_stack.push(&parent_dir);
 
-                                let code = read_file.unwrap();
-                                // 调用 build_code 函数编译代码
-                                let compile_result = build_code(&code, dir_stack);
-                                // 弹出目录栈
-                                let _ = dir_stack.pop();
+                                    let code = read_file.unwrap();
+                                    // 调用 build_code 函数编译代码
+                                    let compile_result = build_code(&code, dir_stack);
+                                    // 弹出目录栈
+                                    let _ = dir_stack.pop();
 
-                                match compile_result {
-                                    Ok(ir_package) => {
-                                        // 替换文件扩展名为xbc
-                                        let xbc_file_path = if let Some(pos) = file_path.rfind('.')
-                                        {
-                                            format!("{}.xbc", &file_path[..pos])
-                                        } else {
-                                            format!("{}.xbc", file_path)
-                                        };
-                                        let byte_code = compile_to_bytecode(&ir_package);
-                                        match byte_code {
-                                            Ok(byte_code) => {
-                                                // 将字节码写入文件
-                                                if let Err(e) =
-                                                    byte_code.write_to_file(&xbc_file_path)
-                                                {
-                                                    // 使用 AnalyzeWarn::CompileError 记录写入错误
-                                                    let error_message = format!(
+                                    match compile_result {
+                                        Ok(ir_package) => {
+                                            // 替换文件扩展名为xbc
+                                            let xbc_file_path =
+                                                if let Some(pos) = file_path.rfind('.') {
+                                                    format!("{}.xbc", &file_path[..pos])
+                                                } else {
+                                                    format!("{}.xbc", file_path)
+                                                };
+                                            let byte_code = compile_to_bytecode(&ir_package);
+                                            match byte_code {
+                                                Ok(byte_code) => {
+                                                    // 将字节码写入文件
+                                                    if let Err(e) =
+                                                        byte_code.write_to_file(&xbc_file_path)
+                                                    {
+                                                        // 使用 AnalyzeWarn::CompileError 记录写入错误
+                                                        let error_message = format!(
                                                         "Failed to write bytecode to file '{}': {}",
                                                         xbc_file_path, e
+                                                    );
+                                                        warnings.push(AnalyzeWarn::CompileError(
+                                                            child,
+                                                            error_message,
+                                                        )); // 使用 child 作为错误关联的节点
+                                                    }
+                                                }
+                                                Err(e) => {
+                                                    // 使用 AnalyzeWarn::CompileError 记录编译错误
+                                                    let error_message = format!(
+                                                        "Compilation failed for file '{}': {}",
+                                                        file_path, e
                                                     );
                                                     warnings.push(AnalyzeWarn::CompileError(
                                                         child,
@@ -547,86 +571,80 @@ fn analyze_node<'t>(
                                                     )); // 使用 child 作为错误关联的节点
                                                 }
                                             }
-                                            Err(e) => {
-                                                // 使用 AnalyzeWarn::CompileError 记录编译错误
-                                                let error_message = format!(
-                                                    "Compilation failed for file '{}': {}",
-                                                    file_path, e
-                                                );
-                                                warnings.push(AnalyzeWarn::CompileError(
-                                                    child,
-                                                    error_message,
-                                                )); // 使用 child 作为错误关联的节点
-                                            }
+                                        }
+                                        Err(e) => {
+                                            // 使用 AnalyzeWarn::CompileError 记录编译错误
+                                            let error_message = format!(
+                                                "Compilation failed for file '{}': {}",
+                                                file_path, e
+                                            );
+                                            warnings.push(AnalyzeWarn::CompileError(
+                                                child,
+                                                error_message,
+                                            ));
+                                            // 使用 child 作为错误关联的节点
                                         }
                                     }
-                                    Err(e) => {
-                                        // 使用 AnalyzeWarn::CompileError 记录编译错误
-                                        let error_message = format!(
-                                            "Compilation failed for file '{}': {}",
-                                            file_path, e
-                                        );
-                                        warnings
-                                            .push(AnalyzeWarn::CompileError(child, error_message));
-                                        // 使用 child 作为错误关联的节点
-                                    }
                                 }
-                            }
-                        } else {
-                            // @compile 后面应该跟一个字符串字面量
-                            let error_message = format!("@compile annotation expects a string literal file path, found: {:?}", child.node_type);
-                            warnings.push(AnalyzeWarn::CompileError(child, error_message));
-                            // 使用 child 作为错误关联的节点
-                        }
-                        // 仍然分析子节点本身，即使它是 @compile 的参数
-                        analyze_node(
-                            child,
-                            context,
-                            errors,   // Pass errors
-                            warnings, // Pass warnings
-                            dynamic,  // 继承 dynamic 状态或根据需要调整
-                            break_at_position,
-                            context_at_break,
-                            dir_stack,
-                        );
-                        if context_at_break.is_some() {
-                            return AssumedType::Unknown;
-                        }
-                    }
-                    // @compile 注解本身不贡献类型
-                    return AssumedType::Unknown;
-                } else {
-                    // 仅检查文件是否存在 (断点分析模式)
-                    for child in &node.children {
-                        if let ASTNodeType::String(file_path) = &child.node_type {
-                            if !std::path::Path::new(file_path).exists() {
-                                let error_message = format!("File specified in @compile not found: '{}'", file_path);
+                            } else {
+                                // @compile 后面应该跟一个字符串字面量
+                                let error_message = format!("@compile annotation expects a string literal file path, found: {:?}", child.node_type);
                                 warnings.push(AnalyzeWarn::CompileError(child, error_message));
                                 // 使用 child 作为错误关联的节点
                             }
-                        } else {
-                            // @compile 后面应该跟一个字符串字面量
-                            let error_message = format!("@compile annotation expects a string literal file path, found: {:?}", child.node_type);
-                            warnings.push(AnalyzeWarn::CompileError(child, error_message));
-                            // 使用 child 作为错误关联的节点
+                            // 仍然分析子节点本身，即使它是 @compile 的参数
+                            analyze_node(
+                                child,
+                                context,
+                                errors,   // Pass errors
+                                warnings, // Pass warnings
+                                dynamic,  // 继承 dynamic 状态或根据需要调整
+                                break_at_position,
+                                context_at_break,
+                                dir_stack,
+                            );
+                            if context_at_break.is_some() {
+                                return AssumedType::Unknown;
+                            }
                         }
-                        // 仍然分析子节点，以允许在路径字符串内部设置断点
-                        analyze_node(
-                            child,
-                            context,
-                            errors,
-                            warnings,
-                            dynamic, // 继承 dynamic 状态
-                            break_at_position,
-                            context_at_break,
-                            dir_stack,
-                        );
-                        if context_at_break.is_some() {
-                            return AssumedType::Unknown;
+                        // @compile 注解本身不贡献类型
+                        return AssumedType::Unknown;
+                    } else {
+                        // 仅检查文件是否存在 (断点分析模式)
+                        for child in &node.children {
+                            if let ASTNodeType::String(file_path) = &child.node_type {
+                                if !std::path::Path::new(file_path).exists() {
+                                    let error_message = format!(
+                                        "File specified in @compile not found: '{}'",
+                                        file_path
+                                    );
+                                    warnings.push(AnalyzeWarn::CompileError(child, error_message));
+                                    // 使用 child 作为错误关联的节点
+                                }
+                            } else {
+                                // @compile 后面应该跟一个字符串字面量
+                                let error_message = format!("@compile annotation expects a string literal file path, found: {:?}", child.node_type);
+                                warnings.push(AnalyzeWarn::CompileError(child, error_message));
+                                // 使用 child 作为错误关联的节点
+                            }
+                            // 仍然分析子节点，以允许在路径字符串内部设置断点
+                            analyze_node(
+                                child,
+                                context,
+                                errors,
+                                warnings,
+                                dynamic, // 继承 dynamic 状态
+                                break_at_position,
+                                context_at_break,
+                                dir_stack,
+                            );
+                            if context_at_break.is_some() {
+                                return AssumedType::Unknown;
+                            }
                         }
+                        // 在断点模式下，@compile 也不贡献类型
+                        return AssumedType::Unknown;
                     }
-                    // 在断点模式下，@compile 也不贡献类型
-                    return AssumedType::Unknown;
                 }
                 _ => dynamic, // Inherit dynamic status for other annotations
             };
@@ -1316,6 +1334,210 @@ fn analyze_tuple_params<'t>(
                     }
                 }
             }
+        }
+    }
+}
+
+pub fn auto_capture_and_rebuild<'t>(node: &'t ASTNode<'t>) -> (HashSet<String>, ASTNode<'t>) {
+    // return a set of required variables and reconstructed ASTNode
+    let mut context = VariableContext::new();
+    auto_capture(&mut context, node)
+}
+
+// Auto-capture variables in the context
+pub fn auto_capture<'t>(
+    context: &mut VariableContext,
+    node: &'t ASTNode<'t>,
+) -> (HashSet<String>, ASTNode<'t>) {
+    // return a set of required variables and reconstructed ASTNode
+    use super::ast::ASTNodeType;
+
+    fn param_analyzer<'t>(
+        context: &mut VariableContext,
+        node: &'t ASTNode<'t>,
+    ) -> (HashSet<String>, ASTNode<'t>) {
+        if let ASTNodeType::Tuple = node.node_type {
+            let mut required_vars = HashSet::new();
+            for param in &node.children {
+                if let ASTNodeType::NamedTo = param.node_type {
+                    if param.children.len() >= 2 {
+                        // Analyze default value first
+                        let (child_vars, child_node) = auto_capture(context, &param.children[1]);
+                        required_vars.extend(child_vars);
+                        return (required_vars, child_node);
+                    }
+                    // Define parameter variable
+                    if let ASTNodeType::String(var_name) = &param.children[0].node_type {
+                        required_vars.insert(var_name.clone());
+                        return (required_vars, node.clone());
+                    }
+                } else {
+                    // Handle other parameter types if necessary
+                    let (child_vars, child_node) = auto_capture(context, param);
+                    required_vars.extend(child_vars);
+                    return (required_vars, child_node);
+                }
+            }
+        }
+        return auto_capture(context, node);
+    }
+
+    match &node.node_type {
+        ASTNodeType::Variable(var_name) => {
+            // Check if the variable is defined in the context
+            if context.get_variable(var_name).is_none() {
+                // If not, add it to the set of required variables
+                let mut required_vars = HashSet::new();
+                required_vars.insert(var_name.clone());
+                return (required_vars, node.clone());
+            }
+            return (HashSet::new(), node.clone());
+        }
+        ASTNodeType::LambdaDef(is_dynamic_gen, is_capture) => {
+            let mut required_vars = HashSet::new();
+            let mut capture_node = None;
+            if *is_capture {
+                // 检查 child[1]
+                if let Some(func_node) = node.children.get(1) {
+                    let (child_vars, child_node) = auto_capture(context, func_node);
+                    required_vars.extend(child_vars);
+                    capture_node = Some(child_node);
+                }
+            }
+            // 进入 Lambda 定义，创建一个全新的、隔离的上下文
+            context.push_frame();
+            // 在新的上下文中处理参数（参数定义在第一个帧中）
+            if let Some(params) = node.children.first() {
+                let (child_vars, child_node) = param_analyzer(context, params);
+                required_vars.extend(child_vars);
+                if capture_node.is_none() {
+                    capture_node = Some(child_node);
+                }
+            }
+            let args = context.last_context().unwrap().last().unwrap().clone();
+            if context.pop_frame().is_err() {
+                // 弹出 Lambda 定义的帧
+                panic!("Failed to pop frame after Lambda definition");
+            }
+            if *is_dynamic_gen {
+                context.push_frame();
+                let (child_vars, child_node) = auto_capture(context, &node.children.last().unwrap());
+                required_vars.extend(child_vars);
+
+                if context.pop_frame().is_err() {
+                    panic!("Failed to pop frame after Lambda definition");
+                }
+                return (required_vars, ASTNode {
+                    node_type: ASTNodeType::LambdaDef(
+                        *is_dynamic_gen,
+                        *is_capture,
+                    ),
+                    children: match capture_node {
+                        Some(node) => vec![node.children[0].clone(), node, child_node],
+                        None => vec![node.children[0].clone(), child_node],                        
+                    },
+                    start_token: node.start_token,
+                    end_token: node.end_token,
+                });
+            } else {
+                context.push_context();
+                // 将参数添加到新的上下文中
+                for arg in args.variables {
+                    let _ = context.define_variable(&arg);
+                }
+                let _ = context.define_variable(&Variable {
+                    name: "this".to_string(),
+                    assumed_type: AssumedType::Lambda,
+                });
+                let _ = context.define_variable(&Variable {
+                    name: "self".to_string(),
+                    assumed_type: AssumedType::Tuple,
+                });
+
+                let mut body_node = None;
+                let mut body_vars = HashSet::new();
+                // 在新的上下文中分析 Lambda 体
+                if node.children.len() > 1 {
+                    // Lambda 体可能创建自己的帧 (push_frame/pop_frame)
+                    let (child_vars, child_node) = auto_capture(
+                        context,
+                        &node.children.last().unwrap(),
+                    );
+                    body_vars.extend(child_vars);
+                    body_node = Some(child_node);
+                }
+
+                // 检查当前层是否有body_vars里的变量
+                let mut capture_vars = HashSet::new();
+                for var in body_vars {
+                    if context.get_variable_last_context(&var).is_none() {
+                        if context.get_variable(&var).is_some() {
+                            required_vars.insert(var.clone());
+                        } else {
+                            // 如果变量在当前上下文中未定义，不做处理
+                        }
+                    } else {
+                        // 如果变量在当前上下文中定义，添加到捕获变量列表
+                        capture_vars.insert(var.clone());
+                    }
+                }
+
+                let mut params = node.children[0].clone();
+                // 将捕获变量添加到参数列表中
+                for var in capture_vars {
+                    params.children.push(ASTNode {
+                        node_type: ASTNodeType::NamedTo,
+                        children: vec![
+                            ASTNode {
+                                node_type: ASTNodeType::String(var.clone()),
+                                children: Vec::new(),
+                                start_token: None,
+                                end_token: None,
+                            },
+                            ASTNode {
+                                node_type: ASTNodeType::Variable(var),
+                                children: Vec::new(),
+                                start_token: None,
+                                end_token: None,
+                            },
+                        ],
+                        start_token: None,
+                        end_token: None,
+                    });
+                }
+
+                let _ = context.pop_context(); // 退出 Lambda，恢复到父上下文
+                return (required_vars, ASTNode {
+                    node_type: ASTNodeType::LambdaDef(
+                        *is_dynamic_gen,
+                        *is_capture,
+                    ),
+                    children: match capture_node {
+                        Some(node) => match body_node {
+                            Some(body) => vec![params, node, body],
+                            None => vec![params, node],                            
+                        },
+                        None => match body_node {
+                            Some(body) => vec![params, body],
+                            None => vec![params],
+                        },
+                    },
+                    start_token: node.start_token,
+                    end_token: node.end_token,
+                });
+            }
+        }
+        _ => {
+            // Handle other node types
+            let mut required_vars = HashSet::new();
+            let mut new_node = node.clone();
+            new_node.children = Vec::new();
+            for child in &node.children {
+                let (child_vars, child_node) = auto_capture(context, child);
+                required_vars.extend(child_vars);
+                new_node.children.push(child_node);
+            }
+            return (required_vars, new_node);
         }
     }
 }
