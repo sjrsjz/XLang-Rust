@@ -107,10 +107,14 @@ pub fn load_lambda(
             let mut instruction = vm.get_object_and_check(0)?;
             let mut idx = 1;
             let mut capture = None;
-            if let OpcodeArgument::Int32(should_capture) = opcode.operand3 {
-                if should_capture != 0 {
+            let mut dynamic_params = false;
+            if let OpcodeArgument::Int32(flags) = opcode.operand3 {
+                if flags & 1 != 0 {
                     capture = Some(vm.get_object_and_check(1)?);
                     idx = 2;
+                }
+                if flags & 2 != 0 {
+                    dynamic_params = true;
                 }
             }
             let mut default_args_tuple = vm.get_object_and_check(idx)?;
@@ -144,6 +148,7 @@ pub fn load_lambda(
                 None,
                 &mut VMLambdaBody::VMInstruction(instruction.clone()),
                 &mut lambda_result,
+                dynamic_params
             ));
             // Pop objects from stack after successful operation
             if capture.is_some() {

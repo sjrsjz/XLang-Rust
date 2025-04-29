@@ -87,6 +87,7 @@ mod tests {
             None,
             &mut VMLambdaBody::VMInstruction(lambda_body.clone()),
             &mut default_result,
+            false
         ));
 
         //drop used objects
@@ -177,6 +178,7 @@ mod tests {
                 return Ok(result);
             }),
             &mut result,
+            false
         ));
         params.drop_ref();
         result.drop_ref();
@@ -197,6 +199,7 @@ mod tests {
             None,
             &mut VMLambdaBody::VMInstruction(lambda_body.clone()),
             &mut default_result,
+            false
         ));
 
         //drop used objects
@@ -393,6 +396,7 @@ mod tests {
             None,
             &mut VMLambdaBody::VMNativeGeneratorFunction(Arc::new(Box::new(TestGenerator::new()))),
             &mut result,
+            false
         ));
         params.drop_ref();
         result.drop_ref();
@@ -413,6 +417,7 @@ mod tests {
             None,
             &mut VMLambdaBody::VMInstruction(lambda_body.clone()),
             &mut default_result,
+            false
         ));
 
         //drop used objects

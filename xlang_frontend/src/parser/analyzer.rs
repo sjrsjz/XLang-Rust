@@ -725,7 +725,7 @@ fn analyze_node<'t>(
             }
             return assumed_type;
         }
-        ASTNodeType::LambdaDef(is_dynamic_gen, is_capture) => {
+        ASTNodeType::LambdaDef(is_dynamic_gen, is_capture, _) => {
             if *is_capture {
                 // 检查 child[1]
                 if let Some(func_node) = node.children.get(1) {
@@ -1531,7 +1531,7 @@ pub fn auto_capture<'t>(
             (required_vars, new_node)
         }
 
-        ASTNodeType::LambdaDef(is_dynamic_gen, is_capture) => {
+        ASTNodeType::LambdaDef(is_dynamic_gen, is_capture, is_dynmaic_params) => {
             // --- Existing LambdaDef logic ---
             // (Keeping your original logic as requested, but noting potential refinements needed
             // based on the simplified approach for other nodes and parameter handling)
@@ -1613,7 +1613,7 @@ pub fn auto_capture<'t>(
                 return (
                     required_vars,
                     ASTNode {
-                        node_type: ASTNodeType::LambdaDef(*is_dynamic_gen, *is_capture), // is_capture might need update based on actual captures
+                        node_type: ASTNodeType::LambdaDef(*is_dynamic_gen, *is_capture, *is_dynmaic_params), // is_capture might need update based on actual captures
                         children,
                         start_token: node.start_token,
                         end_token: node.end_token,
@@ -1707,6 +1707,7 @@ pub fn auto_capture<'t>(
                         node_type: ASTNodeType::LambdaDef(
                             *is_dynamic_gen,
                             *is_capture, // Use actual capture status
+                            *is_dynmaic_params
                         ),
                         children,
                         start_token: node.start_token,

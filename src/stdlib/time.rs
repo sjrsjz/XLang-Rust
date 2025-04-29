@@ -115,6 +115,7 @@ pub fn sleep_entry(tuple: GCRef, gc_system: &mut GCSystem) -> Result<GCRef, VMVa
         None, // self_object
         &mut VMLambdaBody::VMNativeGeneratorFunction(Arc::new(Box::new(generator))),
         &mut result,
+        false
     ));
 
     // Drop refs owned by the lambda now

@@ -36,7 +36,7 @@ pub enum IR{
     LoadString(String), // load string to stack
     LoadBytes(Vec<u8>), // load bytes to stack
     LoadBool(bool), // load bool to stack
-    LoadLambda(String, usize, bool), // signature, code position, should capture
+    LoadLambda(String, usize, bool, bool), // signature, code position, should capture
     ForkInstruction, // "fork" instruction and push the forked instruction gcref to stack
     BuildTuple(usize), // number of elements
     BuildKeyValue, // pop key and value from stack and build key value pair

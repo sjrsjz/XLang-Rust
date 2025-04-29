@@ -41,6 +41,7 @@ pub(crate) fn create_native_lambda(
         None, // self_object
         &mut VMLambdaBody::VMNativeFunction(native_fn),
         &mut result,
+        false
     ));
 
     // Drop refs owned by the lambda now

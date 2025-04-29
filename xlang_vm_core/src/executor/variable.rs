@@ -12,7 +12,7 @@ use colored::Colorize;
  * - 任何new对象的行为都需要使用gc_system，并且会产生一个native_gcref_object_count，虚拟机必须在某处drop_ref直到为0
  *
  */
-use std::{fmt::Debug, sync::Arc};
+use std::{clone, fmt::Debug, sync::Arc};
 
 #[derive(Debug, Clone)]
 pub enum VMStackObject {
@@ -2374,10 +2374,101 @@ impl VMTuple {
                 normal_index += 1;
             }
 
-            if normal_index < self.values.len() {
+            if normal_index < self.values.len() && self.values[normal_index].isinstance::<VMNamed>() {
                 // 找到位置，进行赋值
                 let value_ref = &mut self.values[normal_index];
                 try_assign_as_vmobject(value_ref, value)?;
+                assigned[normal_index] = true;
+                normal_index += 1;
+            } else {
+                // 没有更多位置，追加到末尾
+                self.values.push(value.clone());
+                self.traceable
+                    .add_reference(&mut self.values.last_mut().unwrap().clone());
+                assigned.push(true);
+            }
+        }
+        Ok(())
+    }
+
+
+    pub fn clone_and_assign_members(&mut self, other: &mut GCRef, gc_system: &mut GCSystem) -> Result<(), VMVariableError> {
+        // 确保参数是元组
+        if !other.isinstance::<VMTuple>() {
+            return Err(VMVariableError::ValueError2Param(
+                GCRef::wrap(self),
+                other.clone(),
+                "Expected a tuple".to_string(),
+            ));
+        }
+
+        let other_tuple = other.as_type::<VMTuple>();
+        let mut new_args_tuple = gc_system.new_object(VMTuple::new(&mut self.values.iter_mut().collect()));
+        let tuple = new_args_tuple.as_type::<VMTuple>();
+        // 分离命名参数和普通值
+        let mut key_values = Vec::new();
+        let mut normal_values = Vec::new();
+        let mut assigned = self
+            .values
+            .iter()
+            .map(|v| !v.isinstance::<VMNamed>())
+            .collect::<Vec<bool>>();
+
+        for item in &mut other_tuple.values {
+            if item.isinstance::<VMNamed>() {
+                key_values.push(item);
+            } else {
+                normal_values.push(item);
+            }
+        }
+
+        // 处理所有命名参数
+        for kv in key_values {
+            let mut found: bool = false;
+            // 在当前元组中查找匹配的键
+            for i in 0..self.values.len() {
+                if self.values[i].isinstance::<VMNamed>() {
+                    let self_named = self.values[i].as_type::<VMNamed>();
+                    let kv_named = kv.as_type::<VMNamed>();
+
+                    // 检查键是否匹配
+                    if try_eq_as_vmobject(self_named.get_const_key(), kv_named.get_const_key()) {
+                        
+                        let mut old_value = tuple.values[i].clone();
+                        tuple.traceable.add_reference(kv);
+                        tuple.values[i] = kv.clone();
+                        tuple.traceable.remove_reference(&mut old_value);
+                        assigned[i] = true;
+                        found = true;
+                        break;
+                    }
+                }
+            }
+
+            if !found {
+                // 如果没有找到匹配的键，添加新的键值对
+                self.values.push(kv.clone());
+                self.traceable
+                    .add_reference(&mut self.values.last_mut().unwrap().clone());
+                assigned.push(true)
+            }
+        }
+
+        // 按顺序处理普通值
+        let mut normal_index = 0;
+        for value in normal_values {
+            // 寻找一个未赋值的位置
+            while normal_index < assigned.len() && assigned[normal_index] {
+                normal_index += 1;
+            }
+
+            if normal_index < self.values.len() && self.values[normal_index].isinstance::<VMNamed>() {
+                // 找到位置，进行赋值
+                // let value_ref: &mut GCRef = &mut self.values[normal_index];
+                // try_assign_as_vmobject(value_ref, value)?;
+
+                
+
                 assigned[normal_index] = true;
                 normal_index += 1;
             } else {
@@ -2726,6 +2817,7 @@ pub struct VMLambda {
     traceable: GCTraceable,
     pub coroutine_status: VMCoroutineStatus,
     alias: Vec<String>,
+    pub dynamic_params: bool,
 }
 
 impl std::fmt::Debug for VMLambda {
@@ -2754,6 +2846,7 @@ impl VMLambda {
         self_object: Option<&mut GCRef>,
         lambda_body: &mut VMLambdaBody,
         result: &mut GCRef,
+        dynamic_params: bool
     ) -> Self {
         if !default_args_tuple.isinstance::<VMTuple>() {
             panic!("default_args_tuple must be a VMTuple");
@@ -2808,6 +2901,7 @@ impl VMLambda {
             result: result.clone(),
             coroutine_status: VMCoroutineStatus::Running,
             alias: Vec::new(),
+            dynamic_params,
         }
     }
 
@@ -2820,6 +2914,7 @@ impl VMLambda {
         lambda_body: &mut VMLambdaBody,
         result: &mut GCRef,
         alias: &Vec<String>,
+        dynamic_params: bool
     ) -> Self {
         if !default_args_tuple.isinstance::<VMTuple>() {
             panic!("default_args_tuple must be a VMTuple");
@@ -2874,6 +2969,7 @@ impl VMLambda {
             result: result.clone(),
             coroutine_status: VMCoroutineStatus::Running,
             alias: alias.clone(),
+            dynamic_params,
         }
     }
 
@@ -2972,6 +3068,7 @@ impl VMObject for VMLambda {
             &mut new_lambda_body,
             &mut new_result,
             &self.alias,
+            self.dynamic_params,
         ));
         new_default_args_tuple.drop_ref();
         match new_lambda_body {
@@ -3020,6 +3117,7 @@ impl VMObject for VMLambda {
             &mut new_lambda_body,
             &mut new_result,
             &self.alias,
+            self.dynamic_params,
         ));
         new_default_args_tuple.drop_ref();
         match new_lambda_body {

@@ -100,6 +100,7 @@ fn execute_ir(package: VMInstructionPackage, _dir_stack: &mut DirStack) -> Resul
         None,
         &mut VMLambdaBody::VMInstruction(lambda_instructions.clone()),
         &mut lambda_result,
+        false
     ));
     default_args_tuple.drop_ref();
     lambda_instructions.drop_ref();
@@ -167,6 +168,7 @@ fn execute_ir_repl(
         None,
         &mut VMLambdaBody::VMInstruction(lambda_instructions.clone()),
         &mut lambda_result,
+        false
     ));
 
     default_args_tuple.drop_ref();

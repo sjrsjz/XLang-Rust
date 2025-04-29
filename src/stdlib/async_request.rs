@@ -476,6 +476,7 @@ pub fn request(mut tuple: GCRef, gc_system: &mut GCSystem) -> Result<GCRef, VMVa
         None,
         &mut lambda_body,
         &mut result_placeholder,
+        false
     ));
 
     // 释放临时 GCRef

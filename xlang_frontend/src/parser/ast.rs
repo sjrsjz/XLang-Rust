@@ -459,7 +459,7 @@ pub enum ASTNodeType {
     Body,                        // {...}
     Boundary,                    // boundary {...}
     Assign,                      // x = expression
-    LambdaDef(bool, bool), // tuple -> body or tuple -> dyn expression or tuple -> &capture body ...
+    LambdaDef(bool, bool, bool), // tuple -> body or tuple -> dyn expression or tuple -> &capture body or dynamic tuple -> body
     Expressions,           // expression1; expression2; ...
     LambdaCall,            // x (tuple)
     Operation(ASTNodeOperation), // x + y, x - y, x * y, x / y ...
@@ -2353,7 +2353,7 @@ fn match_lambda_def<'t>(
     Ok((
         Some(ASTNode::new(
             // Use the new ASTNodeType variant
-            ASTNodeType::LambdaDef(is_dyn, is_capture),
+            ASTNodeType::LambdaDef(is_dyn, is_capture, false),
             Some(&tokens[current].first().unwrap()), // Start of parameters
             Some(&tokens[current + total_offset - 1].last().unwrap()), // End of body
             Some(children),
@@ -2448,6 +2448,8 @@ fn match_modifier<'t>(
             "collect",
             "captureof",
             "lengthof",
+            "dynamic",
+            "static",
         ]
         .contains(&tokens[current].first().unwrap().token)
     {
@@ -2464,6 +2466,45 @@ fn match_modifier<'t>(
                     Some(&tokens[current].first().unwrap()),
                     Some(&tokens[current + node_offset].last().unwrap()),
                     Some(vec![node]),
+                )),
+                node_offset + 1,
+            ));
+        }
+
+        if tokens[current].first().unwrap().token == "dynamic" {
+            let ASTNodeType::LambdaDef(is_dyn_gen, is_capture, _) = node.node_type else {
+                return Err(ParserError::ErrorStructure(
+                    tokens[current].first().unwrap(),
+                    "Dynamic modifier can only be used with lambda".to_string(),
+                ));   
+            };
+            let node = node.clone();
+            return Ok((
+                Some(ASTNode::new(
+                    ASTNodeType::LambdaDef(is_dyn_gen, is_capture, true),
+                    Some(&tokens[current].first().unwrap()),
+                    Some(&tokens[current + node_offset].last().unwrap()),
+                    Some(node.children),
+                )),
+                node_offset + 1,
+            ));
+        }
+
+
+        if tokens[current].first().unwrap().token == "static" {
+            let ASTNodeType::LambdaDef(is_dyn_gen, is_capture, _) = node.node_type else {
+                return Err(ParserError::ErrorStructure(
+                    tokens[current].first().unwrap(),
+                    "Dynamic modifier can only be used with lambda".to_string(),
+                ));   
+            };
+            let node = node.clone();
+            return Ok((
+                Some(ASTNode::new(
+                    ASTNodeType::LambdaDef(is_dyn_gen, is_capture, false),
+                    Some(&tokens[current].first().unwrap()),
+                    Some(&tokens[current + node_offset].last().unwrap()),
+                    Some(node.children),
                 )),
                 node_offset + 1,
             ));

@@ -129,7 +129,7 @@ impl IRTranslator {
                     );
                     self.code.push(value as u32);
                 }
-                IR::LoadLambda(signature, code_position, should_capture) => {
+                IR::LoadLambda(signature, code_position, should_capture, dynamic_params) => {
                     self.code.push(
                         Opcode32::build_opcode(
                             VMInstruction::LoadLambda as u8,
@@ -144,7 +144,7 @@ impl IRTranslator {
                     self.code.push(Opcode32::upper32(index as u64));
                     self.code.push(Opcode32::lower32(code_position as u64));
                     self.code.push(Opcode32::upper32(code_position as u64));
-                    self.code.push(should_capture as u32);
+                    self.code.push(should_capture as u32 | (dynamic_params as u32) << 1);
                 }
                 IR::ForkInstruction => {
                     self.code.push(

@@ -134,7 +134,7 @@ impl<'t> IRGenerator<'t> {
                 }
                 Ok(instructions)
             }
-            ASTNodeType::LambdaDef(is_dyn, is_capture) => {
+            ASTNodeType::LambdaDef(is_dyn, is_capture, is_dynamic_params) => {
                 let mut instructions = Vec::new();
                 let args = &ast_node.children[0];
                 let args_instructions = self.generate_without_redirect(args)?;
@@ -154,6 +154,7 @@ impl<'t> IRGenerator<'t> {
                             "__main__".to_string(),
                             ast_node.start_token.unwrap().position,
                             *is_capture,
+                            *is_dynamic_params
                         ),
                     ));
                 } else {
@@ -182,6 +183,7 @@ impl<'t> IRGenerator<'t> {
                             full_signature,
                             ast_node.start_token.unwrap().position,
                             *is_capture,
+                            *is_dynamic_params,
                         ),
                     ));
                 }
