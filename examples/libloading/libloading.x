@@ -1,4 +1,4 @@
-builtins := (() -> dyn import "../builtins.xbc")();
+builtins := (() -> dyn import "../stdlib/builtins.xbc")();
 print := builtins.print;
 
 clambda := () -> dyn @dynamic load_clambda("../../modules/clambda_lib/libvm_ffi.so");
