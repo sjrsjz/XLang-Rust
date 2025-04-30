@@ -1204,7 +1204,7 @@ pub fn call_lambda(
     let mut lambda = vm.get_object_and_check(1)?;
 
     if !lambda.isinstance::<VMLambda>() {
-        return Err(VMError::TryEnterNotLambda(lambda.clone())); // Clone before potential drop
+        return Err(VMError::TryEnterNotLambda(lambda.clone_ref())); // Clone before potential drop
     }
 
     let lambda_obj = lambda.as_type::<VMLambda>();

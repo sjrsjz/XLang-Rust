@@ -1,14 +1,29 @@
+@required io;
+
+// === 布尔逻辑 ===
 TRUE := (x?, y?) -> x;
 FALSE := (x?, y?) -> y;
-AND := (x?, y?) -> x(y, @dynamic FALSE);
-OR := (x?, y?) -> x(@dynamic TRUE, y);
-NOT := (x?) -> x(@dynamic FALSE, @dynamic TRUE);
-XOR := (x?, y?) -> x(@dynamic NOT(y), y);
+AND := (x?, y?) -> x(y, FALSE);
+OR := (x?, y?) -> x(TRUE, y);
+NOT := (x?) -> x(FALSE, TRUE);
+XOR := (x?, y?) -> x(NOT(y), y);
+IF := (C?, T?, F?) -> C(T, F);
 
+// === 对操作 ===
+// 构造对
+PAIR := (x?, y?) -> (f?) -> f(x, y);
+CONS := (x?, y?) -> (f?) -> f(x, y);
+
+// 取出对的元素
+CAR := (p?) -> p(TRUE); // 取第一个元素
+CDR := (p?) -> p(FALSE); // 取第二个元素
+UNPAIR := (p?) -> (f?) -> p(f, f); // 取出元素并应用函数
+
+// 布尔值转换函数
 to_bool := (f?) -> f(true, false);
 
-// 自然数的丘奇编码
-NUM := (n?) -> (f?, x?, n!) -> {
+// === 自然数 - 丘奇编码 ===
+NUM := (n?) -> (f?, x?) -> {
     y := wrap x;
     i := 0;
     while (i < n) {
@@ -18,29 +33,60 @@ NUM := (n?) -> (f?, x?, n!) -> {
     return valueof y;
 };
 
-ADD := (m?, n?) -> (f?, x?, m!, n!) -> m(f, n(f, x));
-MULT := (m?, n?) -> (f?, x?, m!, n!) -> m((g?, f!, n!) -> n(f, g), x);
+// 将丘奇数转换为整数
+to_int := ((x?) -> x + 1, 0);
 
-SUCC := (n?) -> (f?, x?, n!) -> f(n(f, x));
+// 零
+zero := NUM(0);
 
-to_int := (f?) -> f((x?) -> x + 1, 0);
+// 后继函数
+SUCC := (n?) -> (f?, x?) -> f(n(f, x));
 
-// print(NUM(10)(to_int, zero)());
+// 加法
+ADD := (m?, n?) -> (f?, x?) -> m(f, n(f, x));
 
-// print(ADD(NUM(1),NUM(100))(to_int, zero)());
+// 乘法
+MULT := (m?, n?) -> (f?, x?) -> m((g?) -> n(f, g), x);
 
+// 前驱函数
+PRED := (n?) -> (f?, x?) -> {
+    // 使用对计算技巧来实现前驱
+    // 创建一对(0,0)，然后应用n次变换，每次将(a,b)变为(b,b+1)
+    // 最后返回第一个元素
+    shift := (p?) -> PAIR(CDR(p), SUCC(CDR(p)));
+    init_pair := PAIR(zero, zero);
+    return CAR(n(shift, init_pair))(f, x);
+};
 
-// print(to_bool(MULT(AND, XOR)(TRUE, TRUE)));
-// print(to_bool(MULT(AND, XOR)(TRUE, FALSE)));
-// print(to_bool(MULT(AND, XOR)(FALSE, TRUE)));
-// print(to_bool(MULT(AND, XOR)(FALSE, FALSE)));
+// 减法
+SUB := (m?, n?) -> n(PRED, m);
 
-IF := (C?, T?, F?) -> C(T, F);
+// === 测试代码 ===
+// 加法和乘法测试
+io.print("加法测试: 10 + 100 =");
+io.print(ADD(NUM(10), NUM(100))(...to_int));
+io.print("乘法测试: 10 * 100 =");
+io.print(MULT(NUM(10), NUM(100))(...to_int));
 
-CAR := (p?, T => TRUE) -> p(T);
-CDR := (p?, F => FALSE) -> p(F);
-CONS := (x?, y?) -> (f?, x!, y!) -> f(x, y);
+// 布尔逻辑测试
+io.print("\n布尔逻辑测试 (MULT(AND, XOR)):");
+io.print(to_bool(MULT(AND, XOR)(TRUE, TRUE)));
+io.print(to_bool(MULT(AND, XOR)(TRUE, FALSE)));
+io.print(to_bool(MULT(AND, XOR)(FALSE, TRUE)));
+io.print(to_bool(MULT(AND, XOR)(FALSE, FALSE)));
 
-PRED := (p?, CONS!, CAR!, CDR!, SUCC!) -> CONS(SUCC(CAR(p)), CAR(p));
+// 对操作测试
+pair := PAIR(NUM(1), NUM(2));
+io.print("\n对操作测试:");
+io.print("第一个元素:");
+io.print(CAR(pair)(...to_int));
+io.print("第二个元素:");
+io.print(CDR(pair)(...to_int));
+io.print("UNPAIR测试:");
+io.print(UNPAIR(pair)(TRUE)(...to_int));
 
-@dynamic io.print(to_int(CDR(CONS(NUM(10), NUM(2)))));
+// 前驱和减法测试
+io.print("\n前驱测试: pred(10) =");
+io.print(PRED(NUM(10))(...to_int));
+io.print("减法测试: 10 - 5 =");
+io.print(SUB(NUM(10), NUM(5))(...to_int));

@@ -9,7 +9,7 @@ use super::variable::VMStackObject;
 pub enum ContextFrameType {
     FunctionFrame, // 函数帧
     NormalFrame,   // 普通帧
-    BoundaryFrame,      // 边界帧
+    BoundaryFrame, // 边界帧
 }
 
 #[derive(Debug)]
@@ -97,23 +97,41 @@ impl Context {
         stack: &mut Vec<VMStackObject>,
         instructions: &mut Vec<GCRef>,
     ) -> Result<(), ContextError> {
+        // 首先检查是否有边界帧
+        let has_boundary_frame = self
+            .frames
+            .iter()
+            .any(|(_, frame_type, _, _)| *frame_type == ContextFrameType::BoundaryFrame);
+
+        if !has_boundary_frame {
+            return Err(ContextError::NoFrame(ContextFrameType::BoundaryFrame));
+        }
+
+        // 验证栈指针是否有效
+        if self.stack_pointers.len() < self.frames.len() {
+            return Err(ContextError::ContextError(
+                "Stack pointers count mismatch".to_string(),
+            ));
+        }
+
+        // 执行实际的弹出操作
         while !self.frames.is_empty()
             && self.frames.last().unwrap().1 != ContextFrameType::BoundaryFrame
         {
             self.pop_frame_except_top(stack, instructions)?;
         }
-        if self.frames.is_empty() {
-            return Err(ContextError::NoFrame(ContextFrameType::BoundaryFrame));
+
+        // 处理边界帧本身
+        if !self.frames.is_empty() {
+            self.pop_frame_except_top(stack, instructions)?;
         }
-        // 处理边界帧的情况
-        self.pop_frame_except_top(stack, instructions)?;
+
         Ok(())
     }
-
     pub fn pop_frame_except_top(
         &mut self,
         stack: &mut Vec<VMStackObject>,
-        instructions: &mut Vec<GCRef>
+        instructions: &mut Vec<GCRef>,
     ) -> Result<(), ContextError> {
         // 处理单个帧弹出的情况
         if self.frames.is_empty() {
@@ -153,15 +171,16 @@ impl Context {
                     }
                 }
             }
-            
         }
 
         // 6. 截断栈（但不删除最后一个元素）
         if stack.is_empty() {
             return Err(ContextError::ContextError("Empty stack".to_string()));
         }
-        if stack_pointer >= stack.len(){
-            return Err(ContextError::ContextError("Stack pointer out of bounds".to_string()));
+        if stack_pointer >= stack.len() {
+            return Err(ContextError::ContextError(
+                "Stack pointer out of bounds".to_string(),
+            ));
         }
         stack[stack_pointer] = stack[stack.len() - 1].clone();
         stack.truncate(stack_pointer + 1);

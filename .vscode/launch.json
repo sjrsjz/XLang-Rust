@@ -20,7 +20,7 @@
             "args": [
                 //"repl"
                 "run",
-                "examples/request.x"
+                "test/test.x"
             ],
             "cwd": "${workspaceFolder}",
             "env": {
