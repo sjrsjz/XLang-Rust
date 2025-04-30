@@ -110,6 +110,7 @@ impl VMCoroutinePool {
     pub fn new_coroutine(
         &mut self,
         lambda_object: &mut GCRef,
+        args: &mut GCRef,
         gc_system: &mut GCSystem,
     ) -> Result<isize, VMError> {
         if !lambda_object.isinstance::<VMLambda>() {
@@ -132,12 +133,13 @@ impl VMCoroutinePool {
             }
         }
 
-        executor.init(lambda_object, gc_system)?;
+        executor.init(lambda_object, args, gc_system)?;
         self.executors.push((executor, self.gen_id));
         let id = self.gen_id;
         self.gen_id += 1;
 
         lambda_object.drop_ref();
+        args.drop_ref();
         Ok(id)
     }
 
@@ -249,8 +251,7 @@ impl VMCoroutinePool {
 
             if let Some(mut coroutines) = spawned_coroutines {
                 for coroutine in coroutines.iter_mut() {
-                    let lambda_object = &mut coroutine.lambda_ref;
-                    self.new_coroutine(lambda_object, gc_system)?;
+                    self.new_coroutine(&mut coroutine.lambda_ref, &mut coroutine.args, gc_system)?;
                 }
             }
 
@@ -265,6 +266,7 @@ impl VMCoroutinePool {
 #[derive(Debug)]
 pub struct SpawnedCoroutine {
     pub(super) lambda_ref: GCRef,
+    pub(super) args: GCRef,
 }
 
 type InstructionHandler = fn(
@@ -458,6 +460,7 @@ impl VMExecutor {
     pub fn enter_lambda(
         &mut self,
         lambda_object: &mut GCRef,
+        args: &mut GCRef,
         gc_system: &mut GCSystem,
     ) -> Result<(), VMError> {
         if !lambda_object.isinstance::<VMLambda>() {
@@ -507,9 +510,7 @@ impl VMExecutor {
             code_position,
             false,
         );
-        let default_args = &mut lambda.default_args_tuple;
-
-        for v_ref in default_args.as_type::<VMTuple>().values.iter_mut() {
+        for v_ref in args.as_type::<VMTuple>().values.iter_mut() {
             if !v_ref.isinstance::<VMNamed>() {
                 // return Err(VMError::InvalidArgument(
                 //     v_ref.clone(),
@@ -555,15 +556,22 @@ impl VMExecutor {
         if result.is_err() {
             return Err(VMError::ContextError(result.unwrap_err()));
         }
+
+        let result = self.context.let_var("arguments", args, gc_system);
+        if result.is_err() {
+            return Err(VMError::ContextError(result.unwrap_err()));
+        }
+
         Ok(())
     }
 
     pub fn init(
         &mut self,
         lambda_object: &mut GCRef,
+        args: &mut GCRef,
         gc_system: &mut GCSystem,
     ) -> Result<(), VMError> {
-        self.enter_lambda(lambda_object, gc_system)?;
+        self.enter_lambda(lambda_object, args, gc_system)?;
 
         if let VMLambdaBody::VMInstruction(_) =
             &lambda_object.as_const_type::<VMLambda>().lambda_body

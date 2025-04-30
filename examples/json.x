@@ -1,4 +1,5 @@
-v := @dynamic serialization.json_decode("""
+@required serialization;
+v := serialization.json_decode("""
 
 {
     "name": "John",

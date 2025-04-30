@@ -1,5 +1,5 @@
 @required io;
-node := (v?) -> (v!, next_node => (v?) -> this) -> next_node;
+node := (v?) -> dynamic(v!, next_node => (v?) -> this) -> next_node;
 
 node1 := node(1);
 node2 := node(2);

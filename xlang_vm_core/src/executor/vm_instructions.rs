@@ -148,7 +148,7 @@ pub fn load_lambda(
                 None,
                 &mut VMLambdaBody::VMInstruction(instruction.clone()),
                 &mut lambda_result,
-                dynamic_params
+                dynamic_params,
             ));
             // Pop objects from stack after successful operation
             if capture.is_some() {
@@ -1200,6 +1200,7 @@ pub fn call_lambda(
     gc_system: &mut GCSystem,
 ) -> Result<Option<Vec<SpawnedCoroutine>>, VMError> {
     let mut arg_tuple = vm.get_object_and_check(0)?;
+    let mut original_arg_tuple = arg_tuple.clone();
     let mut lambda = vm.get_object_and_check(1)?;
 
     if !lambda.isinstance::<VMLambda>() {
@@ -1209,14 +1210,25 @@ pub fn call_lambda(
     let lambda_obj = lambda.as_type::<VMLambda>();
 
     let signature = lambda_obj.signature.clone();
-    let result = lambda_obj
-        .default_args_tuple
-        .as_type::<VMTuple>()
-        .assign_members(&mut arg_tuple); // Pass arg_tuple by reference
-    if result.is_err() {
-        return Err(VMError::VMVariableError(result.unwrap_err()));
+    if lambda_obj.dynamic_params {
+        let result = lambda_obj
+            .default_args_tuple
+            .as_type::<VMTuple>()
+            .assign_members(&mut arg_tuple); // Pass arg_tuple by reference
+        if result.is_err() {
+            return Err(VMError::VMVariableError(result.unwrap_err()));
+        }
+        arg_tuple = lambda_obj.default_args_tuple.clone_ref();
+    } else {
+        let result = lambda_obj
+            .default_args_tuple
+            .as_type::<VMTuple>()
+            .clone_and_assign_members(&mut arg_tuple, gc_system); // Pass arg_tuple by reference
+        if result.is_err() {
+            return Err(VMError::VMVariableError(result.unwrap_err()));
+        }
+        arg_tuple = result.unwrap();
     }
-
     let clambda_signature = lambda_obj
         .alias_const()
         .first()
@@ -1227,12 +1239,11 @@ pub fn call_lambda(
             if body.isinstance::<VMCLambdaInstruction>() {
                 let clambda = body.as_type::<VMCLambdaInstruction>();
                 let mut result = clambda
-                    .call(
-                        &clambda_signature,
-                        &mut lambda_obj.default_args_tuple,
-                        gc_system,
-                    )
-                    .map_err(VMError::VMVariableError)?;
+                    .call(&clambda_signature, &mut arg_tuple, gc_system)
+                    .map_err(|e| {
+                        arg_tuple.drop_ref();
+                        VMError::VMVariableError(e)
+                    })?;
                 lambda_obj.set_result(&mut result);
 
                 // Pop objects from stack after successful operation
@@ -1243,6 +1254,7 @@ pub fn call_lambda(
                 // Drop references at the end
                 arg_tuple.drop_ref();
                 lambda.drop_ref();
+                original_arg_tuple.drop_ref();
                 return Ok(None);
             }
 
@@ -1250,7 +1262,7 @@ pub fn call_lambda(
             vm.pop_object()?; // Pop arg_tuple
             vm.pop_object()?; // Pop lambda
 
-            let enter_result = vm.enter_lambda(&mut lambda, gc_system); // Pass lambda by reference
+            let enter_result = vm.enter_lambda(&mut lambda, &mut arg_tuple, gc_system); // Pass lambda by reference
 
             // Drop references after potential enter_lambda
             arg_tuple.drop_ref();
@@ -1267,12 +1279,13 @@ pub fn call_lambda(
                 .get_table();
             let ip = *func_ips.get(&signature).unwrap() as isize;
             vm.ip = ip;
-
+            original_arg_tuple.drop_ref();
             Ok(None)
         }
         VMLambdaBody::VMNativeFunction(native_function) => {
             let result = native_function(arg_tuple.clone(), gc_system); // Clone arg_tuple for native call
             if result.is_err() {
+                arg_tuple.drop_ref();
                 return Err(VMError::VMVariableError(result.unwrap_err()));
             }
             let mut result = result.unwrap();
@@ -1286,12 +1299,14 @@ pub fn call_lambda(
             // Drop references at the end
             arg_tuple.drop_ref();
             lambda.drop_ref();
+            original_arg_tuple.drop_ref();
             Ok(None)
         }
         VMLambdaBody::VMNativeGeneratorFunction(ref mut generator) => {
             let result = match std::sync::Arc::get_mut(generator) {
                 Some(generator) => generator.init(&mut arg_tuple.clone(), gc_system), // Clone arg_tuple
                 None => {
+                    arg_tuple.drop_ref();
                     return Err(VMError::VMVariableError(VMVariableError::TypeError(
                         lambda.clone(), // Clone before potential drop
                         "Async function is not mutable".to_string(),
@@ -1299,6 +1314,7 @@ pub fn call_lambda(
                 }
             };
             if result.is_err() {
+                arg_tuple.drop_ref();
                 return Err(VMError::VMVariableError(result.unwrap_err()));
             }
 
@@ -1306,14 +1322,14 @@ pub fn call_lambda(
             vm.pop_object()?; // Pop arg_tuple
             vm.pop_object()?; // Pop lambda
 
-            let enter_result = vm.enter_lambda(&mut lambda, gc_system); // Pass lambda by reference
+            let enter_result = vm.enter_lambda(&mut lambda, &mut arg_tuple, gc_system); // Pass lambda by reference
 
             // Drop references after potential enter_lambda
             arg_tuple.drop_ref();
             lambda.drop_ref(); // lambda is now managed by enter_lambda or dropped if error
 
             enter_result?; // Propagate error from enter_lambda
-
+            original_arg_tuple.drop_ref();
             Ok(None)
         }
     }
@@ -1324,6 +1340,7 @@ pub fn async_call_lambda(
     gc_system: &mut GCSystem,
 ) -> Result<Option<Vec<SpawnedCoroutine>>, VMError> {
     let mut arg_tuple = vm.get_object_and_check(0)?;
+    let mut original_arg_tuple = arg_tuple.clone();
     let mut lambda = vm.get_object_and_check(1)?;
 
     if !lambda.isinstance::<VMLambda>() {
@@ -1332,17 +1349,30 @@ pub fn async_call_lambda(
 
     let lambda_obj = lambda.as_type::<VMLambda>();
 
-    let result = lambda_obj
-        .default_args_tuple
-        .as_type::<VMTuple>()
-        .assign_members(&mut arg_tuple); // Pass arg_tuple by reference
-    if result.is_err() {
-        return Err(VMError::VMVariableError(result.unwrap_err()));
+    if lambda_obj.dynamic_params {
+        let result = lambda_obj
+            .default_args_tuple
+            .as_type::<VMTuple>()
+            .assign_members(&mut arg_tuple); // Pass arg_tuple by reference
+        if result.is_err() {
+            return Err(VMError::VMVariableError(result.unwrap_err()));
+        }
+        arg_tuple = lambda_obj.default_args_tuple.clone_ref();
+    } else {
+        let result = lambda_obj
+            .default_args_tuple
+            .as_type::<VMTuple>()
+            .clone_and_assign_members(&mut arg_tuple, gc_system); // Pass arg_tuple by reference
+        if result.is_err() {
+            return Err(VMError::VMVariableError(result.unwrap_err()));
+        }
+        arg_tuple = result.unwrap();
     }
 
     match lambda_obj.lambda_body {
         VMLambdaBody::VMInstruction(ref mut body) => {
             if body.isinstance::<VMCLambdaInstruction>() {
+                arg_tuple.drop_ref();
                 return Err(VMError::InvalidArgument(
                     arg_tuple.clone(), // Clone before potential drop
                     "Async call not supported for VMCLambdaInstruction".to_string(),
@@ -1350,6 +1380,7 @@ pub fn async_call_lambda(
             }
             let spawned_coroutines = vec![SpawnedCoroutine {
                 lambda_ref: lambda.clone_ref(), // Clone lambda for the coroutine
+                args: arg_tuple.clone_ref(),
             }];
 
             // Pop objects from stack after successful operation
@@ -1360,12 +1391,16 @@ pub fn async_call_lambda(
             // Drop references at the end
             arg_tuple.drop_ref();
             // lambda.drop_ref(); // Don't drop original lambda, it was pushed back
+            original_arg_tuple.drop_ref();
             Ok(Some(spawned_coroutines))
         }
-        VMLambdaBody::VMNativeFunction(_) => Err(VMError::InvalidArgument(
-            arg_tuple.clone(), // Clone before potential drop
-            "Native function cannot be async".to_string(),
-        )),
+        VMLambdaBody::VMNativeFunction(_) => {
+            arg_tuple.drop_ref();
+            Err(VMError::InvalidArgument(
+                arg_tuple.clone(), // Clone before potential drop
+                "Native function cannot be async".to_string(),
+            ))
+        }
         VMLambdaBody::VMNativeGeneratorFunction(ref mut generator) => {
             match std::sync::Arc::get_mut(generator) {
                 Some(generator) => {
@@ -1375,6 +1410,7 @@ pub fn async_call_lambda(
                     }
                 }
                 None => {
+                    arg_tuple.drop_ref();
                     return Err(VMError::VMVariableError(VMVariableError::TypeError(
                         lambda.clone(), // Clone before potential drop
                         "Async function is not mutable".to_string(),
@@ -1383,6 +1419,7 @@ pub fn async_call_lambda(
             }
             let spawned_coroutines = vec![SpawnedCoroutine {
                 lambda_ref: lambda.clone_ref(), // Clone lambda for the coroutine
+                args: arg_tuple.clone_ref(),
             }];
 
             // Pop objects from stack after successful operation
@@ -1393,7 +1430,7 @@ pub fn async_call_lambda(
             // Drop references at the end
             arg_tuple.drop_ref();
             // lambda.drop_ref(); // Don't drop original lambda, it was pushed back
-
+            original_arg_tuple.drop_ref();
             Ok(Some(spawned_coroutines))
         }
     }

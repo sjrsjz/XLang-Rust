@@ -212,7 +212,7 @@ impl GCTraceable {
         }
     }
 
-    pub fn add_reference(&mut self, obj: &GCRef) {
+    pub fn add_reference(&mut self, obj: &mut GCRef) {
         if obj.reference.is_null() {
             panic!("Reference is null! {}", obj);
         }

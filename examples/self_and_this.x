@@ -25,7 +25,7 @@ cycle_self := (n => 0) -> {
     if (valueof this == null) {
         print("Creating Cycled Lambda");
         tmp := keyof this;
-        new_lambda := (...(keyof this + (cycle => this,))) -> @dynamic cycle;
+        new_lambda := (...(arguments + (cycle => this,))) -> @dynamic cycle;
         new_lambda();
         this = new_lambda;
         keyof this = tmp;

@@ -284,6 +284,7 @@ impl LspServer {
             "xor",
             "captureof",
             "lengthof",
+            "arguments"
         ];
         for keyword in keywords {
             items.push(CompletionItem {

@@ -23,7 +23,7 @@ impl := Interface::(impl_method?) -> {
     method := valueof impl_method;
     builder_arg := keyof builder;
     return (...builder_arg) -> &(builder!, method!) {
-        obj := $this.builder(...(keyof this));
+        obj := $this.builder(...arguments);
         return bind(obj + (deepcopy $this.method,))
     }
 };

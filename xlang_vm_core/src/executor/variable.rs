@@ -12,7 +12,7 @@ use colored::Colorize;
  * - 任何new对象的行为都需要使用gc_system，并且会产生一个native_gcref_object_count，虚拟机必须在某处drop_ref直到为0
  *
  */
-use std::{clone, fmt::Debug, sync::Arc};
+use std::{fmt::Debug, sync::Arc};
 
 #[derive(Debug, Clone)]
 pub enum VMStackObject {
@@ -2361,7 +2361,7 @@ impl VMTuple {
                 // 如果没有找到匹配的键，添加新的键值对
                 self.values.push(kv.clone());
                 self.traceable
-                    .add_reference(&mut self.values.last_mut().unwrap().clone());
+                    .add_reference(kv);
                 assigned.push(true)
             }
         }
@@ -2384,7 +2384,7 @@ impl VMTuple {
                 // 没有更多位置，追加到末尾
                 self.values.push(value.clone());
                 self.traceable
-                    .add_reference(&mut self.values.last_mut().unwrap().clone());
+                    .add_reference(value);
                 assigned.push(true);
             }
         }
@@ -2392,7 +2392,7 @@ impl VMTuple {
     }
 
 
-    pub fn clone_and_assign_members(&mut self, other: &mut GCRef, gc_system: &mut GCSystem) -> Result<(), VMVariableError> {
+    pub fn clone_and_assign_members(&mut self, other: &mut GCRef, gc_system: &mut GCSystem) -> Result<GCRef, VMVariableError> {
         // 确保参数是元组
         if !other.isinstance::<VMTuple>() {
             return Err(VMVariableError::ValueError2Param(
@@ -2447,9 +2447,9 @@ impl VMTuple {
 
             if !found {
                 // 如果没有找到匹配的键，添加新的键值对
-                self.values.push(kv.clone());
-                self.traceable
-                    .add_reference(&mut self.values.last_mut().unwrap().clone());
+                tuple.values.push(kv.clone());
+                tuple.traceable
+                    .add_reference(kv);
                 assigned.push(true)
             }
         }
@@ -2463,23 +2463,30 @@ impl VMTuple {
             }
 
             if normal_index < self.values.len() && self.values[normal_index].isinstance::<VMNamed>() {
-                // 找到位置，进行赋值
-                // let value_ref: &mut GCRef = &mut self.values[normal_index];
-                // try_assign_as_vmobject(value_ref, value)?;
+                // 找到位置，构建新的命名参数并替换
+                let mut old_value = tuple.values[normal_index].clone();
+                let mut new_named = gc_system.new_object(VMNamed::new(
+                    &mut self.values[normal_index].as_type::<VMNamed>().get_key().clone(),
+                    value,
+                ));
+
+
+                tuple.traceable.add_reference(&mut new_named);
+                tuple.values[normal_index] = new_named;
+                tuple.traceable.remove_reference(&mut old_value);
 
                 
-
                 assigned[normal_index] = true;
                 normal_index += 1;
             } else {
                 // 没有更多位置，追加到末尾
-                self.values.push(value.clone());
-                self.traceable
-                    .add_reference(&mut self.values.last_mut().unwrap().clone());
+                tuple.values.push(value.clone());
+                tuple.traceable
+                    .add_reference(value);
                 assigned.push(true);
             }
         }
-        Ok(())
+        Ok(new_args_tuple)
     }
 
     pub fn add(
@@ -2539,7 +2546,7 @@ impl VMTuple {
 
     pub fn append(&mut self, value: &mut GCRef) -> Result<(), VMVariableError> {
         self.values.push(value.clone());
-        self.traceable.add_reference(self.values.last().unwrap());
+        self.traceable.add_reference(self.values.last_mut().unwrap());
         Ok(())
     }
 }

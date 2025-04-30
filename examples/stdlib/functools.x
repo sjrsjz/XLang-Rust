@@ -6,7 +6,7 @@ with_reset_params := (f?) -> {
     wrapped := (...copy keyof f) -> &(default_args => cloned, f!) {
         f := $this.f;
         keyof f = ();
-        result := f(...keyof this);
+        result := f(...arguments);
         keyof this = 0..(lengthof $this.default_args) |> (i?, default_args => $this.default_args) -> {
             return copy default_args[i];
         };

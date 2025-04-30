@@ -70,7 +70,7 @@ match(B::1);
 
 
 logger := stdlib.functools.with_reset_params(
-    (level => "info", msg => "") -> {
+    dynamic(level => "info", msg => "") -> {
         builtins.print("[" + stdlib.builtins.string(level) + "]" + stdlib.builtins.string(msg));
     },
 );

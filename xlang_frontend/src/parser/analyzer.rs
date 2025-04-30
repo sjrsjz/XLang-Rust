@@ -409,8 +409,18 @@ pub fn analyze_ast<'t>(
     //     name: "json_decode".to_string(),
     //     assumed_type: AssumedType::Lambda,
     // });
-    // let _ = context.define_variable(&Variable { name: "this".to_string(), assumed_type: AssumedType::Lambda });
-    // let _ = context.define_variable(&Variable { name: "self".to_string(), assumed_type: AssumedType::Tuple });
+    let _ = context.define_variable(&Variable {
+        name: "this".to_string(),
+        assumed_type: AssumedType::Lambda,
+    });
+    let _ = context.define_variable(&Variable {
+        name: "self".to_string(),
+        assumed_type: AssumedType::Tuple,
+    });
+    let _ = context.define_variable(&Variable {
+        name: "arguments".to_string(),
+        assumed_type: AssumedType::Tuple,
+    });
 
     let mut errors = Vec::new(); // 重命名 warnings 为 errors 以匹配 AnalysisOutput 字段
     let mut warnings = Vec::new(); // 添加一个新的 Vec 用于存储 AnalyzeWarn
@@ -654,14 +664,17 @@ fn analyze_node<'t>(
                             };
                             let _ = context.define_variable(&var);
                             return AssumedType::Unknown; // @required 注解本身不贡献类型
-                        } 
+                        }
                     } else {
                         // @required 后面应该跟一个变量名
-                        let error_message = format!("@required annotation expects a variable name, found: {:?}", first_child.node_type);
+                        let error_message = format!(
+                            "@required annotation expects a variable name, found: {:?}",
+                            first_child.node_type
+                        );
                         warnings.push(AnalyzeWarn::CompileError(first_child, error_message));
                         // 使用 first_child 作为错误关联的节点
                     }
-                }                
+                }
             }
 
             // 对非 @compile 注解或在断点分析时的 @compile 注解执行常规分析
@@ -680,7 +693,6 @@ fn analyze_node<'t>(
                     return AssumedType::Unknown;
                 }
             }
-
 
             return assumed_type;
         }
@@ -801,6 +813,10 @@ fn analyze_node<'t>(
                 });
                 let _ = context.define_variable(&Variable {
                     name: "self".to_string(),
+                    assumed_type: AssumedType::Tuple,
+                });
+                let _ = context.define_variable(&Variable {
+                    name: "arguments".to_string(),
                     assumed_type: AssumedType::Tuple,
                 });
 
@@ -1359,6 +1375,20 @@ fn analyze_tuple_params<'t>(
 pub fn auto_capture_and_rebuild<'t>(node: &'t ASTNode<'t>) -> (HashSet<String>, ASTNode<'t>) {
     // return a set of required variables and reconstructed ASTNode
     let mut context = VariableContext::new();
+    context.push_context(); // Create a new context for the frame
+    context.push_frame(); // Create a new frame for the context
+    let _ = context.define_variable(&Variable {
+        name: "this".to_string(),
+        assumed_type: AssumedType::Lambda,
+    });
+    let _ = context.define_variable(&Variable {
+        name: "self".to_string(),
+        assumed_type: AssumedType::Tuple,
+    });
+    let _ = context.define_variable(&Variable {
+        name: "arguments".to_string(),
+        assumed_type: AssumedType::Tuple,
+    });
     auto_capture(&mut context, node, false)
 }
 // Auto-capture variables in the context
@@ -1613,7 +1643,11 @@ pub fn auto_capture<'t>(
                 return (
                     required_vars,
                     ASTNode {
-                        node_type: ASTNodeType::LambdaDef(*is_dynamic_gen, *is_capture, *is_dynmaic_params), // is_capture might need update based on actual captures
+                        node_type: ASTNodeType::LambdaDef(
+                            *is_dynamic_gen,
+                            *is_capture,
+                            *is_dynmaic_params,
+                        ), // is_capture might need update based on actual captures
                         children,
                         start_token: node.start_token,
                         end_token: node.end_token,
@@ -1634,6 +1668,10 @@ pub fn auto_capture<'t>(
                     name: "self".to_string(),
                     assumed_type: AssumedType::Tuple,
                 });
+                let _ = context.define_variable(&Variable {
+                    name: "arguments".to_string(),
+                    assumed_type: AssumedType::Tuple,
+                });
 
                 let mut body_node = None;
                 let mut body_vars = HashSet::new();
@@ -1651,8 +1689,7 @@ pub fn auto_capture<'t>(
                 let mut captured_vars = HashSet::new();
                 for var_name in body_vars {
                     // Is this variable defined within the lambda's own context (args, this, self)?
-                    if context.get_variable(&var_name).is_some()
-                    {
+                    if context.get_variable(&var_name).is_some() {
                         captured_vars.insert(var_name.clone());
                         if context.get_variable_current_context(&var_name).is_none() {
                             // If not defined in the current context, it's a captured variable
@@ -1691,7 +1728,6 @@ pub fn auto_capture<'t>(
                     });
                 }
 
-
                 // Reconstruct children
                 let mut children = vec![final_params_node];
                 if let Some(capt) = capture_node {
@@ -1707,7 +1743,7 @@ pub fn auto_capture<'t>(
                         node_type: ASTNodeType::LambdaDef(
                             *is_dynamic_gen,
                             *is_capture, // Use actual capture status
-                            *is_dynmaic_params
+                            *is_dynmaic_params,
                         ),
                         children,
                         start_token: node.start_token,

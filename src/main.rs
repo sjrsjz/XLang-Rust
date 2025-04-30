@@ -102,13 +102,12 @@ fn execute_ir(package: VMInstructionPackage, _dir_stack: &mut DirStack) -> Resul
         &mut lambda_result,
         false
     ));
-    default_args_tuple.drop_ref();
     lambda_instructions.drop_ref();
     lambda_result.drop_ref();
 
     main_lambda.clone_ref();
 
-    let coro_id = coroutine_pool.new_coroutine(&mut main_lambda, &mut gc_system)?;
+    let coro_id = coroutine_pool.new_coroutine(&mut main_lambda, &mut default_args_tuple, &mut gc_system)?;
     
     let result = inject_builtin_functions(coroutine_pool.get_executor_mut(coro_id).unwrap().get_context_mut(), &mut gc_system);
 
@@ -171,7 +170,6 @@ fn execute_ir_repl(
         false
     ));
 
-    default_args_tuple.drop_ref();
     lambda_instructions.drop_ref();
     lambda_result.drop_ref();
     key.drop_ref();
@@ -182,7 +180,7 @@ fn execute_ir_repl(
     wrapped.clone_ref();
 
     main_lambda.drop_ref();
-    let coro_id = coroutine_pool.new_coroutine(&mut wrapped, gc_system)?;
+    let coro_id = coroutine_pool.new_coroutine(&mut wrapped, &mut default_args_tuple, gc_system)?;
     
     let result = inject_builtin_functions(coroutine_pool.get_executor_mut(coro_id).unwrap().get_context_mut(), gc_system);
 

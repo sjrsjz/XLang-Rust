@@ -1,4 +1,3 @@
-/* 一个非常操蛋的用来禁止缓存参数的内置函数的包装 */
 @required io;
 @required types;
 @required serialization;
@@ -21,223 +20,117 @@ builtins := bind {
     'builtin_json_encode' : serialization.json_encode,
 
     print => () -> {
-        result := self.builtin_print(...keyof this);
-        keyof this = ();
-        keyof self.builtin_print = ();
-        return result;
+        return self.builtin_print(...arguments);
     },
     int => () -> {
-        result := self.builtin_int(...keyof this);
-        keyof this = ();
-        keyof self.builtin_int = ();
-        return result;
+        return self.builtin_int(...arguments);
     },
     float => () -> {
-        result := self.builtin_float(...keyof this);
-        keyof this = ();
-        keyof self.builtin_float = ();
-        return result;
+        return self.builtin_float(...arguments);
     },
     string => () -> {
-        result := self.builtin_string(...keyof this);
-        keyof this = ();
-        keyof self.builtin_string = ();
-        return result;
+        return self.builtin_string(...arguments);
     },
     bool => () -> {
-        result := self.builtin_bool(...keyof this);
-        keyof this = ();
-        keyof self.builtin_bool = ();
-        return result;
+        return self.builtin_bool(...arguments);
     },
     bytes => () -> {
-        result := self.builtin_bytes(...keyof this);
-        keyof this = ();
-        keyof self.builtin_bytes = ();
-        return result;
+        return self.builtin_bytes(...arguments);
     },
     len => () -> {
-        result := self.builtin_len(...keyof this);
-        keyof this = ();
-        keyof self.builtin_len = ();
-        return result;
+        return self.builtin_len(...arguments);
     },
     input => () -> {
-        result := self.builtin_input(...keyof this);
-        keyof this = ();
-        keyof self.builtin_input = ();
-        return result;
+        return self.builtin_input(...arguments);
     },
     load_clambda => () -> {
-        result := self.builtin_load_clambda(...keyof this);
-        keyof this = ();
-        keyof self.builtin_load_clambda = ();
-        return result;
+        return self.builtin_load_clambda(...arguments);
     },
     json_decode => () -> {
-        result := self.builtin_json_decode(...keyof this);
-        keyof this = ();
-        keyof self.builtin_json_decode = ();
-        return result;
+        return self.builtin_json_decode(...arguments);
     },
     json_encode => () -> {
-        result := self.builtin_json_encode(...keyof this);
-        keyof this = ();
-        keyof self.builtin_json_encode = ();
-        return result;
+        return self.builtin_json_encode(...arguments);
     },
     string_utils => bind {
         'builtin_string_utils' : string_utils,
-        join => (sep?, arr?) -> {
-            result := self.builtin_string_utils.join(sep, arr);
-            keyof this = (sep?, arr?);
-            keyof self.builtin_string_utils.join = ();
-            return result;
+        join => () -> {
+            return self.builtin_string_utils.join(...arguments);
         },
-        split => (sep?, str?, maxsplit?) -> {
-            if (maxsplit == null) (
-                result := self.builtin_string_utils.split(sep, str);
-            ) else (
-                result := self.builtin_string_utils.split(sep, str, maxsplit);
-            );
-            keyof this = (sep?, str?, maxsplit?);
-            keyof self.builtin_string_utils.split = ();
-            return result;
+        split => () -> {
+            return self.builtin_string_utils.split(...arguments);
         },
-        replace => (old?, new?, str?) -> {
-            result := self.builtin_string_utils.replace(old, new, str);
-            keyof this = (old?, new?, str?);
-            keyof self.builtin_string_utils.replace = ();
-            return result;
+        replace => () -> {
+            return self.builtin_string_utils.replace(...arguments);
         },
-        startswith => (prefix?, str?) -> {
-            result := self.builtin_string_utils.startswith(prefix, str);
-            keyof this = (prefix?, str?);
-            keyof self.builtin_string_utils.startswith = ();
-            return result;
+        startswith => () -> {
+            return self.builtin_string_utils.startswith(...arguments);
         },
-        endswith => (suffix?, str?) -> {
-            result := self.builtin_string_utils.endswith(suffix, str);
-            keyof this = (suffix?, str?);
-            keyof self.builtin_string_utils.endswith = ();
-            return result;
+        endswith => () -> {
+            return self.builtin_string_utils.endswith(...arguments);
         },
-        lower => (str?) -> {
-            result := self.builtin_string_utils.lower(str);
-            keyof this = (str?,);
-            keyof self.builtin_string_utils.lower = ();
-            return result;
+        lower => () -> {
+            return self.builtin_string_utils.lower(...arguments);
         },
-        upper => (str?) -> {
-            result := self.builtin_string_utils.upper(str);
-            keyof this = (str?,);
-            keyof self.builtin_string_utils.upper = ();
-            return result;
+        upper => () -> {
+            return self.builtin_string_utils.upper(...arguments);
         },
-        strip => (str?) -> {
-            result := self.builtin_string_utils.strip(str);
-            keyof this = (str?,);
-            keyof self.builtin_string_utils.strip = ();
-            return result;
+        strip => () -> {
+            return self.builtin_string_utils.strip(...arguments);
         },
     },
     fs => bind {
         'builtin_fs' : fs,
-        exists => (path?) -> {
-            result := self.builtin_fs.exists(path);
-            keyof this = (path?,);
-            keyof self.builtin_fs.exists = ();
-            return result;
+        exists => () -> {
+            return self.builtin_fs.exists(...arguments);
         },
-        is_dir => (path?) -> {
-            result := self.builtin_fs.is_dir(path);
-            keyof this = (path?,);
-            keyof self.builtin_fs.is_dir = ();
-            return result;
+        is_dir => () -> {
+            return self.builtin_fs.is_dir(...arguments);
         },
-        is_file => (path?) -> {
-            result := self.builtin_fs.is_file(path);
-            keyof this = (path?,);
-            keyof self.builtin_fs.is_file = ();
-            return result;
+        is_file => () -> {
+            return self.builtin_fs.is_file(...arguments);
         },
-        read => (path?) -> {
-            result := self.builtin_fs.read(path);
-            keyof this = (path?,);
-            keyof self.builtin_fs.read = ();
-            return result;
+        read => () -> {
+            return self.builtin_fs.read(...arguments);
         },
-        read_bytes => (path?) -> {
-            result := self.builtin_fs.read_bytes(path);
-            keyof this = (path?,);
-            keyof self.builtin_fs.read_bytes = ();
-            return result;
+        read_bytes => () -> {
+            return self.builtin_fs.read_bytes(...arguments);
         },
-        listdir => (path?) -> {
-            result := self.builtin_fs.listdir(path);
-            keyof this = (path?,);
-            keyof self.builtin_fs.listdir = ();
-            return result;
+        listdir => () -> {
+            return self.builtin_fs.listdir(...arguments);
         },
-        write => (path?, data?) -> {
-            result := self.builtin_fs.write(path, data);
-            keyof this = (path?, data?);
-            keyof self.builtin_fs.write = ();
-            return result;
+        write => () -> {
+            return self.builtin_fs.write(...arguments);
         },
-        write_bytes => (path?, data?) -> {
-            result := self.builtin_fs.write_bytes(path, data);
-            keyof this = (path?, data?);
-            keyof self.builtin_fs.write_bytes = ();
-            return result;
+        write_bytes => () -> {
+            return self.builtin_fs.write_bytes(...arguments);
         },
-        remove => (path?) -> {
-            result := self.builtin_fs.remove(path);
-            keyof this = (path?,);
-            keyof self.builtin_fs.remove = ();
-            return result;
+        remove => () -> {
+            return self.builtin_fs.remove(...arguments);
         },
-        append => (path?, data?) -> {
-            result := self.builtin_fs.append(path, data);
-            keyof this = (path?, data?);
-            keyof self.builtin_fs.append = ();
-            return result;
+        append => () -> {
+            return self.builtin_fs.append(...arguments);
         },
-        append_bytes => (path?, data?) -> {
-            result := self.builtin_fs.append_bytes(path, data);
-            keyof this = (path?, data?);
-            keyof self.builtin_fs.append_bytes = ();
-            return result;
+        append_bytes => () -> {
+            return self.builtin_fs.append_bytes(...arguments);
         },
     },
     request => bind {
         'builtin_request' : async_request,
-        get => (url?, headers?, body?, timeout?) -> {
-            result := self.builtin_request.request(url!, method => 'GET', headers!, body!, timeout_ms => timeout);
-            keyof this = (url?, headers?, body?, timeout?);
-            keyof self.builtin_request.request = ();
-            return result;
+        get => () -> {
+            return self.builtin_request.request(...arguments);
         },
-        post => (url?, headers?, body?, timeout?) -> {
-            result := self.builtin_request.request(url!, method => 'POST', headers!, body!, timeout_ms => timeout);
-            keyof this = (url?, headers?, body?, timeout?);
-            keyof self.builtin_request.request = ();
-            return result;
+        post => () -> {
+            return self.builtin_request.request(...arguments);
         },
     },
     time => bind {
         'builtin_time' : time,
-        sleep => (seconds?) -> {
-            result := self.builtin_time.sleep(seconds);
-            keyof this = (seconds?,);
-            keyof self.builtin_time.sleep = ();
-            return result;
+        sleep => () -> {
+            return self.builtin_time.sleep(...arguments);
         },
         timestamp => () -> {
-            result := self.builtin_time.timestamp();
-            keyof this = ();
-            keyof self.builtin_time.timestamp = ();
-            return result;
+            return self.builtin_time.timestamp(...arguments);
         },
     },
 };

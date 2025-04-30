@@ -23,7 +23,7 @@ iter := (container?, wrapper?) -> if (container == null or wrapper == null) {
     return () -> false;
 } else {
     return (container!, wrapper!, n => 0) -> {
-        if (n >= @dynamic len(container)) {
+        if (n >= lengthof container) {
             return false;
         };
         wrapper = container[n];

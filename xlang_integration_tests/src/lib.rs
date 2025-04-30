@@ -3,9 +3,13 @@ mod tests {
     use std::sync::Arc;
 
     use xlang_frontend::compile::build_code;
-    use xlang_vm_core::{executor::variable::{
-        try_repr_vmobject, VMInstructions, VMInt, VMLambda, VMLambdaBody, VMNativeGeneratorFunction, VMNull, VMTuple, VMVariableError
-    }, gc::GCRef};
+    use xlang_vm_core::{
+        executor::variable::{
+            try_repr_vmobject, VMInstructions, VMInt, VMLambda, VMLambdaBody,
+            VMNativeGeneratorFunction, VMNull, VMTuple, VMVariableError,
+        },
+        gc::GCRef,
+    };
     #[test]
     fn test_xlang_compile_to_ir() {
         let code = r#"
@@ -87,11 +91,10 @@ mod tests {
             None,
             &mut VMLambdaBody::VMInstruction(lambda_body.clone()),
             &mut default_result,
-            false
+            false,
         ));
 
         //drop used objects
-        default_args_tuple.drop_ref();
         default_result.drop_ref();
         lambda_body.drop_ref();
 
@@ -100,7 +103,7 @@ mod tests {
 
         // create a coroutine
         lambda.clone_ref(); // create a coroutine will drop the lambda, so we need to clone it before entering the coroutine
-        let _ = coroutine_pool.new_coroutine(&mut lambda, &mut gc);
+        let _ = coroutine_pool.new_coroutine(&mut lambda, &mut default_args_tuple, &mut gc);
 
         // run until all coroutines are finished
         let result = coroutine_pool.run_until_finished(&mut gc);
@@ -178,7 +181,7 @@ mod tests {
                 return Ok(result);
             }),
             &mut result,
-            false
+            false,
         ));
         params.drop_ref();
         result.drop_ref();
@@ -199,11 +202,10 @@ mod tests {
             None,
             &mut VMLambdaBody::VMInstruction(lambda_body.clone()),
             &mut default_result,
-            false
+            false,
         ));
 
         //drop used objects
-        default_args_tuple.drop_ref();
         default_result.drop_ref();
         lambda_body.drop_ref();
 
@@ -212,7 +214,7 @@ mod tests {
 
         // create a coroutine
         lambda.clone_ref(); // create a coroutine will drop the lambda, so we need to clone it before entering the coroutine
-        let id = coroutine_pool.new_coroutine(&mut lambda, &mut gc);
+        let id = coroutine_pool.new_coroutine(&mut lambda, &mut default_args_tuple, &mut gc);
         if id.is_err() {
             println!("Failed to create coroutine: {:?}", id.err());
             return;
@@ -341,7 +343,10 @@ mod tests {
             Arc::new(Box::new(self.clone()))
         }
 
-        fn get_result(&mut self, gc_system: &mut xlang_vm_core::gc::GCSystem) -> Result<GCRef, VMVariableError> {
+        fn get_result(
+            &mut self,
+            gc_system: &mut xlang_vm_core::gc::GCSystem,
+        ) -> Result<GCRef, VMVariableError> {
             return Ok(gc_system.new_object(VMNull::new()));
         }
     }
@@ -396,7 +401,7 @@ mod tests {
             None,
             &mut VMLambdaBody::VMNativeGeneratorFunction(Arc::new(Box::new(TestGenerator::new()))),
             &mut result,
-            false
+            false,
         ));
         params.drop_ref();
         result.drop_ref();
@@ -417,11 +422,10 @@ mod tests {
             None,
             &mut VMLambdaBody::VMInstruction(lambda_body.clone()),
             &mut default_result,
-            false
+            false,
         ));
 
         //drop used objects
-        default_args_tuple.drop_ref();
         default_result.drop_ref();
         lambda_body.drop_ref();
 
@@ -430,7 +434,7 @@ mod tests {
 
         // create a coroutine
         lambda.clone_ref(); // create a coroutine will drop the lambda, so we need to clone it before entering the coroutine
-        let id = coroutine_pool.new_coroutine(&mut lambda, &mut gc);
+        let id = coroutine_pool.new_coroutine(&mut lambda, &mut default_args_tuple, &mut gc);
         if id.is_err() {
             println!("Failed to create coroutine: {:?}", id.err());
             return;

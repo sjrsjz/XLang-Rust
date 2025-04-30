@@ -4,29 +4,27 @@
 mathlib := {
     clambda := load_clambda("../modules/clambda_math_lib/clambda_math.so");
     {
-        // 封装，由于 C 库一般不接受命名参数，所以这里包装一层
-        sin => (x?) -> &clambda (sin::() -> dyn $this)(x),
-        cos => (x?) -> &clambda (cos::() -> dyn $this)(x),
-        tan => (x?) -> &clambda (tan::() -> dyn $this)(x),
-        pow => (x?, y?) -> &clambda (pow::() -> dyn $this)(x, y),
-        sqrt => (x?) -> &clambda (sqrt::() -> dyn $this)(x),
-        round => (x?) -> &clambda (round::() -> dyn $this)(x),
-        floor => (x?) -> &clambda (floor::() -> dyn $this)(x),
-        ceil => (x?) -> &clambda (ceil::() -> dyn $this)(x),
-        log => (x?) -> &clambda (log::() -> dyn $this)(x),
-        log10 => (x?) -> &clambda (log10::() -> dyn $this)(x),
-        exp => (x?) -> &clambda (exp::() -> dyn $this)(x),
-        max => (x?) -> &clambda (max::() -> dyn $this)(x),
-        min => (x?) -> &clambda (min::() -> dyn $this)(x),
-        abs => (x?) -> &clambda (abs::() -> dyn $this)(x),
+        sin => sin::() -> dyn clambda,
+        cos => cos::() -> dyn clambda,
+        tan => tan::() -> dyn clambda,
+        pow => pow::() -> dyn clambda,
+        sqrt => sqrt::() -> dyn clambda,
+        round => round::() -> dyn clambda,
+        floor => floor::() -> dyn clambda,
+        ceil => ceil::() -> dyn clambda,
+        log => log::() -> dyn clambda,
+        log10 => log10::() -> dyn clambda,
+        exp => exp::() -> dyn clambda,
+        max => max::() -> dyn clambda,
+        min => min::() -> dyn clambda,
+        abs => abs::() -> dyn clambda,
         pi => (pi::() -> dyn clambda)(),
         e => (e::() -> dyn clambda)(),
     }
 };
 print := io.print;
 string := types.string;
-
-print(mathlib.sqrt(4));
+print(mathlib.sqrt(4,0));
 
 Vector := (data => ()) -> &mathlib bind Vector::{
     constructor := this;

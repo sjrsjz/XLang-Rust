@@ -1,5 +1,5 @@
-builtins := (() -> dyn import "./stdlib/builtins.xbc")();
-print := builtins.print;
+@required io;
+print := io.print;
 
 my_object_1 := bind Object1::{
     'attribute': 'Hello, I am Object 1!',
