@@ -463,9 +463,9 @@ pub mod vm_ffi {
             };
         }
 
-        let index_obj = gc_system.new_object(VMInt::new(index as i64));
+        let mut index_obj = gc_system.new_object(VMInt::new(index as i64));
 
-        match crate::executor::variable::try_index_of_as_vmobject(tuple_ref, &index_obj, gc_system)
+        match crate::executor::variable::try_index_of_as_vmobject(tuple_ref, &mut index_obj, gc_system)
         {
             Ok(value) => gc_ref_to_ffi(&value),
             Err(_) => FFIGCRef {

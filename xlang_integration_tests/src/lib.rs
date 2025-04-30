@@ -112,8 +112,12 @@ mod tests {
                 // Check if the result is not empty
                 println!(
                     "Result: {}",
-                    try_repr_vmobject(lambda.as_const_type::<VMLambda>().result.clone(), None)
-                        .unwrap_or_else(|e| e.to_string())
+                    try_repr_vmobject(&mut lambda.as_type::<VMLambda>().result, None)
+                        .unwrap_or_else(|mut e| {
+                            let s = e.to_string();
+                            e.consume_ref();
+                            s
+                        })
                 );
             }
             Err(e) => {
@@ -174,8 +178,10 @@ mod tests {
             None,
             None,
             &mut VMLambdaBody::VMNativeFunction(|params_tuple, gc| {
-                let repr = try_repr_vmobject(params_tuple.clone(), None)
-                    .unwrap_or_else(|_| "<error>".to_string());
+                let repr = try_repr_vmobject(params_tuple, None).unwrap_or_else(|mut e| {
+                    e.consume_ref();
+                    "<error>".to_string()
+                });
                 println!("Hello from Rust! {}", repr);
                 let result = gc.new_object(VMNull::new());
                 return Ok(result);
@@ -236,8 +242,12 @@ mod tests {
                 // Check if the result is not empty
                 println!(
                     "Result: {}",
-                    try_repr_vmobject(lambda.as_const_type::<VMLambda>().result.clone(), None)
-                        .unwrap_or_else(|e| e.to_string())
+                    try_repr_vmobject(&mut lambda.as_type::<VMLambda>().result, None)
+                        .unwrap_or_else(|mut e| {
+                            let s = e.to_string();
+                            e.consume_ref();
+                            s
+                        })
                 );
             }
             Err(e) => {
@@ -456,11 +466,15 @@ mod tests {
                 // Check if the result is not empty
                 println!(
                     "Result: {}",
-                    try_repr_vmobject(lambda.as_const_type::<VMLambda>().result.clone(), None)
-                        .unwrap_or_else(|e| e.to_string())
+                    try_repr_vmobject(&mut lambda.as_type::<VMLambda>().result, None)
+                        .unwrap_or_else(|mut e| {
+                            let s = e.to_string();
+                            e.consume_ref();
+                            s
+                        })
                 );
             }
-            Err(e) => {
+            Err(mut e) => {
                 println!("Failed to execute code: {}", e.to_string());
             }
         }

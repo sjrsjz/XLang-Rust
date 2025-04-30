@@ -12,7 +12,7 @@ use super::check_if_tuple;
 
 // Helper function (remains private to this module)
 fn vmobject_to_json(
-    value: GCRef,
+    value: &mut GCRef,
     gc_system: &mut GCSystem,
     visited: &mut HashSet<*const ()>,
 ) -> Result<JsonValue, VMVariableError> {
@@ -44,41 +44,39 @@ fn vmobject_to_json(
             value.as_const_type::<VMString>().value.clone(),
         ))
     } else if value.isinstance::<VMTuple>() {
-        let tuple = value.as_const_type::<VMTuple>();
+        let tuple = value.as_type::<VMTuple>();
         let all_keyval = tuple.values.iter().all(|v| v.isinstance::<VMKeyVal>());
 
         if all_keyval && !tuple.values.is_empty() {
             let mut json_map = serde_json::Map::new();
-            for item_ref in &tuple.values {
-                let kv = item_ref.as_const_type::<VMKeyVal>();
-                let key_obj = kv.get_const_key();
-                let val_obj = kv.get_const_value();
-                let json_key_val = vmobject_to_json(key_obj.clone(), gc_system, visited)?;
+            for item_ref in &mut tuple.values {
+                let kv = item_ref.as_type::<VMKeyVal>();
+                let json_key_val = vmobject_to_json(kv.get_key(), gc_system, visited)?;
                 let key_str = match json_key_val {
                     JsonValue::String(s) => s,
                     _ => {
                         visited.remove(&ptr);
                         return Err(VMVariableError::TypeError(
-                            key_obj.clone(),
+                            kv.get_key().clone(),
                             "JSON object keys must be strings".to_string(),
                         ));
                     }
                 };
-                let json_val = vmobject_to_json(val_obj.clone(), gc_system, visited)?;
+                let json_val = vmobject_to_json(kv.get_value(), gc_system, visited)?;
                 json_map.insert(key_str, json_val);
             }
             Ok(JsonValue::Object(json_map))
         } else {
             let mut json_array = Vec::with_capacity(tuple.values.len());
-            for item in &tuple.values {
-                json_array.push(vmobject_to_json(item.clone(), gc_system, visited)?);
+            for item in &mut tuple.values {
+                json_array.push(vmobject_to_json(item, gc_system, visited)?);
             }
             Ok(JsonValue::Array(json_array))
         }
     } else if value.isinstance::<VMKeyVal>() {
-        let kv = value.as_const_type::<VMKeyVal>();
-        let json_key = vmobject_to_json(kv.get_const_key().clone(), gc_system, visited)?;
-        let json_val = vmobject_to_json(kv.get_const_value().clone(), gc_system, visited)?;
+        let kv = value.as_type::<VMKeyVal>();
+        let json_key = vmobject_to_json(kv.get_key(), gc_system, visited)?;
+        let json_val = vmobject_to_json(kv.get_value(), gc_system, visited)?;
         Ok(JsonValue::Array(vec![json_key, json_val]))
     } else if value.isinstance::<VMBytes>() {
         let bytes_val = &value.as_const_type::<VMBytes>().value;
@@ -91,7 +89,7 @@ fn vmobject_to_json(
             format!(
                 "Type '{}' cannot be directly encoded to JSON",
                 // Use the imported try_repr_vmobject
-                try_repr_vmobject(value.clone(), None).unwrap_or("?".to_string())
+                try_repr_vmobject(value, None).unwrap_or("?".to_string())
             ),
         ))
     };
@@ -160,16 +158,16 @@ fn json_to_vmobject(
     }
 }
 
-pub fn json_encode(tuple: GCRef, gc_system: &mut GCSystem) -> Result<GCRef, VMVariableError> {
-    check_if_tuple(tuple.clone())?;
-    let tuple_obj = tuple.as_const_type::<VMTuple>();
+pub fn json_encode(tuple: &mut GCRef, gc_system: &mut GCSystem) -> Result<GCRef, VMVariableError> {
+    check_if_tuple(tuple)?;
+    let tuple_obj = tuple.as_type::<VMTuple>();
     if tuple_obj.values.len() != 1 {
         return Err(VMVariableError::TypeError(
-            tuple.clone(),
-            format!("json_encode expected 1 argument, got {}", tuple_obj.values.len()),
+            tuple.clone_ref(),
+            format!("json_encode expected 1 argument, got {}", tuple.as_const_type::<VMTuple>().values.len()),
         ));
     }
-    let object_to_encode = tuple_obj.values[0].clone();
+    let object_to_encode = &mut tuple_obj.values[0];
 
     let mut visited = HashSet::default();
     let json_value = vmobject_to_json(object_to_encode, gc_system, &mut visited)?;
@@ -177,36 +175,36 @@ pub fn json_encode(tuple: GCRef, gc_system: &mut GCSystem) -> Result<GCRef, VMVa
     match serde_json::to_string(&json_value) {
         Ok(json_string) => Ok(gc_system.new_object(VMString::new(&json_string))),
         Err(e) => Err(VMVariableError::ValueError(
-            tuple.clone(),
+            tuple.clone_ref(),
             format!("Failed to serialize to JSON: {}", e),
         )),
     }
 }
 
-pub fn json_decode(tuple: GCRef, gc_system: &mut GCSystem) -> Result<GCRef, VMVariableError> {
-    check_if_tuple(tuple.clone())?;
-    let tuple_obj = tuple.as_const_type::<VMTuple>();
+pub fn json_decode(tuple: &mut GCRef, gc_system: &mut GCSystem) -> Result<GCRef, VMVariableError> {
+    check_if_tuple(tuple)?;
+    let tuple_obj = tuple.as_type::<VMTuple>();
     if tuple_obj.values.len() != 1 {
         return Err(VMVariableError::TypeError(
-            tuple.clone(),
-            format!("json_decode expected 1 argument, got {}", tuple_obj.values.len()),
+            tuple.clone_ref(),
+            format!("json_decode expected 1 argument, got {}", tuple.as_const_type::<VMTuple>().values.len()),
         ));
     }
 
-    let json_string_obj = tuple_obj.values[0].clone();
+    let json_string_obj = &mut tuple_obj.values[0];
     if !json_string_obj.isinstance::<VMString>() {
         return Err(VMVariableError::TypeError(
-            json_string_obj,
+            json_string_obj.clone_ref(),
             "Argument to json_decode must be a string".to_string(),
         ));
     }
 
-    let json_string = &json_string_obj.as_const_type::<VMString>().value;
+    let json_string = &mut json_string_obj.as_type::<VMString>().value;
 
     match serde_json::from_str::<JsonValue>(json_string) {
         Ok(parsed_json) => json_to_vmobject(parsed_json, gc_system),
         Err(e) => Err(VMVariableError::ValueError(
-            json_string_obj,
+            json_string_obj.clone_ref(),
             format!("Failed to parse JSON string: {}", e),
         )),
     }
@@ -215,7 +213,7 @@ pub fn json_decode(tuple: GCRef, gc_system: &mut GCSystem) -> Result<GCRef, VMVa
 // Helper to provide functions for registration
 pub fn get_serialization_functions() -> Vec<(
     &'static str,
-    fn(GCRef, &mut GCSystem) -> Result<GCRef, VMVariableError>,
+    fn(&mut GCRef, &mut GCSystem) -> Result<GCRef, VMVariableError>,
 )> {
     vec![
         ("json_encode", json_encode),

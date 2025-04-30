@@ -114,7 +114,7 @@ impl GCRef {
         self.get_const_traceable().isinstance::<T>()
     }
 
-    pub fn wrap<T: GCObject + 'static>(obj: &T) -> GCRef {
+    pub fn wrap<T: GCObject + 'static>(obj: &mut T) -> GCRef {
         let obj = obj as *const T as *mut T as *mut dyn GCObject;
         if obj.is_null() {
             panic!("Failed to wrap object!");

@@ -21,18 +21,18 @@ fn io_error_to_vm(err: std::io::Error, path: Option<&str>) -> VMVariableError {
 }
 
 // Helper to extract a single string argument (path)
-fn get_path_arg(args_tuple: &GCRef, func_name: &str) -> Result<String, VMVariableError> {
-    let tuple_obj = args_tuple.as_const_type::<VMTuple>();
+fn get_path_arg(args_tuple: &mut GCRef, func_name: &str) -> Result<String, VMVariableError> {
+    let tuple_obj = args_tuple.as_type::<VMTuple>();
     if tuple_obj.values.len() != 1 {
         return Err(VMVariableError::TypeError(
-            args_tuple.clone(),
+            args_tuple.clone_ref(),
             format!("{} requires exactly one argument (path)", func_name),
         ));
     }
-    let path_obj = &tuple_obj.values[0];
+    let path_obj = &mut tuple_obj.values[0];
     if !path_obj.isinstance::<VMString>() {
         return Err(VMVariableError::TypeError(
-            path_obj.clone(),
+            path_obj.clone_ref(),
             "Path argument must be a string".to_string(),
         ));
     }
@@ -41,78 +41,73 @@ fn get_path_arg(args_tuple: &GCRef, func_name: &str) -> Result<String, VMVariabl
 
 // Helper to extract path and content (string) arguments
 fn get_path_content_string_args(
-    args_tuple: &GCRef,
+    args_tuple: &mut GCRef,
     func_name: &str,
 ) -> Result<(String, String), VMVariableError> {
-    let tuple_obj = args_tuple.as_const_type::<VMTuple>();
+    let tuple_obj = args_tuple.as_type::<VMTuple>();
     if tuple_obj.values.len() != 2 {
         return Err(VMVariableError::TypeError(
-            args_tuple.clone(),
+            args_tuple.clone_ref(),
             format!(
                 "{} requires exactly two arguments (path, content)",
                 func_name
             ),
         ));
     }
-    let path_obj = &tuple_obj.values[0];
-    let content_obj = &tuple_obj.values[1];
-
-    if !path_obj.isinstance::<VMString>() {
+    if !tuple_obj.values[0].isinstance::<VMString>() {
         return Err(VMVariableError::TypeError(
-            path_obj.clone(),
+            tuple_obj.values[0].clone_ref(),
             "Path argument must be a string".to_string(),
         ));
     }
-    if !content_obj.isinstance::<VMString>() {
+    if !tuple_obj.values[1].isinstance::<VMString>() {
         return Err(VMVariableError::TypeError(
-            content_obj.clone(),
+            tuple_obj.values[1].clone_ref(),
             "Content argument must be a string".to_string(),
         ));
     }
-    let path = path_obj.as_const_type::<VMString>().value.clone();
-    let content = content_obj.as_const_type::<VMString>().value.clone();
+    let path = tuple_obj.values[0].as_const_type::<VMString>().value.clone();
+    let content = tuple_obj.values[1].as_const_type::<VMString>().value.clone();
     Ok((path, content))
 }
 
 // Helper to extract path and content (bytes) arguments
 fn get_path_content_bytes_args(
-    args_tuple: &GCRef,
+    args_tuple: &mut GCRef,
     func_name: &str,
 ) -> Result<(String, Vec<u8>), VMVariableError> {
-    let tuple_obj = args_tuple.as_const_type::<VMTuple>();
+    let tuple_obj = args_tuple.as_type::<VMTuple>();
     if tuple_obj.values.len() != 2 {
         return Err(VMVariableError::TypeError(
-            args_tuple.clone(),
+            args_tuple.clone_ref(),
             format!(
                 "{} requires exactly two arguments (path, content)",
                 func_name
             ),
         ));
     }
-    let path_obj = &tuple_obj.values[0];
-    let content_obj = &tuple_obj.values[1];
 
-    if !path_obj.isinstance::<VMString>() {
+    if !tuple_obj.values[0].isinstance::<VMString>() {
         return Err(VMVariableError::TypeError(
-            path_obj.clone(),
+            tuple_obj.values[0].clone_ref(),
             "Path argument must be a string".to_string(),
         ));
     }
-    if !content_obj.isinstance::<VMBytes>() {
+    if !tuple_obj.values[1].isinstance::<VMBytes>() {
         return Err(VMVariableError::TypeError(
-            content_obj.clone(),
+            tuple_obj.values[1].clone_ref(),
             "Content argument must be bytes".to_string(),
         ));
     }
-    let path = path_obj.as_const_type::<VMString>().value.clone();
-    let content = content_obj.as_const_type::<VMBytes>().value.clone();
+    let path = tuple_obj.values[0].as_const_type::<VMString>().value.clone();
+    let content = tuple_obj.values[1].as_const_type::<VMBytes>().value.clone();
     Ok((path, content))
 }
 
 // fs.read(path) -> string
-fn read_file(args_tuple: GCRef, gc_system: &mut GCSystem) -> Result<GCRef, VMVariableError> {
-    check_if_tuple(args_tuple.clone())?;
-    let path_str = get_path_arg(&args_tuple, "read")?;
+fn read_file(args_tuple: &mut GCRef, gc_system: &mut GCSystem) -> Result<GCRef, VMVariableError> {
+    check_if_tuple(args_tuple)?;
+    let path_str = get_path_arg(args_tuple, "read")?;
     let path = Path::new(&path_str);
 
     match fs::read_to_string(path) {
@@ -122,9 +117,9 @@ fn read_file(args_tuple: GCRef, gc_system: &mut GCSystem) -> Result<GCRef, VMVar
 }
 
 // fs.read_bytes(path) -> bytes
-fn read_bytes(args_tuple: GCRef, gc_system: &mut GCSystem) -> Result<GCRef, VMVariableError> {
-    check_if_tuple(args_tuple.clone())?;
-    let path_str = get_path_arg(&args_tuple, "read_bytes")?;
+fn read_bytes(args_tuple: &mut GCRef, gc_system: &mut GCSystem) -> Result<GCRef, VMVariableError> {
+    check_if_tuple(args_tuple)?;
+    let path_str = get_path_arg(args_tuple, "read_bytes")?;
     let path = Path::new(&path_str);
 
     match fs::read(path) {
@@ -134,9 +129,9 @@ fn read_bytes(args_tuple: GCRef, gc_system: &mut GCSystem) -> Result<GCRef, VMVa
 }
 
 // fs.write(path, content)
-fn write_file(args_tuple: GCRef, gc_system: &mut GCSystem) -> Result<GCRef, VMVariableError> {
-    check_if_tuple(args_tuple.clone())?;
-    let (path_str, content) = get_path_content_string_args(&args_tuple, "write")?;
+fn write_file(args_tuple: &mut GCRef, gc_system: &mut GCSystem) -> Result<GCRef, VMVariableError> {
+    check_if_tuple(args_tuple)?;
+    let (path_str, content) = get_path_content_string_args(args_tuple, "write")?;
     let path = Path::new(&path_str);
 
     match fs::write(path, content) {
@@ -146,9 +141,9 @@ fn write_file(args_tuple: GCRef, gc_system: &mut GCSystem) -> Result<GCRef, VMVa
 }
 
 // fs.write_bytes(path, content)
-fn write_bytes(args_tuple: GCRef, gc_system: &mut GCSystem) -> Result<GCRef, VMVariableError> {
-    check_if_tuple(args_tuple.clone())?;
-    let (path_str, content) = get_path_content_bytes_args(&args_tuple, "write_bytes")?;
+fn write_bytes(args_tuple: &mut GCRef, gc_system: &mut GCSystem) -> Result<GCRef, VMVariableError> {
+    check_if_tuple(args_tuple)?;
+    let (path_str, content) = get_path_content_bytes_args(args_tuple, "write_bytes")?;
     let path = Path::new(&path_str);
 
     match fs::write(path, content) {
@@ -158,9 +153,9 @@ fn write_bytes(args_tuple: GCRef, gc_system: &mut GCSystem) -> Result<GCRef, VMV
 }
 
 // fs.append(path, content)
-fn append_file(args_tuple: GCRef, gc_system: &mut GCSystem) -> Result<GCRef, VMVariableError> {
-    check_if_tuple(args_tuple.clone())?;
-    let (path_str, content) = get_path_content_string_args(&args_tuple, "append")?;
+fn append_file(args_tuple: &mut GCRef, gc_system: &mut GCSystem) -> Result<GCRef, VMVariableError> {
+    check_if_tuple(args_tuple)?;
+    let (path_str, content) = get_path_content_string_args(args_tuple, "append")?;
     let path = Path::new(&path_str);
 
     match OpenOptions::new().append(true).create(true).open(path) {
@@ -173,9 +168,9 @@ fn append_file(args_tuple: GCRef, gc_system: &mut GCSystem) -> Result<GCRef, VMV
 }
 
 // fs.append_bytes(path, content)
-fn append_bytes(args_tuple: GCRef, gc_system: &mut GCSystem) -> Result<GCRef, VMVariableError> {
-    check_if_tuple(args_tuple.clone())?;
-    let (path_str, content) = get_path_content_bytes_args(&args_tuple, "append_bytes")?;
+fn append_bytes(args_tuple: &mut GCRef, gc_system: &mut GCSystem) -> Result<GCRef, VMVariableError> {
+    check_if_tuple(args_tuple)?;
+    let (path_str, content) = get_path_content_bytes_args(args_tuple, "append_bytes")?;
     let path = Path::new(&path_str);
 
     match OpenOptions::new().append(true).create(true).open(path) {
@@ -188,33 +183,33 @@ fn append_bytes(args_tuple: GCRef, gc_system: &mut GCSystem) -> Result<GCRef, VM
 }
 
 // fs.exists(path) -> bool
-fn exists(args_tuple: GCRef, gc_system: &mut GCSystem) -> Result<GCRef, VMVariableError> {
-    check_if_tuple(args_tuple.clone())?;
-    let path_str = get_path_arg(&args_tuple, "exists")?;
+fn exists(args_tuple: &mut GCRef, gc_system: &mut GCSystem) -> Result<GCRef, VMVariableError> {
+    check_if_tuple(args_tuple)?;
+    let path_str = get_path_arg(args_tuple, "exists")?;
     let path = Path::new(&path_str);
     Ok(gc_system.new_object(VMBoolean::new(path.exists())))
 }
 
 // fs.is_file(path) -> bool
-fn is_file(args_tuple: GCRef, gc_system: &mut GCSystem) -> Result<GCRef, VMVariableError> {
-    check_if_tuple(args_tuple.clone())?;
-    let path_str = get_path_arg(&args_tuple, "is_file")?;
+fn is_file(args_tuple: &mut GCRef, gc_system: &mut GCSystem) -> Result<GCRef, VMVariableError> {
+    check_if_tuple(args_tuple)?;
+    let path_str = get_path_arg(args_tuple, "is_file")?;
     let path = Path::new(&path_str);
     Ok(gc_system.new_object(VMBoolean::new(path.is_file())))
 }
 
 // fs.is_dir(path) -> bool
-fn is_dir(args_tuple: GCRef, gc_system: &mut GCSystem) -> Result<GCRef, VMVariableError> {
-    check_if_tuple(args_tuple.clone())?;
-    let path_str = get_path_arg(&args_tuple, "is_dir")?;
+fn is_dir(args_tuple: &mut GCRef, gc_system: &mut GCSystem) -> Result<GCRef, VMVariableError> {
+    check_if_tuple(args_tuple)?;
+    let path_str = get_path_arg(args_tuple, "is_dir")?;
     let path = Path::new(&path_str);
     Ok(gc_system.new_object(VMBoolean::new(path.is_dir())))
 }
 
 // fs.remove(path)
-fn remove(args_tuple: GCRef, gc_system: &mut GCSystem) -> Result<GCRef, VMVariableError> {
-    check_if_tuple(args_tuple.clone())?;
-    let path_str = get_path_arg(&args_tuple, "remove")?;
+fn remove(args_tuple: &mut GCRef, gc_system: &mut GCSystem) -> Result<GCRef, VMVariableError> {
+    check_if_tuple(args_tuple)?;
+    let path_str = get_path_arg(args_tuple, "remove")?;
     let path = Path::new(&path_str);
 
     let result = if path.is_dir() {
@@ -236,9 +231,9 @@ fn remove(args_tuple: GCRef, gc_system: &mut GCSystem) -> Result<GCRef, VMVariab
 }
 
 // fs.mkdir(path)
-fn mkdir(args_tuple: GCRef, gc_system: &mut GCSystem) -> Result<GCRef, VMVariableError> {
-    check_if_tuple(args_tuple.clone())?;
-    let path_str = get_path_arg(&args_tuple, "mkdir")?;
+fn mkdir(args_tuple: &mut GCRef, gc_system: &mut GCSystem) -> Result<GCRef, VMVariableError> {
+    check_if_tuple(args_tuple)?;
+    let path_str = get_path_arg(args_tuple, "mkdir")?;
     let path = Path::new(&path_str);
 
     match fs::create_dir_all(path) {
@@ -249,9 +244,9 @@ fn mkdir(args_tuple: GCRef, gc_system: &mut GCSystem) -> Result<GCRef, VMVariabl
 }
 
 // fs.listdir(path) -> tuple<string>
-fn listdir(args_tuple: GCRef, gc_system: &mut GCSystem) -> Result<GCRef, VMVariableError> {
-    check_if_tuple(args_tuple.clone())?;
-    let path_str = get_path_arg(&args_tuple, "listdir")?;
+fn listdir(args_tuple: &mut GCRef, gc_system: &mut GCSystem) -> Result<GCRef, VMVariableError> {
+    check_if_tuple(args_tuple)?;
+    let path_str = get_path_arg(args_tuple, "listdir")?;
     let path = Path::new(&path_str);
 
     match fs::read_dir(path) {
@@ -298,7 +293,7 @@ fn listdir(args_tuple: GCRef, gc_system: &mut GCSystem) -> Result<GCRef, VMVaria
 // Helper to provide functions for registration
 pub fn get_fs_module() -> Vec<(
     &'static str,
-    fn(GCRef, &mut GCSystem) -> Result<GCRef, VMVariableError>,
+    fn(&mut GCRef, &mut GCSystem) -> Result<GCRef, VMVariableError>,
 )> {
     vec![
         ("read", read_file),

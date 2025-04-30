@@ -123,12 +123,12 @@ pub fn load_lambda(
                 && !instruction.isinstance::<VMCLambdaInstruction>()
             {
                 return Err(VMError::InvalidArgument(
-                    instruction.clone(),
+                    instruction.clone_ref(),
                     "LoadLambda requires a VMInstructions or VMCLambdaInstruction".to_string(),
                 ));
             }
             if !default_args_tuple.isinstance::<VMTuple>() {
-                return Err(VMError::ArgumentIsNotTuple(default_args_tuple.clone()));
+                return Err(VMError::ArgumentIsNotTuple(default_args_tuple.clone_ref()));
             }
 
             let signature = &vm
@@ -219,7 +219,7 @@ pub fn bind_self(
     let mut obj = vm.get_object_and_check(0)?;
     if !obj.isinstance::<VMTuple>() {
         return Err(VMError::VMVariableError(VMVariableError::TypeError(
-            obj.clone(),
+            obj.clone_ref(),
             "Bind requires a tuple".to_string(),
         )));
     }
@@ -304,7 +304,7 @@ pub fn binary_subtract(
     let mut right = vm.get_object_and_check(0)?;
     let mut left = vm.get_object_and_check(1)?;
 
-    let obj = try_sub_as_vmobject(&left, &right, gc_system).map_err(VMError::VMVariableError)?;
+    let obj = try_sub_as_vmobject(&mut left, &mut right, gc_system).map_err(VMError::VMVariableError)?;
 
     // Pop objects from stack after successful operation
     vm.pop_object()?;
@@ -325,7 +325,7 @@ pub fn binary_multiply(
     let mut right = vm.get_object_and_check(0)?;
     let mut left = vm.get_object_and_check(1)?;
 
-    let obj = try_mul_as_vmobject(&left, &right, gc_system).map_err(VMError::VMVariableError)?;
+    let obj = try_mul_as_vmobject(&mut left, &mut right, gc_system).map_err(VMError::VMVariableError)?;
 
     // Pop objects from stack after successful operation
     vm.pop_object()?;
@@ -346,7 +346,7 @@ pub fn binary_divide(
     let mut right = vm.get_object_and_check(0)?;
     let mut left = vm.get_object_and_check(1)?;
 
-    let obj = try_div_as_vmobject(&left, &right, gc_system).map_err(VMError::VMVariableError)?;
+    let obj = try_div_as_vmobject(&mut left, &mut right, gc_system).map_err(VMError::VMVariableError)?;
 
     // Pop objects from stack after successful operation
     vm.pop_object()?;
@@ -367,7 +367,7 @@ pub fn binary_modulus(
     let mut right = vm.get_object_and_check(0)?;
     let mut left = vm.get_object_and_check(1)?;
 
-    let obj = try_mod_as_vmobject(&left, &right, gc_system).map_err(VMError::VMVariableError)?;
+    let obj = try_mod_as_vmobject(&mut left, &mut right, gc_system).map_err(VMError::VMVariableError)?;
 
     // Pop objects from stack after successful operation
     vm.pop_object()?;
@@ -388,7 +388,7 @@ pub fn binary_power(
     let mut right = vm.get_object_and_check(0)?;
     let mut left = vm.get_object_and_check(1)?;
 
-    let obj = try_power_as_vmobject(&left, &right, gc_system).map_err(VMError::VMVariableError)?;
+    let obj = try_power_as_vmobject(&mut left, &mut right, gc_system).map_err(VMError::VMVariableError)?;
 
     // Pop objects from stack after successful operation
     vm.pop_object()?;
@@ -409,7 +409,7 @@ pub fn binary_bitwise_and(
     let mut right = vm.get_object_and_check(0)?;
     let mut left = vm.get_object_and_check(1)?;
 
-    let obj = try_and_as_vmobject(&left, &right, gc_system).map_err(VMError::VMVariableError)?;
+    let obj = try_and_as_vmobject(&mut left, &mut right, gc_system).map_err(VMError::VMVariableError)?;
 
     // Pop objects from stack after successful operation
     vm.pop_object()?;
@@ -430,7 +430,7 @@ pub fn binary_bitwise_or(
     let mut right = vm.get_object_and_check(0)?;
     let mut left = vm.get_object_and_check(1)?;
 
-    let obj = try_or_as_vmobject(&left, &right, gc_system).map_err(VMError::VMVariableError)?;
+    let obj = try_or_as_vmobject(&mut left, &mut right, gc_system).map_err(VMError::VMVariableError)?;
 
     // Pop objects from stack after successful operation
     vm.pop_object()?;
@@ -451,7 +451,7 @@ pub fn binary_bitwise_xor(
     let mut right = vm.get_object_and_check(0)?;
     let mut left = vm.get_object_and_check(1)?;
 
-    let obj = try_xor_as_vmobject(&left, &right, gc_system).map_err(VMError::VMVariableError)?;
+    let obj = try_xor_as_vmobject(&mut left, &mut right, gc_system).map_err(VMError::VMVariableError)?;
 
     // Pop objects from stack after successful operation
     vm.pop_object()?;
@@ -473,7 +473,7 @@ pub fn binary_shift_left(
     let mut left = vm.get_object_and_check(1)?;
 
     let obj =
-        try_shift_left_as_vmobject(&left, &right, gc_system).map_err(VMError::VMVariableError)?;
+        try_shift_left_as_vmobject(&mut left, &mut right, gc_system).map_err(VMError::VMVariableError)?;
 
     // Pop objects from stack after successful operation
     vm.pop_object()?;
@@ -495,7 +495,7 @@ pub fn binary_shift_right(
     let mut left = vm.get_object_and_check(1)?;
 
     let obj =
-        try_shift_right_as_vmobject(&left, &right, gc_system).map_err(VMError::VMVariableError)?;
+        try_shift_right_as_vmobject(&mut left, &mut right, gc_system).map_err(VMError::VMVariableError)?;
 
     // Pop objects from stack after successful operation
     vm.pop_object()?;
@@ -558,7 +558,7 @@ pub fn binary_greater(
     let mut right = vm.get_object_and_check(0)?;
     let mut left = vm.get_object_and_check(1)?;
 
-    let result = try_greater_than_as_vmobject(&left, &right).map_err(VMError::VMVariableError)?;
+    let result = try_greater_than_as_vmobject(&mut left, &mut right).map_err(VMError::VMVariableError)?;
     let obj = gc_system.new_object(VMBoolean::new(result));
 
     // Pop objects from stack after successful operation
@@ -580,7 +580,7 @@ pub fn binary_less(
     let mut right = vm.get_object_and_check(0)?;
     let mut left = vm.get_object_and_check(1)?;
 
-    let result = try_less_than_as_vmobject(&left, &right).map_err(VMError::VMVariableError)?;
+    let result = try_less_than_as_vmobject(&mut left, &mut right).map_err(VMError::VMVariableError)?;
     let obj = gc_system.new_object(VMBoolean::new(result));
 
     // Pop objects from stack after successful operation
@@ -602,7 +602,7 @@ pub fn binary_greater_equal(
     let mut right = vm.get_object_and_check(0)?;
     let mut left = vm.get_object_and_check(1)?;
 
-    let result = try_less_than_as_vmobject(&left, &right).map_err(VMError::VMVariableError)?;
+    let result = try_less_than_as_vmobject(&mut left, &mut right).map_err(VMError::VMVariableError)?;
     let obj = gc_system.new_object(VMBoolean::new(!result));
 
     // Pop objects from stack after successful operation
@@ -624,7 +624,7 @@ pub fn binary_less_equal(
     let mut right = vm.get_object_and_check(0)?;
     let mut left = vm.get_object_and_check(1)?;
 
-    let result = try_greater_than_as_vmobject(&left, &right).map_err(VMError::VMVariableError)?;
+    let result = try_greater_than_as_vmobject(&mut left, &mut right).map_err(VMError::VMVariableError)?;
     let obj = gc_system.new_object(VMBoolean::new(!result));
 
     // Pop objects from stack after successful operation
@@ -701,7 +701,7 @@ pub fn unary_bitwise_not(
 ) -> Result<Option<Vec<SpawnedCoroutine>>, VMError> {
     let mut ref_obj = vm.get_object_and_check(0)?;
 
-    let obj = try_not_as_vmobject(&ref_obj, gc_system).map_err(VMError::VMVariableError)?;
+    let obj = try_not_as_vmobject(&mut ref_obj, gc_system).map_err(VMError::VMVariableError)?;
 
     // Pop object from stack after successful operation
     vm.pop_object()?;
@@ -877,7 +877,7 @@ pub fn is_finished(
     let mut obj = vm.get_object_and_check(0)?;
     if !obj.isinstance::<VMLambda>() {
         return Err(VMError::InvalidArgument(
-            obj.clone(), // Clone before potential drop
+            obj.clone_ref(), 
             "Await: Not a lambda".to_string(),
         ));
     }
@@ -993,7 +993,7 @@ pub fn jump_if_false(
     let mut obj = vm.get_object_and_check(0)?;
     if !obj.isinstance::<VMBoolean>() {
         return Err(VMError::VMVariableError(VMVariableError::TypeError(
-            obj.clone(), // Clone before potential drop
+            obj.clone_ref(),
             "JumpIfFalseOffset: Not a boolean".to_string(),
         )));
     }
@@ -1033,7 +1033,7 @@ pub fn get_attr(
     let mut attr = vm.get_object_and_check(0)?;
     let mut obj = vm.get_object_and_check(1)?;
 
-    let result = try_get_attr_as_vmobject(&mut obj, &attr).map_err(VMError::VMVariableError)?;
+    let result = try_get_attr_as_vmobject(&mut obj, &mut attr).map_err(VMError::VMVariableError)?;
 
     // Pop objects from stack after successful operation
     vm.pop_object()?;
@@ -1053,7 +1053,7 @@ pub fn index_of(
     let mut index = vm.get_object_and_check(0)?;
     let mut obj = vm.get_object_and_check(1)?;
     let result =
-        try_index_of_as_vmobject(&mut obj, &index, gc_system).map_err(VMError::VMVariableError)?;
+        try_index_of_as_vmobject(&mut obj, &mut index, gc_system).map_err(VMError::VMVariableError)?;
 
     // Pop objects from stack after successful operation
     vm.pop_object()?;
@@ -1105,7 +1105,7 @@ pub fn assert(
     let mut obj = vm.get_object_and_check(0)?;
     if !obj.isinstance::<VMBoolean>() {
         return Err(VMError::VMVariableError(VMVariableError::TypeError(
-            obj.clone(), // Clone before potential drop
+            obj.clone_ref(), // Clone before potential drop
             "Assert: Not a boolean".to_string(),
         )));
     }
@@ -1160,7 +1160,7 @@ pub fn deepcopy(
     let mut obj = vm.get_object_and_check(0)?;
     let result = try_deepcopy_as_vmobject(&mut obj, gc_system).map_err(|_| {
         VMError::VMVariableError(VMVariableError::TypeError(
-            obj.clone(), // Clone before potential drop
+            obj.clone_ref(), // Clone before potential drop
             "Not a copyable object".to_string(),
         ))
     })?;
@@ -1181,7 +1181,7 @@ pub fn copy(
     let mut obj = vm.get_object_and_check(0)?;
     let result = try_copy_as_vmobject(&mut obj, gc_system).map_err(|_| {
         VMError::VMVariableError(VMVariableError::TypeError(
-            obj.clone(), // Clone before potential drop
+            obj.clone_ref(), // Clone before potential drop
             "Not a copyable object".to_string(),
         ))
     })?;
@@ -1283,7 +1283,7 @@ pub fn call_lambda(
             Ok(None)
         }
         VMLambdaBody::VMNativeFunction(native_function) => {
-            let result = native_function(arg_tuple.clone(), gc_system); // Clone arg_tuple for native call
+            let result = native_function(&mut arg_tuple, gc_system); // Clone arg_tuple for native call
             if result.is_err() {
                 arg_tuple.drop_ref();
                 return Err(VMError::VMVariableError(result.unwrap_err()));
@@ -1308,7 +1308,7 @@ pub fn call_lambda(
                 None => {
                     arg_tuple.drop_ref();
                     return Err(VMError::VMVariableError(VMVariableError::TypeError(
-                        lambda.clone(), // Clone before potential drop
+                        lambda.clone_ref(), // Clone before potential drop
                         "Async function is not mutable".to_string(),
                     )));
                 }
@@ -1344,7 +1344,7 @@ pub fn async_call_lambda(
     let mut lambda = vm.get_object_and_check(1)?;
 
     if !lambda.isinstance::<VMLambda>() {
-        return Err(VMError::TryEnterNotLambda(lambda.clone())); // Clone before potential drop
+        return Err(VMError::TryEnterNotLambda(lambda.clone_ref())); // Clone before potential drop
     }
 
     let lambda_obj = lambda.as_type::<VMLambda>();
@@ -1374,7 +1374,7 @@ pub fn async_call_lambda(
             if body.isinstance::<VMCLambdaInstruction>() {
                 arg_tuple.drop_ref();
                 return Err(VMError::InvalidArgument(
-                    arg_tuple.clone(), // Clone before potential drop
+                    arg_tuple.clone_ref(), // Clone before potential drop
                     "Async call not supported for VMCLambdaInstruction".to_string(),
                 ));
             }
@@ -1397,7 +1397,7 @@ pub fn async_call_lambda(
         VMLambdaBody::VMNativeFunction(_) => {
             arg_tuple.drop_ref();
             Err(VMError::InvalidArgument(
-                arg_tuple.clone(), // Clone before potential drop
+                arg_tuple.clone_ref(), // Clone before potential drop
                 "Native function cannot be async".to_string(),
             ))
         }
@@ -1412,7 +1412,7 @@ pub fn async_call_lambda(
                 None => {
                     arg_tuple.drop_ref();
                     return Err(VMError::VMVariableError(VMVariableError::TypeError(
-                        lambda.clone(), // Clone before potential drop
+                        lambda.clone_ref(), // Clone before potential drop
                         "Async function is not mutable".to_string(),
                     )));
                 }
@@ -1458,11 +1458,11 @@ pub fn is_in(
     _opcode: &ProcessedOpcode,
     gc_system: &mut GCSystem,
 ) -> Result<Option<Vec<SpawnedCoroutine>>, VMError> {
-    let container = vm.get_object_and_check(0)?;
-    let obj = vm.get_object_and_check(1)?;
-    let result = try_contains_as_vmobject(&container, &obj).map_err(|_| {
+    let mut container = vm.get_object_and_check(0)?;
+    let mut obj = vm.get_object_and_check(1)?;
+    let result = try_contains_as_vmobject(&mut container, &mut obj).map_err(|_| {
         VMError::VMVariableError(VMVariableError::TypeError(
-            container.clone(), // Clone before potential drop
+            container.clone_ref(), // Clone before potential drop
             "Not a container".to_string(),
         ))
     })?;
@@ -1481,13 +1481,13 @@ pub fn build_range(
 
     if !start.isinstance::<VMInt>() {
         return Err(VMError::InvalidArgument(
-            start.clone(), // Clone before potential drop
+            start.clone_ref(), // Clone before potential drop
             "Start of range is not a VMInt".to_string(),
         ));
     }
     if !end.isinstance::<VMInt>() {
         return Err(VMError::InvalidArgument(
-            end.clone(), // Clone before potential drop
+            end.clone_ref(), // Clone before potential drop
             "End of range is not a VMInt".to_string(),
         ));
     }
@@ -1564,10 +1564,10 @@ pub fn import(
 
     if !path_arg.isinstance::<VMString>() {
         return Err(VMError::InvalidArgument(
-            path_arg.clone(), // Clone before potential drop
+            path_arg.clone_ref(), // Clone before potential drop
             format!(
                 "Import requires VMString but got {}",
-                try_repr_vmobject(path_arg.clone(), None).unwrap_or(format!("{:?}", path_arg))
+                try_repr_vmobject(&mut path_arg, None).unwrap_or(format!("{:?}", path_arg))
             ),
         ));
     }
@@ -1671,7 +1671,7 @@ pub fn alias_of(
     gc_system: &mut GCSystem,
 ) -> Result<Option<Vec<SpawnedCoroutine>>, VMError> {
     let mut obj = vm.get_object_and_check(0)?;
-    let obj_alias = try_const_alias_as_vmobject(&obj).map_err(VMError::VMVariableError)?;
+    let obj_alias = try_const_alias_as_vmobject(&mut obj).map_err(VMError::VMVariableError)?;
     let mut tuple = Vec::new();
     for alias in obj_alias.iter() {
         tuple.push(gc_system.new_object(VMString::new(alias)));
@@ -1730,14 +1730,14 @@ pub fn build_set(
 
     if !filter.isinstance::<VMLambda>() {
         return Err(VMError::InvalidArgument(
-            filter.clone(), // Clone before potential drop
+            filter.clone_ref(), // Clone before potential drop
             "BuildSet: Filter requires VMLambda".to_string(),
         ));
     }
 
     if collection.isinstance::<VMSet>() {
         return Err(VMError::InvalidArgument(
-                collection.clone(), // Clone before potential drop
+                collection.clone_ref(), // Clone before potential drop
                 "BuildSet: Due to the limitation of the current implementation, the collection cannot be a VMSet. You should build a VMTuple before creating a VMSet".to_string(),
             ));
     }
@@ -1747,7 +1747,7 @@ pub fn build_set(
         && !collection.isinstance::<VMRange>()
     {
         return Err(VMError::InvalidArgument(
-            collection.clone(), // Clone before potential drop
+            collection.clone_ref(), // Clone before potential drop
             "BuildSet: Not a collection".to_string(),
         ));
     }
@@ -1789,7 +1789,7 @@ pub fn push_value_into_tuple(
 
     if !tuple.isinstance::<VMTuple>() {
         return Err(VMError::InvalidArgument(
-            tuple.clone(), // Clone before potential drop
+            tuple.clone_ref(), // Clone before potential drop
             "PushValueIntoTuple: Not a tuple".to_string(),
         ));
     }
@@ -1829,7 +1829,7 @@ pub fn reset_iter(
         set.reset();
     } else {
         return Err(VMError::InvalidArgument(
-            obj.clone(),
+            obj.clone_ref(),
             "ResetIter: Not a iterable".to_string(),
         ));
     }
@@ -1886,7 +1886,7 @@ pub fn next_or_jump(
         }
     } else {
         return Err(VMError::InvalidArgument(
-            obj.clone(),
+            obj.clone_ref(),
             "NextOrJump: Not a iterable".to_string(),
         ));
     }
@@ -1901,7 +1901,7 @@ pub fn get_lambda_capture(
     let mut obj = vm.get_object_and_check(0)?;
     if !obj.isinstance::<VMLambda>() {
         return Err(VMError::InvalidArgument(
-            obj.clone(), // Clone before potential drop
+            obj.clone_ref(), // Clone before potential drop
             "GetLambdaCapture: Not a VMLambda".to_string(),
         ));
     }
@@ -1930,7 +1930,7 @@ pub fn get_length(
     gc_system: &mut GCSystem,
 ) -> Result<Option<Vec<SpawnedCoroutine>>, VMError> {
     let mut obj = vm.get_object_and_check(0)?;
-    let result = try_length_of_as_vmobject(&obj).map_err(VMError::VMVariableError)?;
+    let result = try_length_of_as_vmobject(&mut obj).map_err(VMError::VMVariableError)?;
     let result = gc_system.new_object(VMInt::new(result as i64));
 
     // Pop object from stack after successful operation

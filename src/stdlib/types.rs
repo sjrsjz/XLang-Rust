@@ -9,16 +9,16 @@ use xlang_vm_core::{
 // Assuming check_if_tuple will be available via super
 use super::check_if_tuple;
 
-pub fn len(tuple: GCRef, gc_system: &mut GCSystem) -> Result<GCRef, VMVariableError> {
-    check_if_tuple(tuple.clone())?;
-    let tuple_obj = tuple.as_const_type::<VMTuple>();
+pub fn len(tuple: &mut GCRef, gc_system: &mut GCSystem) -> Result<GCRef, VMVariableError> {
+    check_if_tuple(tuple)?;
+    let tuple_obj = tuple.as_type::<VMTuple>();
     if tuple_obj.values.len() != 1 {
         return Err(VMVariableError::TypeError(
-            tuple.clone(),
-            format!("len expected 1 argument, got {}", tuple_obj.values.len()),
+            tuple.clone_ref(),
+            format!("len expected 1 argument, got {}", tuple.as_const_type::<VMTuple>().values.len()),
         ));
     }
-    let target_obj = &tuple_obj.values[0];
+    let target_obj = &mut tuple_obj.values[0];
     if target_obj.isinstance::<VMTuple>() {
         let inner_tuple = target_obj.as_const_type::<VMTuple>();
         let obj = gc_system.new_object(VMInt::new(inner_tuple.values.len() as i64));
@@ -33,67 +33,67 @@ pub fn len(tuple: GCRef, gc_system: &mut GCSystem) -> Result<GCRef, VMVariableEr
         return Ok(obj);
     } else {
         return Err(VMVariableError::TypeError(
-            target_obj.clone(), // Error points to the specific object
+            target_obj.clone_ref(), // Error points to the specific object
             "Argument for len must be a string, bytes, or tuple".to_string(),
         ));
     }
 }
 
-pub fn to_int(tuple: GCRef, gc_system: &mut GCSystem) -> Result<GCRef, VMVariableError> {
-    check_if_tuple(tuple.clone())?;
-    let tuple_obj = tuple.as_const_type::<VMTuple>();
+pub fn to_int(tuple: &mut GCRef, gc_system: &mut GCSystem) -> Result<GCRef, VMVariableError> {
+    check_if_tuple(tuple)?;
+    let tuple_obj = tuple.as_type::<VMTuple>();
     if tuple_obj.values.len() != 1 {
         return Err(VMVariableError::TypeError(
-            tuple.clone(),
-            format!("int expected 1 argument, got {}", tuple_obj.values.len()),
+            tuple.clone_ref(),
+            format!("int expected 1 argument, got {}", tuple.as_const_type::<VMTuple>().values.len()),
         ));
     }
-    let target_obj = &tuple_obj.values[0];
+    let target_obj = &mut tuple_obj.values[0];
     if target_obj.isinstance::<VMInt>() {
-        let data = target_obj.as_const_type::<VMInt>().to_int()?;
+        let data = target_obj.as_type::<VMInt>().to_int()?;
         return Ok(gc_system.new_object(VMInt::new(data)));
     }
     if target_obj.isinstance::<VMFloat>() {
-        let data = target_obj.as_const_type::<VMFloat>().to_int()?;
+        let data = target_obj.as_type::<VMFloat>().to_int()?;
         return Ok(gc_system.new_object(VMInt::new(data)));
     }
     if target_obj.isinstance::<VMString>() {
-        let data = target_obj.as_const_type::<VMString>().to_int()?;
+        let data = target_obj.as_type::<VMString>().to_int()?;
         return Ok(gc_system.new_object(VMInt::new(data)));
     }
     if target_obj.isinstance::<VMNull>() {
         return Ok(gc_system.new_object(VMInt::new(0)));
     }
     if target_obj.isinstance::<VMBoolean>() {
-        let data = target_obj.as_const_type::<VMBoolean>().to_int()?;
+        let data = target_obj.as_type::<VMBoolean>().to_int()?;
         return Ok(gc_system.new_object(VMInt::new(data)));
     }
     Err(VMVariableError::TypeError(
-        target_obj.clone(), // Error points to the specific object
+        target_obj.clone_ref(), // Error points to the specific object
         "Argument for int must be convertible to an integer".to_string(),
     ))
 }
 
-pub fn to_float(tuple: GCRef, gc_system: &mut GCSystem) -> Result<GCRef, VMVariableError> {
-    check_if_tuple(tuple.clone())?;
-    let tuple_obj = tuple.as_const_type::<VMTuple>();
+pub fn to_float(tuple: &mut GCRef, gc_system: &mut GCSystem) -> Result<GCRef, VMVariableError> {
+    check_if_tuple(tuple)?;
+    let tuple_obj = tuple.as_type::<VMTuple>();
     if tuple_obj.values.len() != 1 {
         return Err(VMVariableError::TypeError(
-            tuple.clone(),
-            format!("float expected 1 argument, got {}", tuple_obj.values.len()),
+            tuple.clone_ref(),
+            format!("float expected 1 argument, got {}", tuple.as_const_type::<VMTuple>().values.len()),
         ));
     }
-    let target_obj = &tuple_obj.values[0];
+    let target_obj = &mut tuple_obj.values[0];
     if target_obj.isinstance::<VMInt>() {
-        let data = target_obj.as_const_type::<VMInt>().to_float()?;
+        let data = target_obj.as_type::<VMInt>().to_float()?;
         return Ok(gc_system.new_object(VMFloat::new(data)));
     }
     if target_obj.isinstance::<VMFloat>() {
-        let data = target_obj.as_const_type::<VMFloat>().to_float()?;
+        let data = target_obj.as_type::<VMFloat>().to_float()?;
         return Ok(gc_system.new_object(VMFloat::new(data)));
     }
     if target_obj.isinstance::<VMString>() {
-        let data = target_obj.as_const_type::<VMString>().to_float()?;
+        let data = target_obj.as_type::<VMString>().to_float()?;
         return Ok(gc_system.new_object(VMFloat::new(data)));
     }
     if target_obj.isinstance::<VMNull>() {
@@ -106,40 +106,40 @@ pub fn to_float(tuple: GCRef, gc_system: &mut GCSystem) -> Result<GCRef, VMVaria
         return Ok(gc_system.new_object(VMFloat::new(data)));
     }
     Err(VMVariableError::TypeError(
-        target_obj.clone(), // Error points to the specific object
+        target_obj.clone_ref(), // Error points to the specific object
         "Argument for float must be convertible to a float".to_string(),
     ))
 }
 
-pub fn to_string(tuple: GCRef, gc_system: &mut GCSystem) -> Result<GCRef, VMVariableError> {
-    check_if_tuple(tuple.clone())?;
-    let tuple_obj = tuple.as_const_type::<VMTuple>();
+pub fn to_string(tuple: &mut GCRef, gc_system: &mut GCSystem) -> Result<GCRef, VMVariableError> {
+    check_if_tuple(tuple)?;
+    let tuple_obj = tuple.as_type::<VMTuple>();
     if tuple_obj.values.len() != 1 {
         return Err(VMVariableError::TypeError(
-            tuple.clone(),
-            format!("string expected 1 argument, got {}", tuple_obj.values.len()),
+            tuple.clone_ref(),
+            format!("string expected 1 argument, got {}", tuple.as_const_type::<VMTuple>().values.len()),
         ));
     }
-    let target_obj = &tuple_obj.values[0];
+    let target_obj = &mut tuple_obj.values[0];
     if target_obj.isinstance::<VMBytes>() {
-        let data = target_obj.as_const_type::<VMBytes>().to_string()?;
+        let data = target_obj.as_type::<VMBytes>().to_string()?;
         return Ok(gc_system.new_object(VMString::new(&data)));
     }
     // Use the try_to_string_vmobject helper defined/re-exported in this module
-    let data = try_to_string_vmobject(target_obj.clone(), None)?;
+    let data = try_to_string_vmobject(target_obj, None)?;
     Ok(gc_system.new_object(VMString::new(&data)))
 }
 
-pub fn to_bool(tuple: GCRef, gc_system: &mut GCSystem) -> Result<GCRef, VMVariableError> {
-    check_if_tuple(tuple.clone())?;
-    let tuple_obj = tuple.as_const_type::<VMTuple>();
+pub fn to_bool(tuple: &mut GCRef, gc_system: &mut GCSystem) -> Result<GCRef, VMVariableError> {
+    check_if_tuple(tuple)?;
+    let tuple_obj = tuple.as_type::<VMTuple>();
     if tuple_obj.values.len() != 1 {
         return Err(VMVariableError::TypeError(
-            tuple.clone(),
-            format!("bool expected 1 argument, got {}", tuple_obj.values.len()),
+            tuple.clone_ref(),
+            format!("bool expected 1 argument, got {}", tuple.as_const_type::<VMTuple>().values.len()),
         ));
     }
-    let target_obj = &tuple_obj.values[0];
+    let target_obj = &mut tuple_obj.values[0];
     if target_obj.isinstance::<VMInt>() {
         let data = target_obj.as_const_type::<VMInt>().to_bool()?;
         return Ok(gc_system.new_object(VMBoolean::new(data)));
@@ -160,20 +160,20 @@ pub fn to_bool(tuple: GCRef, gc_system: &mut GCSystem) -> Result<GCRef, VMVariab
         return Ok(gc_system.new_object(VMBoolean::new(data)));
     }
      Err(VMVariableError::TypeError(
-        target_obj.clone(), // Error points to the specific object
+        target_obj.clone_ref(), // Error points to the specific object
         "Argument for bool must be convertible to a boolean".to_string(),
     ))
 }
-pub fn to_bytes(tuple: GCRef, gc_system: &mut GCSystem) -> Result<GCRef, VMVariableError> {
-    check_if_tuple(tuple.clone())?;
-    let tuple_obj = tuple.as_const_type::<VMTuple>();
+pub fn to_bytes(tuple: &mut GCRef, gc_system: &mut GCSystem) -> Result<GCRef, VMVariableError> {
+    check_if_tuple(tuple)?;
+    let tuple_obj = tuple.as_type::<VMTuple>();
     if tuple_obj.values.len() != 1 {
         return Err(VMVariableError::TypeError(
-            tuple.clone(),
-            format!("bytes expected 1 argument, got {}", tuple_obj.values.len()),
+            tuple.clone_ref(),
+            format!("bytes expected 1 argument, got {}", tuple.as_const_type::<VMTuple>().values.len()),
         ));
     }
-    let target_obj = &tuple_obj.values[0];
+    let target_obj = &mut tuple_obj.values[0];
     if target_obj.isinstance::<VMBytes>() {
         return Ok(gc_system.new_object(VMBytes::new(
             &target_obj.as_const_type::<VMBytes>().value,
@@ -190,20 +190,20 @@ pub fn to_bytes(tuple: GCRef, gc_system: &mut GCSystem) -> Result<GCRef, VMVaria
         let int_value = target_obj.as_const_type::<VMInt>().value;
         if !(0..=255).contains(&int_value) {
             return Err(VMVariableError::ValueError(
-                target_obj.clone(),
+                target_obj.clone_ref(),
                 "Integer values for bytes conversion must be between 0 and 255".to_string(),
             ));
         }
         return Ok(gc_system.new_object(VMBytes::new(&vec![int_value as u8])));
     } else if target_obj.isinstance::<VMTuple>() {
         // 支持整数元组转字节序列
-        let inner_tuple = target_obj.as_const_type::<VMTuple>();
+        let inner_tuple = target_obj.as_type::<VMTuple>();
         let mut byte_vec = Vec::with_capacity(inner_tuple.values.len());
 
-        for value in &inner_tuple.values {
+        for value in &mut inner_tuple.values {
             if !value.isinstance::<VMInt>() {
                 return Err(VMVariableError::ValueError(
-                    value.clone(),
+                    value.clone_ref(),
                     "All elements in tuple must be integers for bytes conversion".to_string(),
                 ));
             }
@@ -211,7 +211,7 @@ pub fn to_bytes(tuple: GCRef, gc_system: &mut GCSystem) -> Result<GCRef, VMVaria
             let int_value = value.as_const_type::<VMInt>().value;
             if !(0..=255).contains(&int_value) {
                 return Err(VMVariableError::ValueError(
-                    value.clone(),
+                    value.clone_ref(),
                     "Integer values for bytes conversion must be between 0 and 255".to_string(),
                 ));
             }
@@ -223,7 +223,7 @@ pub fn to_bytes(tuple: GCRef, gc_system: &mut GCSystem) -> Result<GCRef, VMVaria
     }
 
     Err(VMVariableError::TypeError(
-        target_obj.clone(), // Error points to the specific object
+        target_obj.clone_ref(), // Error points to the specific object
         "Argument for bytes must be bytes, string, integer (0-255), or tuple of integers (0-255)"
             .to_string(),
     ))
@@ -232,7 +232,7 @@ pub fn to_bytes(tuple: GCRef, gc_system: &mut GCSystem) -> Result<GCRef, VMVaria
 // Helper to provide functions for registration
 pub fn get_type_conversion_functions() -> Vec<(
     &'static str,
-    fn(GCRef, &mut GCSystem) -> Result<GCRef, VMVariableError>,
+    fn(&mut GCRef, &mut GCSystem) -> Result<GCRef, VMVariableError>,
 )> {
     vec![
         ("len", len),

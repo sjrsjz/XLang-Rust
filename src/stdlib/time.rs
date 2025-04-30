@@ -4,8 +4,7 @@ use std::{
 };
 use xlang_vm_core::{
     executor::variable::{
-        VMFloat, VMInt, VMLambda, VMLambdaBody, VMNull, VMNativeGeneratorFunction,
-        VMVariableError,
+        VMFloat, VMInt, VMLambda, VMLambdaBody, VMNativeGeneratorFunction, VMNull, VMTuple, VMVariableError
     },
     gc::{GCRef, GCSystem},
 };
@@ -74,13 +73,13 @@ impl VMNativeGeneratorFunction for SleepGenerator {
 }
 
 // Entry function exposed to the VM
-pub fn sleep_entry(tuple: GCRef, gc_system: &mut GCSystem) -> Result<GCRef, VMVariableError> {
-    check_if_tuple(tuple.clone())?;
-    let tuple_obj = tuple.as_const_type::<xlang_vm_core::executor::variable::VMTuple>();
+pub fn sleep_entry(tuple: &mut GCRef, gc_system: &mut GCSystem) -> Result<GCRef, VMVariableError> {
+    check_if_tuple(tuple)?;
+    let tuple_obj = tuple.as_type::<VMTuple>();
     if tuple_obj.values.len() != 1 {
         return Err(VMVariableError::TypeError(
-            tuple.clone(),
-            format!("sleep expected 1 argument (duration), got {}", tuple_obj.values.len()),
+            tuple.clone_ref(),
+            format!("sleep expected 1 argument (duration), got {}", tuple.as_const_type::<VMTuple>().values.len()),
         ));
     }
     let duration_arg = tuple_obj.values[0].clone();
@@ -103,7 +102,7 @@ pub fn sleep_entry(tuple: GCRef, gc_system: &mut GCSystem) -> Result<GCRef, VMVa
 
     
     // Create an empty tuple for default args
-    let mut params = gc_system.new_object(xlang_vm_core::executor::variable::VMTuple::new(&mut vec![]));
+    let mut params = gc_system.new_object(VMTuple::new(&mut vec![]));
     let mut result = gc_system.new_object(VMNull::new()); // Default result placeholder
 
     // Wrap the generator in a VMLambda
@@ -127,7 +126,7 @@ pub fn sleep_entry(tuple: GCRef, gc_system: &mut GCSystem) -> Result<GCRef, VMVa
 
 
 pub fn timestamp(
-    _value: GCRef,
+    _value: &mut GCRef,
     gc_system: &mut GCSystem,
 ) -> Result<GCRef, VMVariableError>{
     // return the current time in seconds since the epoch
@@ -142,7 +141,7 @@ pub fn timestamp(
 // Helper to provide the entry function for registration
 pub fn get_time_function() -> Vec<(
     &'static str,
-    fn(GCRef, &mut GCSystem) -> Result<GCRef, VMVariableError>,
+    fn(&mut GCRef, &mut GCSystem) -> Result<GCRef, VMVariableError>,
 )> {
     vec![("sleep", sleep_entry), ("timestamp", timestamp)]
 }

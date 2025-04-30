@@ -40,6 +40,8 @@ impl ContextError {
             ContextError::ContextError(msg) => format!("Context error: {}", msg),
         }
     }
+
+    pub fn consume_ref(&mut self) {}
 }
 
 impl Default for Context {
@@ -196,7 +198,7 @@ impl Context {
         Err(ContextError::NoVariable(name.to_string()))
     }
 
-    pub fn format_context(&self, stack: &Vec<VMStackObject>) -> String {
+    pub fn format_context(&mut self, stack: &mut Vec<VMStackObject>) -> String {
         use colored::*;
 
         // 定义统一的颜色主题
@@ -221,7 +223,7 @@ impl Context {
             );
 
             for (i, (vars, frame_type, function_code_position, is_hidden_frame)) in
-                self.frames.iter().enumerate().rev()
+                self.frames.iter_mut().enumerate().rev()
             {
                 // Frame header
                 let frame_type_str = match frame_type {
@@ -266,8 +268,8 @@ impl Context {
                 } else {
                     output.push_str(&"  Variables:\n".color(section_color).bold().to_string());
 
-                    for (name, var) in vars.iter() {
-                        let var_value = try_repr_vmobject(var.clone(), None)
+                    for (name, var) in vars.iter_mut() {
+                        let var_value = try_repr_vmobject(var, None)
                             .unwrap_or_else(|_| "<cannot display>".to_string());
 
                         // 统一变量名和值的颜色
@@ -295,10 +297,10 @@ impl Context {
         if stack.is_empty() {
             output.push_str(&"Stack is empty\n\n".dimmed().to_string());
         } else {
-            for (i, item) in stack.iter().enumerate() {
+            for (i, item) in stack.iter_mut().enumerate() {
                 match item {
                     VMStackObject::LastIP(self_lambda, ip, is_function_call) => {
-                        let self_lambda_value = try_repr_vmobject(self_lambda.clone(), None)
+                        let self_lambda_value = try_repr_vmobject(self_lambda, None)
                             .unwrap_or_else(|_| "<cannot display>".to_string());
                         let call_type = if *is_function_call {
                             "function call"
@@ -320,7 +322,7 @@ impl Context {
                         output.push_str(&ip_line.color(symbol_color).to_string());
                     }
                     VMStackObject::VMObject(obj_ref) => {
-                        let obj_value = try_repr_vmobject(obj_ref.clone(), None)
+                        let obj_value = try_repr_vmobject(obj_ref, None)
                             .unwrap_or_else(|_| "<cannot display>".to_string());
 
                         let object_line = format!("+ [{}] {}\n", i, obj_value);
@@ -350,15 +352,15 @@ impl Context {
 
         output
     }
-    pub fn _debug_print_all_vars(&self) {
-        for (vars, _, _, _) in self.frames.iter().rev() {
+    pub fn _debug_print_all_vars(&mut self) {
+        for (vars, _, _, _) in self.frames.iter_mut().rev() {
             println!("=== Frame Variables === {}", vars.len());
-            for (name, var) in vars.iter() {
+            for (name, var) in vars.iter_mut() {
                 println!(
                     "{}({}): {:?}, refs: {:?} <- {}",
                     name,
                     var.clone(),
-                    try_repr_vmobject(var.clone(), None),
+                    try_repr_vmobject(var, None),
                     var.get_const_traceable().references,
                     var.get_const_traceable().native_gcref_object_count
                 );

@@ -20,9 +20,9 @@ use std::fs;
 use std::path::Path;
 use std::path::PathBuf;
 
-use xlang_frontend::parser::lexer::lexer;
-use xlang_frontend::dir_stack::DirStack;
 use xlang_frontend::compile::{build_code, compile_to_bytecode};
+use xlang_frontend::dir_stack::DirStack;
+use xlang_frontend::parser::lexer::lexer;
 
 #[derive(Parser)]
 #[command(author, version, about, long_about = None)]
@@ -100,45 +100,55 @@ fn execute_ir(package: VMInstructionPackage, _dir_stack: &mut DirStack) -> Resul
         None,
         &mut VMLambdaBody::VMInstruction(lambda_instructions.clone()),
         &mut lambda_result,
-        false
+        false,
     ));
     lambda_instructions.drop_ref();
     lambda_result.drop_ref();
 
     main_lambda.clone_ref();
 
-    let coro_id = coroutine_pool.new_coroutine(&mut main_lambda, &mut default_args_tuple, &mut gc_system)?;
-    
-    let result = inject_builtin_functions(coroutine_pool.get_executor_mut(coro_id).unwrap().get_context_mut(), &mut gc_system);
+    let coro_id =
+        coroutine_pool.new_coroutine(&mut main_lambda, &mut default_args_tuple, &mut gc_system)?;
 
-    if let Err(e) = result {
+    let result = inject_builtin_functions(
+        coroutine_pool
+            .get_executor_mut(coro_id)
+            .unwrap()
+            .get_context_mut(),
+        &mut gc_system,
+    );
+
+    if let Err(mut e) = result {
         eprintln!(
             "{} {}",
             "VM Crashed!:".bright_red().underline().bold(),
             e.to_string()
         );
+        e.consume_ref();
         return Err(VMError::AssertFailed);
-    }    
-    
+    }
+
     let result = coroutine_pool.run_until_finished(&mut gc_system);
-    if let Err(e) = result {
+    if let Err(mut e) = result {
         eprintln!(
             "{} {}",
             "VM Crashed!:".bright_red().underline().bold(),
             e.to_string()
         );
+        e.consume_ref();
         return Err(VMError::AssertFailed);
     }
 
     let result = main_lambda.as_type::<VMLambda>().get_value();
 
     if !result.isinstance::<VMNull>() {
-        match try_repr_vmobject(result.clone(), None) {
+        match try_repr_vmobject(result, None) {
             Ok(value) => {
                 println!("{}", value);
             }
-            Err(err) => {
+            Err(mut err) => {
                 println!("Unable to repr: {}", err.to_string());
+                err.consume_ref();
             }
         }
     }
@@ -167,7 +177,7 @@ fn execute_ir_repl(
         None,
         &mut VMLambdaBody::VMInstruction(lambda_instructions.clone()),
         &mut lambda_result,
-        false
+        false,
     ));
 
     lambda_instructions.drop_ref();
@@ -181,17 +191,24 @@ fn execute_ir_repl(
 
     main_lambda.drop_ref();
     let coro_id = coroutine_pool.new_coroutine(&mut wrapped, &mut default_args_tuple, gc_system)?;
-    
-    let result = inject_builtin_functions(coroutine_pool.get_executor_mut(coro_id).unwrap().get_context_mut(), gc_system);
 
-    if let Err(e) = result {
+    let result = inject_builtin_functions(
+        coroutine_pool
+            .get_executor_mut(coro_id)
+            .unwrap()
+            .get_context_mut(),
+        gc_system,
+    );
+
+    if let Err(mut e) = result {
         eprintln!(
             "{} {}",
             "VM Crashed!:".bright_red().underline().bold(),
             e.to_string()
         );
+        e.consume_ref();
         return Err(VMError::AssertFailed);
-    }    
+    }
 
     coroutine_pool.run_until_finished(gc_system)?;
     gc_system.collect();
@@ -228,9 +245,13 @@ fn run_file(path: &PathBuf) -> Result<(), String> {
 
                     match execute_ir(result, &mut dir_stack) {
                         Ok(_) => Ok(()),
-                        Err(e) => Err(format!("Execution error: {}", e.to_string())
-                            .bright_red()
-                            .to_string()),
+                        Err(mut e) => {
+                            let err = Err(format!("Execution error: {}", e.to_string())
+                                .bright_red()
+                                .to_string());
+                            e.consume_ref();
+                            err
+                        }
                     }
                 }
                 Err(e) => Err(format!("Error reading IR file: {}", e)
@@ -251,9 +272,13 @@ fn run_file(path: &PathBuf) -> Result<(), String> {
                     .unwrap();
                     match execute_ir(bytecode, &mut dir_stack) {
                         Ok(_) => Ok(()),
-                        Err(e) => Err(format!("Execution error: {}", e.to_string())
-                            .bright_red()
-                            .to_string()),
+                        Err(mut e) => {
+                            let err = Err(format!("Execution error: {}", e.to_string())
+                                .bright_red()
+                                .to_string());
+                            e.consume_ref();
+                            err
+                        }
                     }
                 }
                 Err(e) => Err(format!("Error reading bytecode file: {}", e)
@@ -272,9 +297,12 @@ fn run_file(path: &PathBuf) -> Result<(), String> {
                             .to_path_buf(),
                     ));
                     if dir_stack.is_err() {
-                        return Err(format!("Error creating directory stack: {}", dir_stack.err().unwrap())
-                            .bright_red()
-                            .to_string());
+                        return Err(format!(
+                            "Error creating directory stack: {}",
+                            dir_stack.err().unwrap()
+                        )
+                        .bright_red()
+                        .to_string());
                     }
                     let mut dir_stack = dir_stack.unwrap();
                     match build_code(&code, &mut dir_stack) {
@@ -293,9 +321,13 @@ fn run_file(path: &PathBuf) -> Result<(), String> {
                             };
                             match execute_ir(result, &mut dir_stack) {
                                 Ok(_) => Ok(()),
-                                Err(e) => Err(format!("Execution error: {}", e.to_string())
-                                    .bright_red()
-                                    .to_string()),
+                                Err(mut e) => {
+                                    let err = Err(format!("Execution error: {}", e.to_string())
+                                        .bright_red()
+                                        .to_string());
+                                    e.consume_ref();
+                                    err
+                                }
                             }
                         }
                         Err(e) => Err(format!("Compilation error: {}", e).bright_red().to_string()),
@@ -791,10 +823,10 @@ fn run_repl() -> Result<(), String> {
                             let result = translator.get_result();
                             match execute_ir_repl(result, &mut gc_system, &mut input_arguments) {
                                 Ok(mut lambda_ref) => {
-                                    let executed = lambda_ref.as_const_type::<VMLambda>();
-                                    let result_ref = executed.result.clone();
+                                    let executed = lambda_ref.as_type::<VMLambda>();
+                                    let result_ref = &mut executed.result;
                                     let idx = input_arguments.as_type::<VMTuple>().values.len();
-                                    match try_repr_vmobject(result_ref.clone(), None) {
+                                    match try_repr_vmobject(result_ref, None) {
                                         Ok(value) => {
                                             if !result_ref.isinstance::<VMNull>() {
                                                 println!(
@@ -818,24 +850,28 @@ fn run_repl() -> Result<(), String> {
                                                 );
                                             }
                                         }
-                                        Err(err) => {
+                                        Err(mut e) => {
                                             println!(
                                                 "{}{}",
                                                 format!("Out[{}]", idx).blue().bold(),
-                                                format!("<Unable to repr: {}>", err.to_string())
+                                                format!("<Unable to repr: {}>", e.to_string())
                                                     .red()
                                             );
+                                            e.consume_ref();
                                         }
                                     }
                                     lambda_ref.drop_ref();
                                 }
-                                Err(e) => println!(
-                                    "{}",
-                                    format!("Execution error: {}", e.to_string())
-                                        .red()
-                                        .bold()
-                                        .underline()
-                                ),
+                                Err(mut e) => {
+                                    println!(
+                                        "{}",
+                                        format!("Execution error: {}", e.to_string())
+                                            .red()
+                                            .bold()
+                                            .underline()
+                                    );
+                                    e.consume_ref();
+                                }
                             }
                         } else {
                             println!("{}", "IR translation failed.".red());

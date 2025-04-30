@@ -311,19 +311,19 @@ impl VMNativeGeneratorFunction for RequestGenerator {
 /// - header: tuple (可选, 元素为 key:value 或 key=>value, key/value 需为 string)
 /// - body: bytes | string | null (可选)
 /// - timeout_ms: int (可选, 超时毫秒数)
-pub fn request(mut tuple: GCRef, gc_system: &mut GCSystem) -> Result<GCRef, VMVariableError> {
-    check_if_tuple(tuple.clone())?;
+pub fn request(tuple: &mut GCRef, gc_system: &mut GCSystem) -> Result<GCRef, VMVariableError> {
+    check_if_tuple(tuple)?;
     let tuple_obj = tuple.as_type::<VMTuple>(); // Get mutable reference
 
     // --- 解析 URL (必需) ---
-    let url_ref = tuple_obj
+    let mut url_ref = tuple_obj
         .get_member_by_string("url", gc_system)
         .map_err(|_| {
             VMVariableError::DetailedError("Missing required named argument 'url'".to_string())
         })?;
     if !url_ref.isinstance::<VMString>() {
         return Err(VMVariableError::TypeError(
-            url_ref.clone(),
+            url_ref.clone_ref(),
             "Named argument 'url' must be a string".to_string(),
         ));
     }
@@ -335,10 +335,10 @@ pub fn request(mut tuple: GCRef, gc_system: &mut GCSystem) -> Result<GCRef, VMVa
 
     // --- 解析 Method (可选) ---
     let method = match tuple_obj.get_member_by_string("method", gc_system) {
-        Ok(method_ref) => {
+        Ok(mut method_ref) => {
             if !method_ref.isinstance::<VMString>() {
                 return Err(VMVariableError::TypeError(
-                    method_ref.clone(),
+                    method_ref.clone_ref(),
                     "Named argument 'method' must be a string".to_string(),
                 ));
             }
@@ -357,30 +357,27 @@ pub fn request(mut tuple: GCRef, gc_system: &mut GCSystem) -> Result<GCRef, VMVa
 
     // --- 解析 Headers (可选) ---
     let mut headers = HeaderMap::new();
-    if let Ok(header_ref) = tuple_obj.get_member_by_string("header", gc_system) {
+    if let Ok(mut header_ref) = tuple_obj.get_member_by_string("header", gc_system) {
         if !header_ref.isinstance::<VMTuple>() {
             return Err(VMVariableError::TypeError(
-                header_ref.clone(),
+                header_ref.clone_ref(),
                 "Named argument 'header' must be a tuple".to_string(),
             ));
         }
-        let header_tuple = header_ref.as_const_type::<VMTuple>();
-        for header_item in &header_tuple.values {
-            let (h_key_ref, h_val_ref) = if header_item.isinstance::<VMKeyVal>() {
-                let kv = header_item.as_const_type::<VMKeyVal>();
-                (kv.get_const_key(), kv.get_const_value())
+        let header_tuple = header_ref.as_type::<VMTuple>();
+        for header_item in &mut header_tuple.values {
+            let (h_key_str, h_val_str) = if header_item.isinstance::<VMKeyVal>() {
+                let kv = header_item.as_type::<VMKeyVal>();
+                (try_to_string_vmobject(kv.get_key(), None)?, try_to_string_vmobject(kv.get_value(), None)?)
             } else if header_item.isinstance::<VMNamed>() {
-                let named_h = header_item.as_const_type::<VMNamed>();
-                (named_h.get_const_key(), named_h.get_const_value())
+                let named_h = header_item.as_type::<VMNamed>();
+                (try_to_string_vmobject(named_h.get_key(), None)?, try_to_string_vmobject(named_h.get_value(), None)?)
             } else {
                 return Err(VMVariableError::TypeError(
-                    header_item.clone(),
+                    header_item.clone_ref(),
                     "Header items must be key:value or key=>value pairs".to_string(),
                 ));
             };
-
-            let h_key_str = try_to_string_vmobject(h_key_ref.clone(), None)?;
-            let h_val_str = try_to_string_vmobject(h_val_ref.clone(), None)?;
 
             let header_name = HeaderName::from_bytes(h_key_str.as_bytes()).map_err(|e| {
                 VMVariableError::DetailedError(format!("Invalid header name '{}': {}", h_key_str, e))
@@ -399,7 +396,7 @@ pub fn request(mut tuple: GCRef, gc_system: &mut GCSystem) -> Result<GCRef, VMVa
 
     // --- 解析 Body (可选) ---
     let mut body_opt: Option<Vec<u8>> = None;
-    if let Ok(body_ref) = tuple_obj.get_member_by_string("body", gc_system) {
+    if let Ok(mut body_ref) = tuple_obj.get_member_by_string("body", gc_system) {
         if body_ref.isinstance::<VMBytes>() {
             body_opt = Some(body_ref.as_const_type::<VMBytes>().value.clone());
         } else if body_ref.isinstance::<VMString>() {
@@ -414,7 +411,7 @@ pub fn request(mut tuple: GCRef, gc_system: &mut GCSystem) -> Result<GCRef, VMVa
             body_opt = None; // Explicitly allow null to clear body
         } else {
             return Err(VMVariableError::TypeError(
-                body_ref.clone(),
+                body_ref.clone_ref(),
                 "Named argument 'body' must be bytes, string, or null".to_string(),
             ));
         }
@@ -422,7 +419,7 @@ pub fn request(mut tuple: GCRef, gc_system: &mut GCSystem) -> Result<GCRef, VMVa
 
     // --- 解析 Timeout (可选) ---
     let mut timeout_opt: Option<Duration> = None;
-    if let Ok(timeout_ref) = tuple_obj.get_member_by_string("timeout_ms", gc_system) {
+    if let Ok(mut timeout_ref) = tuple_obj.get_member_by_string("timeout_ms", gc_system) {
         if timeout_ref.isinstance::<VMInt>() {
             let ms = timeout_ref.as_const_type::<VMInt>().value;
             if ms > 0 {
@@ -438,7 +435,7 @@ pub fn request(mut tuple: GCRef, gc_system: &mut GCSystem) -> Result<GCRef, VMVa
             }
         } else if !timeout_ref.isinstance::<VMNull>() { // Allow null to explicitly mean no timeout
              return Err(VMVariableError::TypeError(
-                timeout_ref.clone(),
+                timeout_ref.clone_ref(),
                 "Named argument 'timeout_ms' must be an integer or null".to_string(),
             ));
         }
@@ -490,7 +487,7 @@ pub fn request(mut tuple: GCRef, gc_system: &mut GCSystem) -> Result<GCRef, VMVa
 /// 返回包含 `request` 函数的向量，以便注册到 VM。
 pub fn get_request_functions() -> Vec<(
     &'static str,
-    fn(GCRef, &mut GCSystem) -> Result<GCRef, VMVariableError>,
+    fn(&mut GCRef, &mut GCSystem) -> Result<GCRef, VMVariableError>,
 )> {
     vec![("request", request)]
 }

@@ -12,10 +12,10 @@ use xlang_vm_core::executor::ffi::vm_clambda_loading;
 use xlang_vm_core::executor::vm::VMError;
 use xlang_vm_core::gc::{GCRef, GCSystem};
 use xlang_vm_core::executor::variable::{VMCLambdaInstruction, VMKeyVal, VMLambda, VMLambdaBody, VMNull, VMString, VMTuple, VMVariableError};
-pub(crate) fn check_if_tuple(tuple: GCRef) -> Result<(), VMVariableError> {
+pub(crate) fn check_if_tuple(tuple: &mut GCRef) -> Result<(), VMVariableError> {
     if !tuple.isinstance::<VMTuple>() {
         return Err(VMVariableError::TypeError(
-            tuple,
+            tuple.clone_ref(),
             "native function's input must be a tuple".to_string(),
         ));
     }
@@ -24,7 +24,7 @@ pub(crate) fn check_if_tuple(tuple: GCRef) -> Result<(), VMVariableError> {
 // Helper function to create a native VMLambda
 pub(crate) fn create_native_lambda(
     name: &str,
-    native_fn: fn(GCRef, &mut GCSystem) -> Result<GCRef, VMVariableError>,
+    native_fn: fn(&mut GCRef, &mut GCSystem) -> Result<GCRef, VMVariableError>,
     gc_system: &mut GCSystem,
 ) -> Result<GCRef, VMVariableError> {
     // Create empty tuple for default args (can be shared or created anew)
@@ -53,7 +53,7 @@ pub(crate) fn create_native_lambda(
 
 // Helper function to build a module tuple from a map of functions
 pub(crate) fn build_module(
-    functions: &FxHashMap<&str, for<'a> fn(GCRef, &'a mut GCSystem) -> Result<GCRef, VMVariableError>>,
+    functions: &FxHashMap<&str, for<'a> fn(&mut GCRef, &'a mut GCSystem) -> Result<GCRef, VMVariableError>>,
     gc_system: &mut GCSystem,
 ) -> GCRef {
     let mut module = gc_system.new_object(VMTuple::new(&mut vec![]));
@@ -85,16 +85,16 @@ pub(crate) fn build_dict(
 }
 
 
-pub fn load_clambda(tuple: GCRef, gc_system: &mut GCSystem) -> Result<GCRef, VMVariableError> {
-    check_if_tuple(tuple.clone())?;
-    let tuple_obj = tuple.as_const_type::<VMTuple>();
+pub fn load_clambda(tuple: &mut GCRef, gc_system: &mut GCSystem) -> Result<GCRef, VMVariableError> {
+    check_if_tuple(tuple)?;
+    let tuple_obj = tuple.as_type::<VMTuple>();
     if tuple_obj.values.len() != 1 {
         return Err(VMVariableError::TypeError(
-            tuple.clone(),
-            format!("load_clambda expected 1 argument, got {}", tuple_obj.values.len()),
+            tuple.clone_ref(),
+            format!("load_clambda expected 1 argument, got {}", tuple.as_const_type::<VMTuple>().values.len()),
         ));
     }
-    let target_obj = &tuple_obj.values[0];
+    let target_obj = &mut tuple_obj.values[0];
     if target_obj.isinstance::<VMString>() {
         let data = target_obj
             .as_const_type::<VMString>()
@@ -102,7 +102,7 @@ pub fn load_clambda(tuple: GCRef, gc_system: &mut GCSystem) -> Result<GCRef, VMV
         let mut clambda = unsafe {
             vm_clambda_loading::load_clambda(&data).map_err(|e| {
                 VMVariableError::ValueError(
-                    target_obj.clone(), // Error points to the specific object
+                    target_obj.clone_ref(), // Error points to the specific object
                     format!("Failed to load clambda: {}", e),
                 )
             })?
@@ -114,7 +114,7 @@ pub fn load_clambda(tuple: GCRef, gc_system: &mut GCSystem) -> Result<GCRef, VMV
         return Ok(vm_clambda);
     }
     Err(VMVariableError::TypeError(
-        target_obj.clone(), // Error points to the specific object
+        target_obj.clone_ref(), // Error points to the specific object
         "Argument for load_clambda must be a string (path)".to_string(),
     ))
 }

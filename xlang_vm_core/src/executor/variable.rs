@@ -36,58 +36,58 @@ pub enum VMVariableError {
 }
 
 impl VMVariableError {
-    pub fn to_string(&self) -> String {
+    pub fn to_string(&mut self) -> String {
         match self {
             VMVariableError::TypeError(gc_ref, msg) => format!(
                 "TypeError: {}: {}",
-                try_repr_vmobject(gc_ref.clone(), None).unwrap_or(format!("{:?}", gc_ref)),
+                try_repr_vmobject(gc_ref, None).unwrap_or(format!("{:?}", gc_ref)),
                 msg
             ),
             VMVariableError::ValueError2Param(gc_ref, other, msg) => format!(
                 "ValueError: {}: {} & {}",
                 msg,
-                try_repr_vmobject(gc_ref.clone(), None).unwrap_or(format!("{:?}", gc_ref)),
-                try_repr_vmobject(other.clone(), None).unwrap_or(format!("{:?}", other)),
+                try_repr_vmobject(gc_ref, None).unwrap_or(format!("{:?}", gc_ref)),
+                try_repr_vmobject(other, None).unwrap_or(format!("{:?}", other)),
             ),
             VMVariableError::ValueError(gc_ref, msg) => format!(
                 "ValueError: {}: {}",
                 msg,
-                try_repr_vmobject(gc_ref.clone(), None).unwrap_or(format!("{:?}", gc_ref)),
+                try_repr_vmobject(gc_ref, None).unwrap_or(format!("{:?}", gc_ref)),
             ),
             VMVariableError::KeyNotFound(key, gc_ref) => format!(
                 "KeyNotFound: {} in {}",
-                try_repr_vmobject(key.clone(), None).unwrap_or(format!("{:?}", key)),
-                try_repr_vmobject(gc_ref.clone(), None).unwrap_or(format!("{:?}", gc_ref))
+                try_repr_vmobject(key, None).unwrap_or(format!("{:?}", key)),
+                try_repr_vmobject(gc_ref, None).unwrap_or(format!("{:?}", gc_ref))
             ),
             VMVariableError::UnableToValueOf(value) => format!(
                 "UnableToValueOf: {}",
-                try_repr_vmobject(value.clone(), None).unwrap_or(format!("{:?}", value)),
+                try_repr_vmobject(value, None).unwrap_or(format!("{:?}", value)),
             ),
             VMVariableError::IndexNotFound(index, gc_ref) => format!(
                 "IndexNotFound: {} in {}",
-                try_repr_vmobject(index.clone(), None).unwrap_or(format!("{:?}", index)),
-                try_repr_vmobject(gc_ref.clone(), None).unwrap_or(format!("{:?}", gc_ref))
+                try_repr_vmobject(index, None).unwrap_or(format!("{:?}", index)),
+                try_repr_vmobject(gc_ref, None).unwrap_or(format!("{:?}", gc_ref))
             ),
             VMVariableError::CopyError(gc_ref, msg) => format!(
                 "CopyError: {}: {}",
-                try_repr_vmobject(gc_ref.clone(), None).unwrap_or(format!("{:?}", gc_ref)),
+                try_repr_vmobject(gc_ref, None).unwrap_or(format!("{:?}", gc_ref)),
                 msg
             ),
             VMVariableError::AssignError(gc_ref, msg) => format!(
                 "AssignError: {}: {}",
-                try_repr_vmobject(gc_ref.clone(), None).unwrap_or(format!("{:?}", gc_ref)),
+                try_repr_vmobject(gc_ref, None).unwrap_or(format!("{:?}", gc_ref)),
                 msg
             ),
             VMVariableError::ReferenceError(gc_ref, msg) => format!(
                 "ReferenceError: {}: {}",
-                try_repr_vmobject(gc_ref.clone(), None).unwrap_or(format!("{:?}", gc_ref)),
+                try_repr_vmobject(gc_ref, None).unwrap_or(format!("{:?}", gc_ref)),
                 msg
             ),
             VMVariableError::OverflowError(gc_ref, other, msg) => format!(
                 "OverflowError: {}: {} & {}",
                 msg,
-                try_repr_vmobject(gc_ref.clone(), None).unwrap_or(format!("{:?}", gc_ref)),
-                try_repr_vmobject(other.clone(), None).unwrap_or(format!("{:?}", other)),
+                try_repr_vmobject(gc_ref, None).unwrap_or(format!("{:?}", gc_ref)),
+                try_repr_vmobject(other, None).unwrap_or(format!("{:?}", other)),
             ),
             VMVariableError::DetailedError(msg) => format!(
                 "DetailedError: {}",
@@ -95,10 +95,51 @@ impl VMVariableError {
             ),
         }
     }
+
+    pub fn consume_ref(&mut self) {
+        match self {
+            VMVariableError::TypeError(gc_ref, _) => {
+                gc_ref.drop_ref();
+            }
+            VMVariableError::ValueError2Param(gc_ref, other, _) => {
+                gc_ref.drop_ref();
+                other.drop_ref();
+            }
+            VMVariableError::ValueError(gc_ref, _) => {
+                gc_ref.drop_ref();
+            }
+            VMVariableError::KeyNotFound(key, gc_ref) => {
+                key.drop_ref();
+                gc_ref.drop_ref();
+            }
+            VMVariableError::UnableToValueOf(value) => {
+                value.drop_ref();
+            }
+            VMVariableError::IndexNotFound(index, gc_ref) => {
+                index.drop_ref();
+                gc_ref.drop_ref();
+            }
+            VMVariableError::CopyError(gc_ref, _) => {
+                gc_ref.drop_ref();
+            }
+            VMVariableError::AssignError(gc_ref, _) => {
+                gc_ref.drop_ref();
+            }
+            VMVariableError::ReferenceError(gc_ref, _) => {
+                gc_ref.drop_ref();
+            }
+            VMVariableError::OverflowError(gc_ref, other, _) => {
+                gc_ref.drop_ref();
+                other.drop_ref();
+            }
+            _ => {
+            }
+        }
+    }
 }
 
 pub fn try_length_of_as_vmobject(
-    value: &GCRef,
+    value: &mut GCRef,
 ) -> Result<usize, VMVariableError> {
     if value.isinstance::<VMString>() {
         let string = value.as_const_type::<VMString>();
@@ -114,35 +155,35 @@ pub fn try_length_of_as_vmobject(
         return Ok(bytes.value.len());
     }
     Err(VMVariableError::TypeError(
-        value.clone(),
+        value.clone_ref(),
         "Cannot get length of a non-lengthable type".to_string(),
     ))
 }
 
-pub fn try_contains_as_vmobject(value: &GCRef, other: &GCRef) -> Result<bool, VMVariableError> {
+pub fn try_contains_as_vmobject(value: &mut GCRef, other: &mut GCRef) -> Result<bool, VMVariableError> {
     if value.isinstance::<VMString>() {
-        let string = value.as_const_type::<VMString>();
+        let string = value.as_type::<VMString>();
         return string.contains(other);
     } else if value.isinstance::<VMTuple>() {
-        let tuple = value.as_const_type::<VMTuple>();
+        let tuple = value.as_type::<VMTuple>();
         return tuple.contains(other);
     } else if value.isinstance::<VMRange>() {
-        let range = value.as_const_type::<VMRange>();
+        let range = value.as_type::<VMRange>();
         return range.contains(other);
     } else if value.isinstance::<VMSet>() {
-        let set = value.as_const_type::<VMSet>();
+        let set = value.as_type::<VMSet>();
         return set.contains(other);
     } else if value.isinstance::<VMBytes>() {
-        let bytes = value.as_const_type::<VMBytes>();
+        let bytes = value.as_type::<VMBytes>();
         return bytes.contains(other);
     }
     Err(VMVariableError::TypeError(
-        value.clone(),
+        value.clone_ref(),
         "Cannot check contains for a non-containable type".to_string(),
     ))
 }
 pub fn try_repr_vmobject(
-    value: GCRef,
+    value: &mut GCRef,
     ref_path: Option<Vec<GCRef>>,
 ) -> Result<String, VMVariableError> {
     // 检查循环引用
@@ -164,7 +205,7 @@ pub fn try_repr_vmobject(
     };
 
     // 获取别名字符串
-    let alias = try_const_alias_as_vmobject(&value)?;
+    let alias = try_const_alias_as_vmobject(value)?;
     let alias_vec = alias
         .iter()
         .rev()
@@ -210,24 +251,24 @@ pub fn try_repr_vmobject(
     } else if value.isinstance::<VMNull>() {
         "null".to_string()
     } else if value.isinstance::<VMKeyVal>() {
-        let kv = value.as_const_type::<VMKeyVal>();
+        let kv = value.as_type::<VMKeyVal>();
         // 递归调用时不传递别名，因为别名是顶层对象的
-        let key = try_repr_vmobject(kv.get_const_key().clone(), new_ref_path.clone())?;
-        let val = try_repr_vmobject(kv.get_const_value().clone(), new_ref_path)?;
+        let key = try_repr_vmobject(kv.get_key(), new_ref_path.clone())?;
+        let val = try_repr_vmobject(kv.get_value(), new_ref_path)?;
         format!("{}: {}", key, val)
     } else if value.isinstance::<VMNamed>() {
-        let named = value.as_const_type::<VMNamed>();
-        let key = try_repr_vmobject(named.get_const_key().clone(), new_ref_path.clone())?;
-        let val = try_repr_vmobject(named.get_const_value().clone(), new_ref_path)?;
+        let named = value.as_type::<VMNamed>();
+        let key = try_repr_vmobject(named.get_key(), new_ref_path.clone())?;
+        let val = try_repr_vmobject(named.get_value(), new_ref_path)?;
         format!("{} => {}", key, val)
     } else if value.isinstance::<VMTuple>() {
-        let tuple = value.as_const_type::<VMTuple>();
+        let tuple = value.as_type::<VMTuple>();
         if tuple.values.is_empty() {
             "()".to_string()
         } else {
             let mut items_repr = Vec::new();
-            for val in &tuple.values {
-                items_repr.push(try_repr_vmobject(val.clone(), new_ref_path.clone())?);
+            for val in &mut tuple.values {
+                items_repr.push(try_repr_vmobject(val, new_ref_path.clone())?);
             }
             if tuple.values.len() == 1 {
                 format!("({},)", items_repr[0]) // 单元素元组特殊表示
@@ -236,16 +277,16 @@ pub fn try_repr_vmobject(
             }
         }
     } else if value.isinstance::<VMLambda>() {
-        let lambda = value.as_const_type::<VMLambda>();
+        let lambda = value.as_type::<VMLambda>();
         let default_args =
-            try_repr_vmobject(lambda.default_args_tuple.clone(), new_ref_path.clone())?;
-        let result_repr = try_repr_vmobject(lambda.result.clone(), new_ref_path)?;
+            try_repr_vmobject(&mut lambda.default_args_tuple, new_ref_path.clone())?;
+        let result_repr = try_repr_vmobject(&mut lambda.result, new_ref_path)?;
         format!("{}::{} -> {}", lambda.signature, default_args, result_repr)
     } else if value.isinstance::<VMInstructions>() {
         "VMInstructions".to_string() // 指令集通常不显示内部细节
     } else if value.isinstance::<VMWrapper>() {
-        let wrapper = value.as_const_type::<VMWrapper>();
-        let inner_repr = try_repr_vmobject(wrapper.value_ref.clone(), new_ref_path)?;
+        let wrapper = value.as_type::<VMWrapper>();
+        let inner_repr = try_repr_vmobject(&mut wrapper.value_ref, new_ref_path)?;
         format!("wrap({})", inner_repr)
     } else if value.isinstance::<VMRange>() {
         let range = value.as_const_type::<VMRange>();
@@ -257,9 +298,9 @@ pub fn try_repr_vmobject(
             base64::engine::general_purpose::STANDARD.encode(&bytes.value)
         )
     } else if value.isinstance::<VMSet>() {
-        let set = value.as_const_type::<VMSet>();
-        let collection_repr = try_repr_vmobject(set.collection.clone(), new_ref_path.clone())?;
-        let filter_repr = try_repr_vmobject(set.filter.clone(), new_ref_path)?;
+        let set = value.as_type::<VMSet>();
+        let collection_repr = try_repr_vmobject(&mut set.collection, new_ref_path.clone())?;
+        let filter_repr = try_repr_vmobject(&mut set.filter, new_ref_path)?;
         format!("{{{} | {}}}", collection_repr, filter_repr)
     } else if value.isinstance::<VMCLambdaInstruction>() {
         let clambda = value.as_const_type::<VMCLambdaInstruction>();
@@ -268,7 +309,7 @@ pub fn try_repr_vmobject(
     } else {
         // 如果有其他未处理的类型，返回错误
         return Err(VMVariableError::TypeError(
-            value.clone(),
+            value.clone_ref(),
             "Cannot represent this type".to_string(), // 更明确的错误消息
         ));
     };
@@ -278,7 +319,7 @@ pub fn try_repr_vmobject(
 }
 
 pub fn try_to_string_vmobject(
-    value: GCRef,
+    value: &mut GCRef,
     ref_path: Option<Vec<GCRef>>,
 ) -> Result<String, VMVariableError> {
     // 检查循环引用
@@ -314,23 +355,23 @@ pub fn try_to_string_vmobject(
     } else if value.isinstance::<VMNull>() {
         "null".to_string()
     } else if value.isinstance::<VMKeyVal>() {
-        let kv = value.as_const_type::<VMKeyVal>();
-        let key = try_to_string_vmobject(kv.get_const_key().clone(), new_ref_path.clone())?;
-        let val = try_to_string_vmobject(kv.get_const_value().clone(), new_ref_path)?;
+        let kv = value.as_type::<VMKeyVal>();
+        let key = try_to_string_vmobject(kv.get_key(), new_ref_path.clone())?;
+        let val = try_to_string_vmobject(kv.get_value(), new_ref_path)?;
         format!("{}: {}", key, val)
     } else if value.isinstance::<VMNamed>() {
-        let named = value.as_const_type::<VMNamed>();
-        let key = try_to_string_vmobject(named.get_const_key().clone(), new_ref_path.clone())?;
-        let val = try_to_string_vmobject(named.get_const_value().clone(), new_ref_path)?;
+        let named = value.as_type::<VMNamed>();
+        let key = try_to_string_vmobject(named.get_key(), new_ref_path.clone())?;
+        let val = try_to_string_vmobject(named.get_value(), new_ref_path)?;
         format!("{} => {}", key, val)
     } else if value.isinstance::<VMTuple>() {
-        let tuple = value.as_const_type::<VMTuple>();
+        let tuple = value.as_type::<VMTuple>();
         if tuple.values.is_empty() {
             "()".to_string()
         } else {
             let mut items_repr = Vec::new();
-            for val in &tuple.values {
-                items_repr.push(try_to_string_vmobject(val.clone(), new_ref_path.clone())?);
+            for val in &mut tuple.values {
+                items_repr.push(try_to_string_vmobject(val, new_ref_path.clone())?);
             }
             if tuple.values.len() == 1 {
                 format!("({},)", items_repr[0]) // 单元素元组特殊表示
@@ -339,16 +380,16 @@ pub fn try_to_string_vmobject(
             }
         }
     } else if value.isinstance::<VMLambda>() {
-        let lambda = value.as_const_type::<VMLambda>();
+        let lambda = value.as_type::<VMLambda>();
         let default_args =
-            try_to_string_vmobject(lambda.default_args_tuple.clone(), new_ref_path.clone())?;
-        let result_repr = try_to_string_vmobject(lambda.result.clone(), new_ref_path)?;
+            try_to_string_vmobject(&mut lambda.default_args_tuple, new_ref_path.clone())?;
+        let result_repr = try_to_string_vmobject(&mut lambda.result, new_ref_path)?;
         format!("{}::{} -> {}", lambda.signature, default_args, result_repr)
     } else if value.isinstance::<VMInstructions>() {
         "VMInstructions".to_string()
     } else if value.isinstance::<VMWrapper>() {
-        let wrapper = value.as_const_type::<VMWrapper>();
-        let inner_repr = try_to_string_vmobject(wrapper.value_ref.clone(), new_ref_path)?;
+        let wrapper = value.as_type::<VMWrapper>();
+        let inner_repr = try_to_string_vmobject(&mut wrapper.value_ref, new_ref_path)?;
         format!("wrap({})", inner_repr)
     } else if value.isinstance::<VMRange>() {
         let range = value.as_const_type::<VMRange>();
@@ -361,16 +402,16 @@ pub fn try_to_string_vmobject(
             base64::engine::general_purpose::STANDARD.encode(&bytes.value)
         )
     } else if value.isinstance::<VMSet>() {
-        let set = value.as_const_type::<VMSet>();
-        let collection_repr = try_to_string_vmobject(set.collection.clone(), new_ref_path.clone())?;
-        let filter_repr = try_to_string_vmobject(set.filter.clone(), new_ref_path)?;
+        let set = value.as_type::<VMSet>();
+        let collection_repr = try_to_string_vmobject(&mut set.collection, new_ref_path.clone())?;
+        let filter_repr = try_to_string_vmobject(&mut set.filter, new_ref_path)?;
         format!("{{{} | {}}}", collection_repr, filter_repr)
     } else if value.isinstance::<VMCLambdaInstruction>() {
         let clambda = value.as_const_type::<VMCLambdaInstruction>();
         format!("CLambda({:?})", clambda.clambda)
     } else {
         return Err(VMVariableError::TypeError(
-            value.clone(),
+            value.clone_ref(),
             "Cannot convert this type to string".to_string(),
         ));
     };
@@ -378,8 +419,8 @@ pub fn try_to_string_vmobject(
     Ok(base_repr) // 直接返回基础表示
 }
 
-pub fn _debug_print_repr(value: GCRef) {
-    match try_repr_vmobject(value.clone(), None) {
+pub fn _debug_print_repr(value: &mut GCRef) {
+    match try_repr_vmobject(value, None) {
         Ok(repr) => println!(
             "Repr:{}| {:?}, {:?} {}",
             value.get_const_traceable().native_gcref_object_count,
@@ -416,273 +457,273 @@ pub fn try_add_as_vmobject(
         return bytes.add(other, gc_system);
     }
     Err(VMVariableError::ValueError2Param(
-        value.clone(),
-        other.clone(),
+        value.clone_ref(),
+        other.clone_ref(),
         "Cannot add a value of non-addable type".to_string(),
     ))
 }
 
 pub fn try_sub_as_vmobject(
-    value: &GCRef,
-    other: &GCRef,
+    value: &mut GCRef,
+    other: &mut GCRef,
     gc_system: &mut GCSystem,
 ) -> Result<GCRef, VMVariableError> {
     if value.isinstance::<VMInt>() {
-        let int = value.as_const_type::<VMInt>();
+        let int = value.as_type::<VMInt>();
         return int.sub(other, gc_system);
     } else if value.isinstance::<VMFloat>() {
-        let float = value.as_const_type::<VMFloat>();
+        let float = value.as_type::<VMFloat>();
         return float.sub(other, gc_system);
     } else if value.isinstance::<VMRange>() {
-        let named = value.as_const_type::<VMRange>();
+        let named = value.as_type::<VMRange>();
         return named.sub(other, gc_system);
     }
     Err(VMVariableError::ValueError2Param(
-        value.clone(),
-        other.clone(),
+        value.clone_ref(),
+        other.clone_ref(),
         "Cannot subtract a value of non-subtractable type".to_string(),
     ))
 }
 
 pub fn try_mul_as_vmobject(
-    value: &GCRef,
-    other: &GCRef,
+    value: &mut GCRef,
+    other: &mut GCRef,
     gc_system: &mut GCSystem,
 ) -> Result<GCRef, VMVariableError> {
     if value.isinstance::<VMInt>() {
-        let int = value.as_const_type::<VMInt>();
+        let int = value.as_type::<VMInt>();
         return int.mul(other, gc_system);
     } else if value.isinstance::<VMFloat>() {
-        let float = value.as_const_type::<VMFloat>();
+        let float = value.as_type::<VMFloat>();
         return float.mul(other, gc_system);
     }
     Err(VMVariableError::ValueError2Param(
-        value.clone(),
-        other.clone(),
+        value.clone_ref(),
+        other.clone_ref(),
         "Cannot multiply a value of non-multiplicable type".to_string(),
     ))
 }
 
 pub fn try_div_as_vmobject(
-    value: &GCRef,
-    other: &GCRef,
+    value: &mut GCRef,
+    other: &mut GCRef,
     gc_system: &mut GCSystem,
 ) -> Result<GCRef, VMVariableError> {
     if value.isinstance::<VMInt>() {
-        let int = value.as_const_type::<VMInt>();
+        let int = value.as_type::<VMInt>();
         return int.div(other, gc_system);
     } else if value.isinstance::<VMFloat>() {
-        let float = value.as_const_type::<VMFloat>();
+        let float = value.as_type::<VMFloat>();
         return float.div(other, gc_system);
     }
     Err(VMVariableError::ValueError2Param(
-        value.clone(),
-        other.clone(),
+        value.clone_ref(),
+        other.clone_ref(),
         "Cannot divide a value of non-dividable type".to_string(),
     ))
 }
 
 pub fn try_mod_as_vmobject(
-    value: &GCRef,
-    other: &GCRef,
+    value: &mut GCRef,
+    other: &mut GCRef,
     gc_system: &mut GCSystem,
 ) -> Result<GCRef, VMVariableError> {
     if value.isinstance::<VMInt>() {
-        let int = value.as_const_type::<VMInt>();
+        let int = value.as_type::<VMInt>();
         return int.mod_op(other, gc_system);
     } else if value.isinstance::<VMFloat>() {
-        let float = value.as_const_type::<VMFloat>();
+        let float = value.as_type::<VMFloat>();
         return float.mod_op(other, gc_system);
     }
     Err(VMVariableError::ValueError2Param(
-        value.clone(),
-        other.clone(),
+        value.clone_ref(),
+        other.clone_ref(),
         "Cannot mod a value of non-modable type".to_string(),
     ))
 }
 
 pub fn try_power_as_vmobject(
-    value: &GCRef,
-    other: &GCRef,
+    value: &mut GCRef,
+    other: &mut GCRef,
     gc_system: &mut GCSystem,
 ) -> Result<GCRef, VMVariableError> {
     if value.isinstance::<VMInt>() {
-        let int = value.as_const_type::<VMInt>();
+        let int = value.as_type::<VMInt>();
         return int.power(other, gc_system);
     } else if value.isinstance::<VMFloat>() {
-        let float = value.as_const_type::<VMFloat>();
+        let float = value.as_type::<VMFloat>();
         return float.power(other, gc_system);
     }
     Err(VMVariableError::ValueError2Param(
-        value.clone(),
-        other.clone(),
+        value.clone_ref(),
+        other.clone_ref(),
         "Cannot power a value of non-powerable type".to_string(),
     ))
 }
 
 pub fn try_and_as_vmobject(
-    value: &GCRef,
-    other: &GCRef,
+    value: &mut GCRef,
+    other: &mut GCRef,
     gc_system: &mut GCSystem,
 ) -> Result<GCRef, VMVariableError> {
     if value.isinstance::<VMInt>() {
-        let int = value.as_const_type::<VMInt>();
+        let int = value.as_type::<VMInt>();
         return int.bitwise_and(other, gc_system);
     }
     if value.isinstance::<VMBoolean>() {
-        let boolean = value.as_const_type::<VMBoolean>();
+        let boolean = value.as_type::<VMBoolean>();
         return boolean
             .and(other)
             .map(|v| gc_system.new_object(VMBoolean::new(v)));
     }
     Err(VMVariableError::ValueError2Param(
-        value.clone(),
-        other.clone(),
+        value.clone_ref(),
+        other.clone_ref(),
         "Cannot bitwise and a value of non-bitwise-andable type".to_string(),
     ))
 }
 
 pub fn try_or_as_vmobject(
-    value: &GCRef,
-    other: &GCRef,
+    value: &mut GCRef,
+    other: &mut GCRef,
     gc_system: &mut GCSystem,
 ) -> Result<GCRef, VMVariableError> {
     if value.isinstance::<VMInt>() {
-        let int = value.as_const_type::<VMInt>();
+        let int = value.as_type::<VMInt>();
         return int.bitwise_or(other, gc_system);
     }
     if value.isinstance::<VMBoolean>() {
-        let boolean = value.as_const_type::<VMBoolean>();
+        let boolean = value.as_type::<VMBoolean>();
         return boolean
             .or(other)
             .map(|v| gc_system.new_object(VMBoolean::new(v)));
     }
     Err(VMVariableError::ValueError2Param(
-        value.clone(),
-        other.clone(),
+        value.clone_ref(),
+        other.clone_ref(),
         "Cannot bitwise or a value of non-bitwise-orable type".to_string(),
     ))
 }
 
 pub fn try_xor_as_vmobject(
-    value: &GCRef,
-    other: &GCRef,
+    value: &mut GCRef,
+    other: &mut GCRef,
     gc_system: &mut GCSystem,
 ) -> Result<GCRef, VMVariableError> {
     if value.isinstance::<VMInt>() {
-        let int = value.as_const_type::<VMInt>();
+        let int = value.as_type::<VMInt>();
         return int.bitwise_xor(other, gc_system);
     }
     if value.isinstance::<VMBoolean>() {
-        let boolean = value.as_const_type::<VMBoolean>();
+        let boolean = value.as_type::<VMBoolean>();
         return boolean
             .xor(other)
             .map(|v| gc_system.new_object(VMBoolean::new(v)));
     }
     Err(VMVariableError::ValueError2Param(
-        value.clone(),
-        other.clone(),
+        value.clone_ref(),
+        other.clone_ref(),
         "Cannot bitwise xor a value of non-bitwise-xorable type".to_string(),
     ))
 }
 
 pub fn try_not_as_vmobject(
-    value: &GCRef,
+    value: &mut GCRef,
     gc_system: &mut GCSystem,
 ) -> Result<GCRef, VMVariableError> {
     if value.isinstance::<VMInt>() {
-        let int = value.as_const_type::<VMInt>();
+        let int = value.as_type::<VMInt>();
         return int.bitwise_not(gc_system);
     }
     if value.isinstance::<VMBoolean>() {
-        let boolean = value.as_const_type::<VMBoolean>();
+        let boolean = value.as_type::<VMBoolean>();
         return boolean
             .not()
             .map(|v| gc_system.new_object(VMBoolean::new(v)));
     }
     Err(VMVariableError::ValueError2Param(
-        value.clone(),
-        value.clone(),
+        value.clone_ref(),
+        value.clone_ref(),
         "Cannot bitwise not a value of non-bitwise-notable type".to_string(),
     ))
 }
 
 pub fn try_shift_left_as_vmobject(
-    value: &GCRef,
-    other: &GCRef,
+    value: &mut GCRef,
+    other: &mut GCRef,
     gc_system: &mut GCSystem,
 ) -> Result<GCRef, VMVariableError> {
     if value.isinstance::<VMInt>() {
-        let int = value.as_const_type::<VMInt>();
+        let int = value.as_type::<VMInt>();
         return int.shift_left(other, gc_system);
     }
     Err(VMVariableError::ValueError2Param(
-        value.clone(),
-        other.clone(),
+        value.clone_ref(),
+        other.clone_ref(),
         "Cannot shift left a value of non-shift-leftable type".to_string(),
     ))
 }
 
 pub fn try_shift_right_as_vmobject(
-    value: &GCRef,
-    other: &GCRef,
+    value: &mut GCRef,
+    other: &mut GCRef,
     gc_system: &mut GCSystem,
 ) -> Result<GCRef, VMVariableError> {
     if value.isinstance::<VMInt>() {
-        let int = value.as_const_type::<VMInt>();
+        let int = value.as_type::<VMInt>();
         return int.shift_right(other, gc_system);
     }
     Err(VMVariableError::ValueError2Param(
-        value.clone(),
-        other.clone(),
+        value.clone_ref(),
+        other.clone_ref(),
         "Cannot shift right a value of non-shift-rightable type".to_string(),
     ))
 }
 
-pub fn try_less_than_as_vmobject(value: &GCRef, other: &GCRef) -> Result<bool, VMVariableError> {
+pub fn try_less_than_as_vmobject(value: &mut GCRef, other: &mut GCRef) -> Result<bool, VMVariableError> {
     if value.isinstance::<VMInt>() {
-        let int = value.as_const_type::<VMInt>();
+        let int = value.as_type::<VMInt>();
         return int.less_than(other);
     } else if value.isinstance::<VMFloat>() {
-        let float = value.as_const_type::<VMFloat>();
+        let float = value.as_type::<VMFloat>();
         return float.less_than(other);
     }
     Err(VMVariableError::ValueError2Param(
-        value.clone(),
-        other.clone(),
+        value.clone_ref(),
+        other.clone_ref(),
         "Cannot less than a value of non-less-thanable type".to_string(),
     ))
 }
 
-pub fn try_greater_than_as_vmobject(value: &GCRef, other: &GCRef) -> Result<bool, VMVariableError> {
+pub fn try_greater_than_as_vmobject(value: &mut GCRef, other: &mut GCRef) -> Result<bool, VMVariableError> {
     if value.isinstance::<VMInt>() {
-        let int = value.as_const_type::<VMInt>();
+        let int = value.as_type::<VMInt>();
         return int.greater_than(other);
     } else if value.isinstance::<VMFloat>() {
-        let float = value.as_const_type::<VMFloat>();
+        let float = value.as_type::<VMFloat>();
         return float.greater_than(other);
     }
     Err(VMVariableError::ValueError2Param(
-        value.clone(),
-        other.clone(),
+        value.clone_ref(),
+        other.clone_ref(),
         "Cannot greater than a value of non-greater-thanable type".to_string(),
     ))
 }
 
 pub fn try_get_attr_as_vmobject<'t>(
     value: &'t mut GCRef,
-    attr: &'t GCRef,
+    attr: &'t mut GCRef,
 ) -> Result<&'t mut GCRef, VMVariableError> {
     if value.isinstance::<VMTuple>() {
         let tuple = value.as_type::<VMTuple>();
         return tuple.get_member(attr);
     }
-    Err(VMVariableError::KeyNotFound(attr.clone(), value.clone()))
+    Err(VMVariableError::KeyNotFound(attr.clone_ref(), value.clone_ref()))
 }
 
 pub fn try_index_of_as_vmobject(
     value: &mut GCRef,
-    index: &GCRef,
+    index: &mut GCRef,
     gc_system: &mut GCSystem,
 ) -> Result<GCRef, VMVariableError> {
     if value.isinstance::<VMTuple>() {
@@ -697,7 +738,7 @@ pub fn try_index_of_as_vmobject(
         let range = value.as_type::<VMBytes>();
         return range.index_of(index, gc_system);
     }
-    Err(VMVariableError::IndexNotFound(index.clone(), value.clone()))
+    Err(VMVariableError::IndexNotFound(index.clone_ref(), value.clone_ref()))
 }
 
 pub fn try_key_of_as_vmobject(value: &mut GCRef) -> Result<&mut GCRef, VMVariableError> {
@@ -715,7 +756,7 @@ pub fn try_key_of_as_vmobject(value: &mut GCRef) -> Result<&mut GCRef, VMVariabl
         let wrapper = value.as_type::<VMSet>();
         return Ok(wrapper.get_key());
     }
-    Err(VMVariableError::KeyNotFound(value.clone(), value.clone()))
+    Err(VMVariableError::TypeError(value.clone_ref(), "The value does not have a key".to_string()))
 }
 
 pub fn try_value_of_as_vmobject(value: &mut GCRef) -> Result<&mut GCRef, VMVariableError> {
@@ -736,7 +777,7 @@ pub fn try_value_of_as_vmobject(value: &mut GCRef) -> Result<&mut GCRef, VMVaria
         let wrapper = value.as_type::<VMSet>();
         return Ok(wrapper.get_value());
     }
-    Err(VMVariableError::UnableToValueOf(value.clone()))
+    Err(VMVariableError::UnableToValueOf(value.clone_ref()))
 }
 
 #[macro_export]
@@ -756,7 +797,7 @@ pub fn try_deepcopy_as_vmobject(
 ) -> Result<GCRef, VMVariableError> {
     try_deepcopy_as_type!(value, gc_system; VMInt, VMString, VMFloat, VMBoolean, VMNull, VMKeyVal, VMTuple, VMNamed, VMLambda, VMInstructions, VMWrapper, VMRange, VMBytes, VMSet, VMCLambdaInstruction);
     Err(VMVariableError::CopyError(
-        value.clone(),
+        value.clone_ref(),
         "Cannot deepcopy a value of non-copyable type".to_string(),
     ))
 }
@@ -778,7 +819,7 @@ pub fn try_copy_as_vmobject(
 ) -> Result<GCRef, VMVariableError> {
     try_copy_as_type!(value, gc_system; VMInt, VMString, VMFloat, VMBoolean, VMNull, VMKeyVal, VMTuple, VMNamed, VMLambda, VMInstructions, VMWrapper, VMRange, VMBytes, VMSet, VMCLambdaInstruction);
     Err(VMVariableError::CopyError(
-        value.clone(),
+        value.clone_ref(),
         "Cannot copy a value of non-copyable type".to_string(),
     ))
 }
@@ -800,7 +841,7 @@ pub fn try_assign_as_vmobject<'t>(
 ) -> Result<&'t mut GCRef, VMVariableError> {
     try_assign_as_type!(value, other; VMInt, VMString, VMFloat, VMBoolean, VMNull, VMKeyVal, VMTuple, VMNamed, VMLambda, VMInstructions, VMWrapper, VMRange, VMBytes, VMSet, VMCLambdaInstruction);
     Err(VMVariableError::AssignError(
-        value.clone(),
+        value.clone_ref(),
         "Cannot assign a value of non-assignable type".to_string(),
     ))
 }
@@ -816,10 +857,10 @@ macro_rules! try_const_alias_as_type {
     };
 }
 
-pub fn try_const_alias_as_vmobject(value: &GCRef) -> Result<&Vec<String>, VMVariableError> {
+pub fn try_const_alias_as_vmobject(value: &mut GCRef) -> Result<&Vec<String>, VMVariableError> {
     try_const_alias_as_type!(value; VMInt, VMString, VMFloat, VMBoolean, VMNull, VMKeyVal, VMTuple, VMNamed, VMLambda, VMInstructions, VMWrapper, VMRange, VMBytes, VMSet, VMCLambdaInstruction);
     Err(VMVariableError::ReferenceError(
-        value.clone(),
+        value.clone_ref(),
         "Cannot get reference of a non-referenceable type".to_string(),
     ))
 }
@@ -838,7 +879,7 @@ macro_rules! try_alias_as_type {
 pub fn try_alias_as_vmobject(value: &mut GCRef) -> Result<&mut Vec<String>, VMVariableError> {
     try_alias_as_type!(value; VMInt, VMString, VMFloat, VMBoolean, VMNull, VMKeyVal, VMTuple, VMNamed, VMLambda, VMInstructions, VMWrapper, VMRange, VMBytes, VMSet, VMCLambdaInstruction);
     Err(VMVariableError::ReferenceError(
-        value.clone(),
+        value.clone_ref(),
         "Cannot get reference of a non-referenceable type".to_string(),
     ))
 }
@@ -991,13 +1032,13 @@ impl VMInt {
             return Ok(gc_system.new_object(VMFloat::new(result_value)));
         }
         Err(VMVariableError::ValueError2Param(
-            GCRef::wrap(self),
-            other.clone(),
+            GCRef::wrap(self).clone_ref(),
+            other.clone_ref(),
             "Cannot add a value of non-integer type".to_string(),
         ))
     }
 
-    pub fn sub(&self, other: &GCRef, gc_system: &mut GCSystem) -> Result<GCRef, VMVariableError> {
+    pub fn sub(&mut self, other: &mut GCRef, gc_system: &mut GCSystem) -> Result<GCRef, VMVariableError> {
         if other.isinstance::<VMInt>() {
             let other_int = other.as_const_type::<VMInt>();
             return Ok(gc_system.new_object(VMInt::new(self.value - other_int.value)));
@@ -1006,13 +1047,13 @@ impl VMInt {
             return Ok(gc_system.new_object(VMFloat::new(self.value as f64 - other_float.value)));
         }
         Err(VMVariableError::ValueError2Param(
-            GCRef::wrap(self),
-            other.clone(),
+            GCRef::wrap(self).clone_ref(),
+            other.clone_ref(),
             "Cannot subtract a value of non-integer type".to_string(),
         ))
     }
 
-    pub fn mul(&self, other: &GCRef, gc_system: &mut GCSystem) -> Result<GCRef, VMVariableError> {
+    pub fn mul(&mut self, other: &mut GCRef, gc_system: &mut GCSystem) -> Result<GCRef, VMVariableError> {
         if other.isinstance::<VMInt>() {
             let other_int = other.as_const_type::<VMInt>();
             return Ok(gc_system.new_object(VMInt::new(self.value * other_int.value)));
@@ -1021,13 +1062,13 @@ impl VMInt {
             return Ok(gc_system.new_object(VMFloat::new(self.value as f64 * other_float.value)));
         }
         Err(VMVariableError::ValueError2Param(
-            GCRef::wrap(self),
-            other.clone(),
+            GCRef::wrap(self).clone_ref(),
+            other.clone_ref(),
             "Cannot multiply a value of non-integer type".to_string(),
         ))
     }
 
-    pub fn div(&self, other: &GCRef, gc_system: &mut GCSystem) -> Result<GCRef, VMVariableError> {
+    pub fn div(&mut self, other: &mut GCRef, gc_system: &mut GCSystem) -> Result<GCRef, VMVariableError> {
         if other.isinstance::<VMInt>() {
             let other_int = other.as_const_type::<VMInt>();
             return Ok(
@@ -1038,15 +1079,15 @@ impl VMInt {
             return Ok(gc_system.new_object(VMFloat::new(self.value as f64 / other_float.value)));
         }
         Err(VMVariableError::ValueError2Param(
-            GCRef::wrap(self),
-            other.clone(),
+            GCRef::wrap(self).clone_ref(),
+            other.clone_ref(),
             "Cannot divide a value of non-integer type".to_string(),
         ))
     }
 
     pub fn mod_op(
-        &self,
-        other: &GCRef,
+        &mut self,
+        other: &mut GCRef,
         gc_system: &mut GCSystem,
     ) -> Result<GCRef, VMVariableError> {
         if other.isinstance::<VMInt>() {
@@ -1057,20 +1098,20 @@ impl VMInt {
             return Ok(gc_system.new_object(VMFloat::new(self.value as f64 % other_float.value)));
         }
         Err(VMVariableError::ValueError2Param(
-            GCRef::wrap(self),
-            other.clone(),
+            GCRef::wrap(self).clone_ref(),
+            other.clone_ref(),
             "Cannot mod a value of non-integer type".to_string(),
         ))
     }
 
-    pub fn power(&self, other: &GCRef, gc_system: &mut GCSystem) -> Result<GCRef, VMVariableError> {
+    pub fn power(&mut self, other: &mut GCRef, gc_system: &mut GCSystem) -> Result<GCRef, VMVariableError> {
         if other.isinstance::<VMInt>() {
             let other_int = other.as_const_type::<VMInt>();
             let r = self.value.checked_pow(other_int.value as u32);
             if r.is_none() {
                 return Err(VMVariableError::OverflowError(
-                    GCRef::wrap(self),
-                    other.clone(),
+                    GCRef::wrap(self).clone_ref(),
+                    other.clone_ref(),
                     "Overflow when power".to_string(),
                 ));
             }
@@ -1082,15 +1123,15 @@ impl VMInt {
             );
         }
         Err(VMVariableError::ValueError2Param(
-            GCRef::wrap(self),
-            other.clone(),
+            GCRef::wrap(self).clone_ref(),
+            other.clone_ref(),
             "Cannot power a value of non-integer type".to_string(),
         ))
     }
 
     pub fn bitwise_and(
-        &self,
-        other: &GCRef,
+        &mut self,
+        other: &mut GCRef,
         gc_system: &mut GCSystem,
     ) -> Result<GCRef, VMVariableError> {
         if other.isinstance::<VMInt>() {
@@ -1098,15 +1139,15 @@ impl VMInt {
             return Ok(gc_system.new_object(VMInt::new(self.value & other_int.value)));
         }
         Err(VMVariableError::ValueError2Param(
-            GCRef::wrap(self),
-            other.clone(),
+            GCRef::wrap(self).clone_ref(),
+            other.clone().clone_ref(),
             "Cannot bitwise and a value of non-integer type".to_string(),
         ))
     }
 
     pub fn bitwise_or(
-        &self,
-        other: &GCRef,
+        &mut self,
+        other: &mut GCRef,
         gc_system: &mut GCSystem,
     ) -> Result<GCRef, VMVariableError> {
         if other.isinstance::<VMInt>() {
@@ -1114,15 +1155,15 @@ impl VMInt {
             return Ok(gc_system.new_object(VMInt::new(self.value | other_int.value)));
         }
         Err(VMVariableError::ValueError2Param(
-            GCRef::wrap(self),
-            other.clone(),
+            GCRef::wrap(self).clone_ref(),
+            other.clone_ref(),
             "Cannot bitwise or a value of non-integer type".to_string(),
         ))
     }
 
     pub fn bitwise_xor(
-        &self,
-        other: &GCRef,
+        &mut self,
+        other: &mut GCRef,
         gc_system: &mut GCSystem,
     ) -> Result<GCRef, VMVariableError> {
         if other.isinstance::<VMInt>() {
@@ -1130,19 +1171,19 @@ impl VMInt {
             return Ok(gc_system.new_object(VMInt::new(self.value ^ other_int.value)));
         }
         Err(VMVariableError::ValueError2Param(
-            GCRef::wrap(self),
-            other.clone(),
+            GCRef::wrap(self).clone_ref(),
+            other.clone_ref(),
             "Cannot bitwise xor a value of non-integer type".to_string(),
         ))
     }
 
-    pub fn bitwise_not(&self, gc_system: &mut GCSystem) -> Result<GCRef, VMVariableError> {
+    pub fn bitwise_not(&mut self, gc_system: &mut GCSystem) -> Result<GCRef, VMVariableError> {
         Ok(gc_system.new_object(VMInt::new(!self.value)))
     }
 
     pub fn shift_left(
-        &self,
-        other: &GCRef,
+        &mut self,
+        other: &mut GCRef,
         gc_system: &mut GCSystem,
     ) -> Result<GCRef, VMVariableError> {
         if other.isinstance::<VMInt>() {
@@ -1150,15 +1191,15 @@ impl VMInt {
             return Ok(gc_system.new_object(VMInt::new(self.value << other_int.value)));
         }
         Err(VMVariableError::ValueError2Param(
-            GCRef::wrap(self),
-            other.clone(),
+            GCRef::wrap(self).clone_ref(),
+            other.clone_ref(),
             "Cannot shift left a value of non-integer type".to_string(),
         ))
     }
 
     pub fn shift_right(
-        &self,
-        other: &GCRef,
+        &mut self,
+        other: &mut GCRef,
         gc_system: &mut GCSystem,
     ) -> Result<GCRef, VMVariableError> {
         if other.isinstance::<VMInt>() {
@@ -1166,13 +1207,13 @@ impl VMInt {
             return Ok(gc_system.new_object(VMInt::new(self.value >> other_int.value)));
         }
         Err(VMVariableError::ValueError2Param(
-            GCRef::wrap(self),
-            other.clone(),
+            GCRef::wrap(self).clone_ref(),
+            other.clone_ref(),
             "Cannot shift right a value of non-integer type".to_string(),
         ))
     }
 
-    pub fn less_than(&self, other: &GCRef) -> Result<bool, VMVariableError> {
+    pub fn less_than(&mut self, other: &mut GCRef) -> Result<bool, VMVariableError> {
         if other.isinstance::<VMInt>() {
             let other_int = other.as_const_type::<VMInt>();
             return Ok(self.value < other_int.value);
@@ -1181,13 +1222,13 @@ impl VMInt {
             return Ok((self.value as f64) < other_float.value);
         }
         Err(VMVariableError::ValueError2Param(
-            GCRef::wrap(self),
-            other.clone(),
+            GCRef::wrap(self).clone_ref(),
+            other.clone_ref(),
             "Cannot compare a value of non-integer type".to_string(),
         ))
     }
 
-    pub fn greater_than(&self, other: &GCRef) -> Result<bool, VMVariableError> {
+    pub fn greater_than(&mut self, other: &mut GCRef) -> Result<bool, VMVariableError> {
         if other.isinstance::<VMInt>() {
             let other_int = other.as_const_type::<VMInt>();
             return Ok(self.value > other_int.value);
@@ -1196,8 +1237,8 @@ impl VMInt {
             return Ok((self.value as f64) > other_float.value);
         }
         Err(VMVariableError::ValueError2Param(
-            GCRef::wrap(self),
-            other.clone(),
+            GCRef::wrap(self).clone_ref(),
+            other.clone_ref(),
             "Cannot compare a value of non-integer type".to_string(),
         ))
     }
@@ -1246,8 +1287,8 @@ impl VMObject for VMInt {
             self.value = value.as_const_type::<VMFloat>().value as i64;
         } else {
             return Err(VMVariableError::ValueError2Param(
-                GCRef::wrap(self),
-                value.clone(),
+                GCRef::wrap(self).clone_ref(),
+                value.clone_ref(),
                 "Cannot assign a value of non-integer type".to_string(),
             ));
         }
@@ -1309,19 +1350,19 @@ impl VMString {
         Ok(!self.value.is_empty())
     }
 
-    pub fn to_int(&self) -> Result<i64, VMVariableError> {
+    pub fn to_int(&mut self) -> Result<i64, VMVariableError> {
         self.value.parse::<i64>().map_err(|_| {
             VMVariableError::ValueError(
-                GCRef::wrap(self),
+                GCRef::wrap(self).clone_ref(),
                 "Cannot convert string to int".to_string(),
             )
         })
     }
 
-    pub fn to_float(&self) -> Result<f64, VMVariableError> {
+    pub fn to_float(&mut self) -> Result<f64, VMVariableError> {
         self.value.parse::<f64>().map_err(|_| {
             VMVariableError::ValueError(
-                GCRef::wrap(self),
+                GCRef::wrap(self).clone_ref(),
                 "Cannot convert string to float".to_string(),
             )
         })
@@ -1340,23 +1381,23 @@ impl VMString {
             ))));
         }
         Err(VMVariableError::ValueError2Param(
-            GCRef::wrap(self),
-            other.clone(),
+            GCRef::wrap(self).clone_ref(),
+            other.clone_ref(),
             "Cannot add a value of non-string type".to_string(),
         ))
     }
 
     pub fn index_of(
-        &self,
-        index: &GCRef,
+        &mut self,
+        index: &mut GCRef,
         gc_system: &mut GCSystem,
     ) -> Result<GCRef, VMVariableError> {
         if index.isinstance::<VMInt>() {
             let index_int = index.as_const_type::<VMInt>();
             if index_int.value < 0 || index_int.value >= self.value.len() as i64 {
                 return Err(VMVariableError::IndexNotFound(
-                    index.clone(),
-                    GCRef::wrap(self),
+                    index.clone_ref(),
+                    GCRef::wrap(self).clone_ref(),
                 ));
             }
             let char = self.value.chars().nth(index_int.value as usize).unwrap();
@@ -1368,8 +1409,8 @@ impl VMString {
             let end = range.end;
             if start < 0 || end > self.value.len() as i64 {
                 return Err(VMVariableError::IndexNotFound(
-                    index.clone(),
-                    GCRef::wrap(self),
+                    index.clone_ref(),
+                    GCRef::wrap(self).clone_ref(),
                 ));
             }
             let substring = &self.value[start as usize..end as usize];
@@ -1377,20 +1418,20 @@ impl VMString {
         }
 
         Err(VMVariableError::ValueError2Param(
-            GCRef::wrap(self),
-            index.clone(),
+            GCRef::wrap(self).clone_ref(),
+            index.clone_ref(),
             "Cannot index a string with a non-integer type".to_string(),
         ))
     }
 
-    pub fn contains(&self, other: &GCRef) -> Result<bool, VMVariableError> {
+    pub fn contains(&mut self, other: &mut GCRef) -> Result<bool, VMVariableError> {
         if other.isinstance::<VMString>() {
             let other_string = other.as_const_type::<VMString>();
             return Ok(self.value.contains(&other_string.value));
         }
         Err(VMVariableError::ValueError2Param(
-            GCRef::wrap(self),
-            other.clone(),
+            GCRef::wrap(self).clone_ref(),
+            other.clone_ref(),
             "Cannot check if a string contains a non-string type".to_string(),
         ))
     }
@@ -1441,8 +1482,8 @@ impl VMObject for VMString {
             Ok(value)
         } else {
             Err(VMVariableError::ValueError2Param(
-                GCRef::wrap(self),
-                value.clone(),
+                GCRef::wrap(self).clone_ref(),
+                value.clone_ref(),
                 "Cannot assign a value of non-string type".to_string(),
             ))
         }
@@ -1507,13 +1548,13 @@ impl VMFloat {
             return Ok(gc_system.new_object(VMFloat::new(self.value + other_int.value as f64)));
         }
         Err(VMVariableError::ValueError2Param(
-            GCRef::wrap(self),
-            other.clone(),
+            GCRef::wrap(self).clone_ref(),
+            other.clone_ref(),
             "Cannot add a value of non-float type".to_string(),
         ))
     }
 
-    pub fn sub(&self, other: &GCRef, gc_system: &mut GCSystem) -> Result<GCRef, VMVariableError> {
+    pub fn sub(&mut self, other: &mut GCRef, gc_system: &mut GCSystem) -> Result<GCRef, VMVariableError> {
         if other.isinstance::<VMFloat>() {
             let other_float = other.as_const_type::<VMFloat>();
             return Ok(gc_system.new_object(VMFloat::new(self.value - other_float.value)));
@@ -1522,13 +1563,13 @@ impl VMFloat {
             return Ok(gc_system.new_object(VMFloat::new(self.value - other_int.value as f64)));
         }
         Err(VMVariableError::ValueError2Param(
-            GCRef::wrap(self),
-            other.clone(),
+            GCRef::wrap(self).clone_ref(),
+            other.clone_ref(),
             "Cannot subtract a value of non-float type".to_string(),
         ))
     }
 
-    pub fn mul(&self, other: &GCRef, gc_system: &mut GCSystem) -> Result<GCRef, VMVariableError> {
+    pub fn mul(&mut self, other: &mut GCRef, gc_system: &mut GCSystem) -> Result<GCRef, VMVariableError> {
         if other.isinstance::<VMFloat>() {
             let other_float = other.as_const_type::<VMFloat>();
             return Ok(gc_system.new_object(VMFloat::new(self.value * other_float.value)));
@@ -1537,13 +1578,13 @@ impl VMFloat {
             return Ok(gc_system.new_object(VMFloat::new(self.value * other_int.value as f64)));
         }
         Err(VMVariableError::ValueError2Param(
-            GCRef::wrap(self),
-            other.clone(),
+            GCRef::wrap(self).clone_ref(),
+            other.clone_ref(),
             "Cannot multiply a value of non-float type".to_string(),
         ))
     }
 
-    pub fn div(&self, other: &GCRef, gc_system: &mut GCSystem) -> Result<GCRef, VMVariableError> {
+    pub fn div(&mut self, other: &mut GCRef, gc_system: &mut GCSystem) -> Result<GCRef, VMVariableError> {
         if other.isinstance::<VMFloat>() {
             let other_float = other.as_const_type::<VMFloat>();
             return Ok(gc_system.new_object(VMFloat::new(self.value / other_float.value)));
@@ -1552,15 +1593,15 @@ impl VMFloat {
             return Ok(gc_system.new_object(VMFloat::new(self.value / other_int.value as f64)));
         }
         Err(VMVariableError::ValueError2Param(
-            GCRef::wrap(self),
-            other.clone(),
+            GCRef::wrap(self).clone_ref(),
+            other.clone_ref(),
             "Cannot divide a value of non-float type".to_string(),
         ))
     }
 
     pub fn mod_op(
-        &self,
-        other: &GCRef,
+        &mut self,
+        other: &mut GCRef,
         gc_system: &mut GCSystem,
     ) -> Result<GCRef, VMVariableError> {
         if other.isinstance::<VMFloat>() {
@@ -1571,13 +1612,13 @@ impl VMFloat {
             return Ok(gc_system.new_object(VMFloat::new(self.value % other_int.value as f64)));
         }
         Err(VMVariableError::ValueError2Param(
-            GCRef::wrap(self),
-            other.clone(),
+            GCRef::wrap(self).clone_ref(),
+            other.clone_ref(),
             "Cannot mod a value of non-float type".to_string(),
         ))
     }
 
-    pub fn power(&self, other: &GCRef, gc_system: &mut GCSystem) -> Result<GCRef, VMVariableError> {
+    pub fn power(&mut self, other: &mut GCRef, gc_system: &mut GCSystem) -> Result<GCRef, VMVariableError> {
         if other.isinstance::<VMFloat>() {
             let other_float = other.as_const_type::<VMFloat>();
             return Ok(gc_system.new_object(VMFloat::new(self.value.powf(other_float.value))));
@@ -1586,13 +1627,13 @@ impl VMFloat {
             return Ok(gc_system.new_object(VMFloat::new(self.value.powi(other_int.value as i32))));
         }
         Err(VMVariableError::ValueError2Param(
-            GCRef::wrap(self),
-            other.clone(),
+            GCRef::wrap(self).clone_ref(),
+            other.clone_ref(),
             "Cannot power a value of non-float type".to_string(),
         ))
     }
 
-    pub fn less_than(&self, other: &GCRef) -> Result<bool, VMVariableError> {
+    pub fn less_than(&mut self, other: &mut GCRef) -> Result<bool, VMVariableError> {
         if other.isinstance::<VMFloat>() {
             let other_float = other.as_const_type::<VMFloat>();
             return Ok(self.value < other_float.value);
@@ -1601,13 +1642,13 @@ impl VMFloat {
             return Ok(self.value < other_int.value as f64);
         }
         Err(VMVariableError::ValueError2Param(
-            GCRef::wrap(self),
-            other.clone(),
+            GCRef::wrap(self).clone_ref(),
+            other.clone_ref(),
             "Cannot compare a value of non-float type".to_string(),
         ))
     }
 
-    pub fn greater_than(&self, other: &GCRef) -> Result<bool, VMVariableError> {
+    pub fn greater_than(&mut self, other: &mut GCRef) -> Result<bool, VMVariableError> {
         if other.isinstance::<VMFloat>() {
             let other_float = other.as_const_type::<VMFloat>();
             return Ok(self.value > other_float.value);
@@ -1616,8 +1657,8 @@ impl VMFloat {
             return Ok(self.value > other_int.value as f64);
         }
         Err(VMVariableError::ValueError2Param(
-            GCRef::wrap(self),
-            other.clone(),
+            GCRef::wrap(self).clone_ref(),
+            other.clone_ref(),
             "Cannot compare a value of non-float type".to_string(),
         ))
     }
@@ -1668,8 +1709,8 @@ impl VMObject for VMFloat {
             Ok(value)
         } else {
             return Err(VMVariableError::ValueError2Param(
-                GCRef::wrap(self),
-                value.clone(),
+                GCRef::wrap(self).clone_ref(),
+                value.clone_ref(),
                 "Cannot assign a value of non-float type".to_string(),
             ));
         }
@@ -1719,38 +1760,38 @@ impl VMBoolean {
         }
     }
 
-    pub fn and(&self, other: &GCRef) -> Result<bool, VMVariableError> {
+    pub fn and(&mut self, other: &mut GCRef) -> Result<bool, VMVariableError> {
         if other.isinstance::<VMBoolean>() {
             let other_bool = other.as_const_type::<VMBoolean>();
             return Ok(self.value && other_bool.value);
         }
         Err(VMVariableError::ValueError2Param(
-            GCRef::wrap(self),
-            other.clone(),
+            GCRef::wrap(self).clone_ref(),
+            other.clone_ref(),
             "Cannot perform logical AND on non-boolean type".to_string(),
         ))
     }
 
-    pub fn or(&self, other: &GCRef) -> Result<bool, VMVariableError> {
+    pub fn or(&mut self, other: &mut GCRef) -> Result<bool, VMVariableError> {
         if other.isinstance::<VMBoolean>() {
             let other_bool = other.as_const_type::<VMBoolean>();
             return Ok(self.value || other_bool.value);
         }
         Err(VMVariableError::ValueError2Param(
-            GCRef::wrap(self),
-            other.clone(),
+            GCRef::wrap(self).clone_ref(),
+            other.clone_ref(),
             "Cannot perform logical OR on non-boolean type".to_string(),
         ))
     }
 
-    pub fn xor(&self, other: &GCRef) -> Result<bool, VMVariableError> {
+    pub fn xor(&mut self, other: &mut GCRef) -> Result<bool, VMVariableError> {
         if other.isinstance::<VMBoolean>() {
             let other_bool = other.as_const_type::<VMBoolean>();
             return Ok(self.value ^ other_bool.value);
         }
         Err(VMVariableError::ValueError2Param(
-            GCRef::wrap(self),
-            other.clone(),
+            GCRef::wrap(self).clone_ref(),
+            other.clone_ref(),
             "Cannot perform logical XOR on non-boolean type".to_string(),
         ))
     }
@@ -1805,8 +1846,8 @@ impl VMObject for VMBoolean {
             Ok(value)
         } else {
             return Err(VMVariableError::ValueError2Param(
-                GCRef::wrap(self),
-                value.clone(),
+                GCRef::wrap(self).clone_ref(),
+                value.clone_ref(),
                 "Cannot assign a value of non-boolean type".to_string(),
             ));
         }
@@ -1884,8 +1925,8 @@ impl VMObject for VMNull {
             Ok(value)
         } else {
             Err(VMVariableError::ValueError2Param(
-                GCRef::wrap(self),
-                value.clone(),
+                GCRef::wrap(self).clone_ref(),
+                value.clone_ref(),
                 "Cannot assign a value of non-null type".to_string(),
             ))
         }
@@ -2210,7 +2251,7 @@ impl VMTuple {
         }
     }
 
-    pub fn get_member(&mut self, key: &GCRef) -> Result<&mut GCRef, VMVariableError> {
+    pub fn get_member(&mut self, key: &mut GCRef) -> Result<&mut GCRef, VMVariableError> {
         for i in 0..self.values.len() {
             if self.values[i].isinstance::<VMKeyVal>() {
                 let kv = self.values[i].as_const_type::<VMKeyVal>();
@@ -2224,7 +2265,7 @@ impl VMTuple {
                 }
             }
         }
-        Err(VMVariableError::KeyNotFound(key.clone(), GCRef::wrap(self)))
+        Err(VMVariableError::KeyNotFound(key.clone_ref(), GCRef::wrap(self).clone_ref()))
     }
 
     pub fn get_member_by_string(
@@ -2248,13 +2289,13 @@ impl VMTuple {
             }
         }
         Err(VMVariableError::DetailedError(
-            format!("Key '{}' not found in {}", key, try_repr_vmobject(GCRef::wrap(self), None)?),
+            format!("Key '{}' not found in {}", key, try_repr_vmobject(&mut GCRef::wrap(self), None)?),
         ))
     }
 
     pub fn index_of(
         &mut self,
-        index: &GCRef,
+        index: &mut GCRef,
         gc_system: &mut GCSystem,
     ) -> Result<GCRef, VMVariableError> {
         if index.isinstance::<VMRange>() {
@@ -2263,8 +2304,8 @@ impl VMTuple {
             let end = range.end;
             if start < 0 || end > self.values.len() as i64 {
                 return Err(VMVariableError::ValueError2Param(
-                    GCRef::wrap(self),
-                    index.clone(),
+                    GCRef::wrap(self).clone_ref(),
+                    index.clone_ref(),
                     "Index out of bounds".to_string(),
                 ));
             }
@@ -2285,22 +2326,22 @@ impl VMTuple {
             let idx = index.as_const_type::<VMInt>().value;
             if idx < 0 {
                 return Err(VMVariableError::ValueError(
-                    index.clone(),
+                    index.clone_ref(),
                     "Index must be a non-negative integer".to_string(),
                 ));
             }
             let idx = idx as usize;
             if idx >= self.values.len() {
                 return Err(VMVariableError::ValueError2Param(
-                    GCRef::wrap(self),
-                    index.clone(),
+                    GCRef::wrap(self).clone_ref(),
+                    index.clone_ref(),
                     "Index out of bounds".to_string(),
                 ));
             }
             return Ok(self.values[idx].clone_ref());
         }
         Err(VMVariableError::TypeError(
-            index.clone(),
+            index.clone_ref(),
             "Index must be an integer".to_string(),
         ))
     }
@@ -2311,8 +2352,8 @@ impl VMTuple {
         // 确保参数是元组
         if !other.isinstance::<VMTuple>() {
             return Err(VMVariableError::ValueError2Param(
-                GCRef::wrap(self),
-                other.clone(),
+                GCRef::wrap(self).clone_ref(),
+                other.clone_ref(),
                 "Expected a tuple".to_string(),
             ));
         }
@@ -2396,8 +2437,8 @@ impl VMTuple {
         // 确保参数是元组
         if !other.isinstance::<VMTuple>() {
             return Err(VMVariableError::ValueError2Param(
-                GCRef::wrap(self),
-                other.clone(),
+                GCRef::wrap(self).clone_ref(),
+                other.clone_ref(),
                 "Expected a tuple".to_string(),
             ));
         }
@@ -2472,9 +2513,10 @@ impl VMTuple {
 
 
                 tuple.traceable.add_reference(&mut new_named);
-                tuple.values[normal_index] = new_named;
+                tuple.values[normal_index] = new_named.clone();
                 tuple.traceable.remove_reference(&mut old_value);
 
+                new_named.drop_ref();
                 
                 assigned[normal_index] = true;
                 normal_index += 1;
@@ -2508,8 +2550,8 @@ impl VMTuple {
             return Ok(new_tuple);
         }
         Err(VMVariableError::ValueError2Param(
-            GCRef::wrap(self),
-            other.clone(),
+            GCRef::wrap(self).clone_ref(),
+            other.clone_ref(),
             "Cannot add a value of non-tuple type".to_string(),
         ))
     }
@@ -2653,8 +2695,8 @@ impl VMObject for VMTuple {
             Ok(value)
         } else {
             Err(VMVariableError::ValueError2Param(
-                GCRef::wrap(self),
-                value.clone(),
+                GCRef::wrap(self).clone_ref(),
+                value.clone_ref(),
                 "Cannot assign a value of non-tuple type".to_string(),
             ))
         }
@@ -2731,8 +2773,8 @@ impl VMObject for VMInstructions {
 
     fn assign<'t>(&mut self, value: &'t mut GCRef) -> Result<&'t mut GCRef, VMVariableError> {
         Err(VMVariableError::ValueError2Param(
-            GCRef::wrap(self),
-            value.clone(),
+            GCRef::wrap(self).clone_ref(),
+            value.clone_ref(),
             "Cannot assign a value to VMInstructions".to_string(),
         ))
     }
@@ -2777,7 +2819,7 @@ impl VMCoroutineStatus {
 
 pub enum VMLambdaBody {
     VMInstruction(GCRef),
-    VMNativeFunction(fn(GCRef, &mut GCSystem) -> Result<GCRef, VMVariableError>),
+    VMNativeFunction(fn(&mut GCRef, &mut GCSystem) -> Result<GCRef, VMVariableError>),
     VMNativeGeneratorFunction(Arc<Box<dyn VMNativeGeneratorFunction>>),
 }
 
@@ -3058,7 +3100,7 @@ impl VMObject for VMLambda {
             VMLambdaBody::VMNativeGeneratorFunction(_) => {
                 let VMLambdaBody::VMNativeGeneratorFunction(ref gen) = self.lambda_body else {
                     return Err(VMVariableError::ValueError(
-                        GCRef::wrap(self),
+                        GCRef::wrap(self).clone_ref(),
                         "Invalid lambda body type".to_string(),
                     ));
                 };
@@ -3106,7 +3148,7 @@ impl VMObject for VMLambda {
             VMLambdaBody::VMNativeGeneratorFunction(_) => {
                 let VMLambdaBody::VMNativeGeneratorFunction(ref gen) = self.lambda_body else {
                     return Err(VMVariableError::ValueError(
-                        GCRef::wrap(self),
+                        GCRef::wrap(self).clone_ref(),
                         "Invalid lambda body type".to_string(),
                     ));
                 };
@@ -3142,8 +3184,8 @@ impl VMObject for VMLambda {
     fn assign<'t>(&mut self, value: &'t mut GCRef) -> Result<&'t mut GCRef, VMVariableError> {
         if !value.isinstance::<VMLambda>() {
             return Err(VMVariableError::ValueError2Param(
-                GCRef::wrap(self),
-                value.clone(),
+                GCRef::wrap(self).clone_ref(),
+                value.clone().clone_ref(),
                 "Cannot assign a value of non-lambda type".to_string(),
             ));
         }
@@ -3221,7 +3263,7 @@ impl VMCLambdaInstruction {
                 vm_clambda_loading::call_clambda(&self.clambda, signature, args, gc_system);
             result.map_err(|e| {
                 VMVariableError::ValueError(
-                    GCRef::wrap(self),
+                    GCRef::wrap(self).clone_ref(),
                     format!("Failed to call clambda: {}", e),
                 )
             })
@@ -3262,8 +3304,8 @@ impl VMObject for VMCLambdaInstruction {
 
     fn assign<'t>(&mut self, value: &'t mut GCRef) -> Result<&'t mut GCRef, VMVariableError> {
         Err(VMVariableError::ValueError2Param(
-            GCRef::wrap(self),
-            value.clone(),
+            GCRef::wrap(self).clone_ref(),
+            value.clone_ref(),
             "Cannot assign a value to VMCLambdaInstruction".to_string(),
         ))
     }
@@ -3329,12 +3371,12 @@ impl VMRange {
             )));
         }
         Err(VMVariableError::ValueError2Param(
-            GCRef::wrap(self),
-            other.clone(),
+            GCRef::wrap(self).clone_ref(),
+            other.clone_ref(),
             "Cannot add a value of non-integer type".to_string(),
         ))
     }
-    pub fn sub(&self, other: &GCRef, gc_system: &mut GCSystem) -> Result<GCRef, VMVariableError> {
+    pub fn sub(&mut self, other: &mut GCRef, gc_system: &mut GCSystem) -> Result<GCRef, VMVariableError> {
         if other.isinstance::<VMInt>() {
             let other_int = other.as_const_type::<VMInt>();
             return Ok(gc_system.new_object(VMRange::new(
@@ -3349,13 +3391,13 @@ impl VMRange {
             )));
         }
         Err(VMVariableError::ValueError2Param(
-            GCRef::wrap(self),
-            other.clone(),
+            GCRef::wrap(self).clone_ref(),
+            other.clone_ref(),
             "Cannot subtract a value of non-integer type".to_string(),
         ))
     }
 
-    pub fn contains(&self, other: &GCRef) -> Result<bool, VMVariableError> {
+    pub fn contains(&mut self, other: &mut GCRef) -> Result<bool, VMVariableError> {
         if other.isinstance::<VMInt>() {
             let other_int = other.as_const_type::<VMInt>();
             return Ok(self.start <= other_int.value && self.end >= other_int.value);
@@ -3364,8 +3406,8 @@ impl VMRange {
             return Ok(self.start <= other_range.start && self.end >= other_range.end);
         }
         Err(VMVariableError::ValueError2Param(
-            GCRef::wrap(self),
-            other.clone(),
+            GCRef::wrap(self).clone_ref(),
+            other.clone_ref(),
             "Cannot check containment with a non-integer type".to_string(),
         ))
     }
@@ -3421,8 +3463,8 @@ impl VMObject for VMRange {
 
     fn assign<'t>(&mut self, value: &'t mut GCRef) -> Result<&'t mut GCRef, VMVariableError> {
         Err(VMVariableError::ValueError2Param(
-            GCRef::wrap(self),
-            value.clone(),
+            GCRef::wrap(self).clone_ref(),
+            value.clone_ref(),
             "Cannot assign a value to VMRange".to_string(),
         ))
     }
@@ -3471,12 +3513,12 @@ impl VMBytes {
         }
     }
 
-    pub fn to_string(&self) -> Result<String, VMVariableError> {
+    pub fn to_string(&mut self) -> Result<String, VMVariableError> {
         // 尝试将字节转换为UTF-8字符串
         match String::from_utf8(self.value.clone()) {
             Ok(s) => Ok(s),
             Err(_) => Err(VMVariableError::ValueError(
-                GCRef::wrap(self),
+                GCRef::wrap(self).clone_ref(),
                 "Cannot convert bytes to string: invalid UTF-8".to_string(),
             )),
         }
@@ -3498,23 +3540,23 @@ impl VMBytes {
             return Ok(gc_system.new_object(VMBytes::new(&new_value)));
         }
         Err(VMVariableError::ValueError2Param(
-            GCRef::wrap(self),
-            other.clone(),
+            GCRef::wrap(self).clone_ref(),
+            other.clone_ref(),
             "Cannot add a value of non-bytes type".to_string(),
         ))
     }
 
     pub fn index_of(
-        &self,
-        index: &GCRef,
+        &mut self,
+        index: &mut GCRef,
         gc_system: &mut GCSystem,
     ) -> Result<GCRef, VMVariableError> {
         if index.isinstance::<VMInt>() {
             let index_int = index.as_const_type::<VMInt>();
             if index_int.value < 0 || index_int.value >= self.value.len() as i64 {
                 return Err(VMVariableError::IndexNotFound(
-                    index.clone(),
-                    GCRef::wrap(self),
+                    index.clone_ref(),
+                    GCRef::wrap(self).clone_ref(),
                 ));
             }
             let byte = self.value[index_int.value as usize];
@@ -3525,8 +3567,8 @@ impl VMBytes {
             let end = range.end;
             if start < 0 || end > self.value.len() as i64 {
                 return Err(VMVariableError::IndexNotFound(
-                    index.clone(),
-                    GCRef::wrap(self),
+                    index.clone_ref(),
+                    GCRef::wrap(self).clone_ref(),
                 ));
             }
             let slice = &self.value[start as usize..end as usize];
@@ -3534,13 +3576,13 @@ impl VMBytes {
         }
 
         Err(VMVariableError::ValueError2Param(
-            GCRef::wrap(self),
-            index.clone(),
+            GCRef::wrap(self).clone_ref(),
+            index.clone_ref(),
             "Cannot index bytes with a non-integer type".to_string(),
         ))
     }
 
-    pub fn contains(&self, other: &GCRef) -> Result<bool, VMVariableError> {
+    pub fn contains(&mut self, other: &mut GCRef) -> Result<bool, VMVariableError> {
         if other.isinstance::<VMBytes>() {
             let other_bytes = other.as_const_type::<VMBytes>();
             // 检查是否包含子序列
@@ -3552,15 +3594,15 @@ impl VMBytes {
             let byte = other.as_const_type::<VMInt>().value;
             if !(0..=255).contains(&byte) {
                 return Err(VMVariableError::ValueError(
-                    other.clone(),
+                    other.clone_ref(),
                     "Byte value must be between 0 and 255".to_string(),
                 ));
             }
             return Ok(self.value.contains(&(byte as u8)));
         }
         Err(VMVariableError::ValueError2Param(
-            GCRef::wrap(self),
-            other.clone(),
+            GCRef::wrap(self).clone_ref(),
+            other.clone_ref(),
             "Cannot check if bytes contain a non-bytes or non-integer type".to_string(),
         ))
     }
@@ -3615,17 +3657,17 @@ impl VMObject for VMBytes {
             Ok(value)
         } else if value.isinstance::<VMKeyVal>() {
             // 允许从键值对转换为字节序列
-            let kv = value.as_const_type::<VMKeyVal>();
-            let index = kv.key.clone();
-            let val = kv.value.clone();
+            let kv = value.as_type::<VMKeyVal>();
+            let index = &mut kv.key;
+            let val = &mut kv.value;
 
             if index.isinstance::<VMInt>() {
                 // 单字节修改
                 let idx = index.as_const_type::<VMInt>().value;
                 if idx < 0 || idx >= self.value.len() as i64 {
                     return Err(VMVariableError::IndexNotFound(
-                        index.clone(),
-                        GCRef::wrap(self),
+                        index.clone_ref(),
+                        GCRef::wrap(self).clone_ref(),
                     ));
                 }
 
@@ -3635,7 +3677,7 @@ impl VMObject for VMBytes {
                     let int_val = val.as_const_type::<VMInt>().value;
                     if !(0..=255).contains(&int_val) {
                         return Err(VMVariableError::ValueError(
-                            val.clone(),
+                            val.clone_ref(),
                             "Byte value must be between 0 and 255".to_string(),
                         ));
                     }
@@ -3645,7 +3687,7 @@ impl VMObject for VMBytes {
                     let str_value = val.as_const_type::<VMString>().value.clone();
                     if str_value.is_empty() {
                         return Err(VMVariableError::ValueError(
-                            val.clone(),
+                            val.clone_ref(),
                             "Cannot use empty string as byte value".to_string(),
                         ));
                     }
@@ -3656,7 +3698,7 @@ impl VMObject for VMBytes {
                     // 检查是否有足够空间
                     if (idx as usize) + str_bytes.len() > self.value.len() {
                         return Err(VMVariableError::ValueError(
-                            val.clone(),
+                            val.clone_ref(),
                             format!(
                                 "Not enough space to write {} bytes at index {}",
                                 str_bytes.len(),
@@ -3676,7 +3718,7 @@ impl VMObject for VMBytes {
                     let bytes_value = val.as_const_type::<VMBytes>().value.clone();
                     if bytes_value.is_empty() {
                         return Err(VMVariableError::ValueError(
-                            val.clone(),
+                            val.clone_ref(),
                             "Cannot use empty bytes as byte value".to_string(),
                         ));
                     }
@@ -3684,7 +3726,7 @@ impl VMObject for VMBytes {
                     // 检查是否有足够空间
                     if (idx as usize) + bytes_value.len() > self.value.len() {
                         return Err(VMVariableError::ValueError(
-                            val.clone(),
+                            val.clone_ref(),
                             format!(
                                 "Not enough space to write {} bytes at index {}",
                                 bytes_value.len(),
@@ -3701,7 +3743,7 @@ impl VMObject for VMBytes {
                     return Ok(value);
                 } else {
                     return Err(VMVariableError::ValueError(
-                        val.clone(),
+                        val.clone_ref(),
                         "Cannot convert non-integer value to byte".to_string(),
                     ));
                 }
@@ -3717,8 +3759,8 @@ impl VMObject for VMBytes {
 
                 if start < 0 || end > self.value.len() as i64 || start > end {
                     return Err(VMVariableError::IndexNotFound(
-                        index.clone(),
-                        GCRef::wrap(self),
+                        index.clone_ref(),
+                        GCRef::wrap(self).clone_ref(),
                     ));
                 }
 
@@ -3733,14 +3775,14 @@ impl VMObject for VMBytes {
                     let int_val = val.as_const_type::<VMInt>().value;
                     if !(0..=255).contains(&int_val) {
                         return Err(VMVariableError::ValueError(
-                            val.clone(),
+                            val.clone_ref(),
                             "Byte value must be between 0 and 255".to_string(),
                         ));
                     }
                     new_bytes = vec![int_val as u8; (end - start) as usize];
                 } else {
                     return Err(VMVariableError::ValueError(
-                        val.clone(),
+                        val.clone_ref(),
                         "Cannot convert value to bytes".to_string(),
                     ));
                 }
@@ -3748,8 +3790,8 @@ impl VMObject for VMBytes {
                 // 检查长度是否匹配
                 if new_bytes.len() != (end - start) as usize {
                     return Err(VMVariableError::ValueError2Param(
-                        index.clone(),
-                        val.clone(),
+                        index.clone_ref(),
+                        val.clone_ref(),
                         format!(
                             "Slice length {} does not match range length {}",
                             new_bytes.len(),
@@ -3766,14 +3808,14 @@ impl VMObject for VMBytes {
                 return Ok(value);
             } else {
                 return Err(VMVariableError::ValueError(
-                    index.clone(),
+                    index.clone_ref(),
                     "Index must be an integer or range".to_string(),
                 ));
             }
         } else {
             Err(VMVariableError::ValueError2Param(
-                GCRef::wrap(self),
-                value.clone(),
+                GCRef::wrap(self).clone_ref(),
+                value.clone_ref(),
                 "Cannot assign a value of non-bytes type".to_string(),
             ))
         }
@@ -3863,8 +3905,8 @@ impl VMObject for VMSet {
             Ok(value)
         } else {
             Err(VMVariableError::ValueError2Param(
-                GCRef::wrap(self),
-                value.clone(),
+                GCRef::wrap(self).clone_ref(),
+                value.clone_ref(),
                 "Cannot assign a value of non-set type".to_string(),
             ))
         }
@@ -3894,8 +3936,8 @@ impl VMSet {
             false
         }
     }
-    fn contains(&self, other: &GCRef) -> Result<bool, VMVariableError> {
-        try_contains_as_vmobject(&self.collection, other)
+    fn contains(&mut self, other: &mut GCRef) -> Result<bool, VMVariableError> {
+        try_contains_as_vmobject(&mut self.collection, other)
     }
 }
 impl VMIterable for VMSet {

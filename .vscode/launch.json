@@ -20,7 +20,7 @@
             "args": [
                 //"repl"
                 "run",
-                "examples/vector.x"
+                "examples/request.x"
             ],
             "cwd": "${workspaceFolder}",
             "env": {

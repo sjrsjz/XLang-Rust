@@ -24,7 +24,7 @@ pub enum VMError {
 }
 
 impl VMError {
-    pub fn to_string(&self) -> String {
+    pub fn to_string(&mut self) -> String {
         use colored::*;
 
         match self {
@@ -38,13 +38,13 @@ impl VMError {
             VMError::TryEnterNotLambda(lambda) => format!(
                 "{}: {}",
                 "TryEnterNotLambda".bright_red().bold(),
-                try_repr_vmobject(lambda.clone(), None).unwrap_or(format!("{:?}", lambda))
+                try_repr_vmobject(lambda, None).unwrap_or(format!("{:?}", lambda))
             ),
             VMError::EmptyStack => "EmptyStack".bright_red().bold().to_string(),
             VMError::ArgumentIsNotTuple(tuple) => format!(
                 "{}: {}",
                 "ArgumentIsNotTuple".bright_red().bold(),
-                try_repr_vmobject(tuple.clone(), None).unwrap_or(format!("{:?}", tuple))
+                try_repr_vmobject(tuple, None).unwrap_or(format!("{:?}", tuple))
             ),
             VMError::NotVMObject(obj) => {
                 format!("{}: {:?}", "NotVMObject".bright_red().bold(), obj)
@@ -63,18 +63,31 @@ impl VMError {
             VMError::CannotGetSelf(obj) => format!(
                 "{}: {}",
                 "CannotGetSelf".bright_red().bold(),
-                try_repr_vmobject(obj.clone(), None).unwrap_or(format!("{:?}", obj))
+                try_repr_vmobject(obj, None).unwrap_or(format!("{:?}", obj))
             ),
             VMError::InvalidArgument(obj, msg) => format!(
                 "{}: {} {}",
                 "InvalidArgument".bright_red().bold(),
-                try_repr_vmobject(obj.clone(), None).unwrap_or(format!("{:?}", obj)),
+                try_repr_vmobject(obj, None).unwrap_or(format!("{:?}", obj)),
                 format!("because {}", msg).bright_red()
             ),
             VMError::FileError(msg) => format!("{}: {}", "FileError".bright_red().bold(), msg),
             VMError::DetailedError(msg) => msg.to_string(),
         }
     }
+
+    pub fn consume_ref(&mut self) {
+        match self {
+            VMError::TryEnterNotLambda(lambda) => lambda.drop_ref(),
+            VMError::ArgumentIsNotTuple(tuple) => tuple.drop_ref(),
+            VMError::CannotGetSelf(obj) => obj.drop_ref(),
+            VMError::InvalidArgument(obj, _) => obj.drop_ref(),
+            VMError::ContextError(err) => err.consume_ref(),
+            VMError::VMVariableError(err) => err.consume_ref(),
+            _ => (),
+        }
+    }
+
 }
 
 #[derive(Debug)]
@@ -211,7 +224,7 @@ impl VMCoroutinePool {
         use colored::*;
 
         loop {
-            let spawned_coroutines = self.step_all(gc_system).map_err(|vm_error| {
+            let spawned_coroutines = self.step_all(gc_system).map_err(|mut vm_error| {
                 if self.enable_dump {
                     let all_coroutines_contexts_repr = self
                         .executors
@@ -227,7 +240,7 @@ impl VMCoroutinePool {
                                 )
                                 .bright_yellow()
                                 .bold(),
-                                e.context.format_context(&e.stack),
+                                e.context.format_context(&mut e.stack),
                                 "=== Code ===".bright_blue().bold(),
                                 e.repr_current_code(Some(2))
                             )
@@ -433,12 +446,12 @@ impl VMExecutor {
         self.stack.push(VMStackObject::VMObject(obj.clone()));
         Ok(())
     }
-    pub fn _debug_output_stack(&self) {
+    pub fn _debug_output_stack(&mut self) {
         println!("Stack:");
-        for (i, obj) in self.stack.iter().enumerate() {
+        for (i, obj) in self.stack.iter_mut().enumerate() {
             match obj {
                 VMStackObject::VMObject(obj) => {
-                    let repr = try_repr_vmobject(obj.clone(), None);
+                    let repr = try_repr_vmobject(obj, None);
                     if repr.is_ok() {
                         println!("{}: {:?}", i, repr.unwrap());
                     } else {
@@ -464,7 +477,7 @@ impl VMExecutor {
         gc_system: &mut GCSystem,
     ) -> Result<(), VMError> {
         if !lambda_object.isinstance::<VMLambda>() {
-            return Err(VMError::TryEnterNotLambda(lambda_object.clone()));
+            return Err(VMError::TryEnterNotLambda(lambda_object.clone_ref()));
         }
         if let VMLambdaBody::VMNativeGeneratorFunction(_) =
             &lambda_object.as_const_type::<VMLambda>().lambda_body
@@ -477,7 +490,7 @@ impl VMExecutor {
             &lambda_object.as_const_type::<VMLambda>().lambda_body
         else {
             return Err(VMError::InvalidArgument(
-                lambda_object.clone(),
+                lambda_object.clone_ref(),
                 "Only lambda defined by VMInstruction can be entered".to_string(),
             ));
         };
@@ -494,7 +507,7 @@ impl VMExecutor {
 
         let VMLambdaBody::VMInstruction(lambda_body) = &mut lambda.lambda_body else {
             return Err(VMError::InvalidArgument(
-                lambda_object.clone(),
+                lambda_object.clone_ref(),
                 "Only lambda defined by VMInstruction can be entered".to_string(),
             ));
         };
@@ -522,17 +535,18 @@ impl VMExecutor {
                 // ));
                 continue;
             }
+            let mut cloned_v_ref = v_ref.clone();
             let v = v_ref.as_type::<VMNamed>();
-            let name = v.key.clone();
+            let name = &mut v.key;
             let value = &mut v.value;
 
             if !name.isinstance::<VMString>() {
                 return Err(VMError::InvalidArgument(
-                    name.clone(),
+                    name.clone_ref(),
                     format!(
                         "Expected VMString in Lambda arguments {}'s key, but got {}",
-                        try_repr_vmobject(v_ref.clone(), None).unwrap_or(format!("{:?}", v_ref)),
-                        try_repr_vmobject(name.clone(), None).unwrap_or(format!("{:?}", name))
+                        try_repr_vmobject(&mut cloned_v_ref, None).unwrap_or(format!("{:?}", cloned_v_ref.clone())),
+                        try_repr_vmobject(name, None).unwrap_or(format!("{:?}", name))
                     ),
                 ));
             }
@@ -798,10 +812,8 @@ impl VMExecutor {
                     Ok(result) => {
                         spawned_coroutines = result;
                     }
-                    Err(vm_error) => {
+                    Err(mut vm_error) => {
                         // Store the original error in case raising fails
-                        let original_vm_error = vm_error;
-
                         // Restore IP before attempting to raise
                         self.ip = curr_ip;
 
@@ -809,7 +821,7 @@ impl VMExecutor {
                         let raise_result =
                             (|| -> Result<Option<Vec<SpawnedCoroutine>>, VMError> {
                                 // Create KeyVals for the error tuple
-                                let error_message = original_vm_error.to_string();
+                                let error_message = vm_error.to_string();
                                 let mut msg_key_obj =
                                     gc_system.new_object(VMString::new("message"));
                                 let mut msg_val_obj =
@@ -840,13 +852,14 @@ impl VMExecutor {
                                 ip_val_obj.drop_ref();
                                 msg_kv_obj.drop_ref();
                                 ip_kv_obj.drop_ref();
+                                vm_error.consume_ref();
 
                                 // Manually call the raise logic after pushing the error object
                                 vm_instructions::raise(self, &decoded, gc_system)
                             })();
 
                         // If the raise operation itself failed, return the original error
-                        return raise_result.map_err(|_raise_error| original_vm_error);
+                        return raise_result.map_err(|_| vm_error);
                     }
                 }
             }
