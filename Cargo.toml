@@ -1,6 +1,6 @@
 [package]
 name = "XLang-Rust"
-version = "0.1.3"
+version = "0.1.4"
 edition = "2021"
 authors = ["sjrsjz <sjrsjz@gmail.com>"]
 description = "An experimental cross-platform dynamic strong-typed programming language written in Rust."
