@@ -613,7 +613,9 @@ impl VMExecutor {
             .entry_lambda
             .as_const_type::<VMLambda>()
             .coroutine_status;
-
+        if *coroutine_status == VMCoroutineStatus::Pending {
+            return Ok(None);
+        }
         let mut spawned_coroutines = None;
         if !self.lambda_instructions.is_empty() && *coroutine_status != VMCoroutineStatus::Finished
         {

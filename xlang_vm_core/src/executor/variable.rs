@@ -534,6 +534,9 @@ pub fn try_mod_as_vmobject(
     } else if value.isinstance::<VMFloat>() {
         let float = value.as_type::<VMFloat>();
         return float.mod_op(other, gc_system);
+    } else if value.isinstance::<VMString>() {
+        let string = value.as_type::<VMString>();
+        return string.mod_op(other, gc_system);
     }
     Err(VMVariableError::ValueError2Param(
         value.clone_ref(),
@@ -1385,6 +1388,155 @@ impl VMString {
             other.clone_ref(),
             "Cannot add a value of non-string type".to_string(),
         ))
+    }
+
+
+    pub fn mod_op(
+        &mut self,
+        other: &mut GCRef,
+        gc_system: &mut GCSystem,
+    ) -> Result<GCRef, VMVariableError> {
+        // 确保格式化参数是元组类型
+        if !other.isinstance::<VMTuple>() {
+            return Err(VMVariableError::ValueError2Param(
+                GCRef::wrap(self).clone_ref(),
+                other.clone_ref(),
+                "String formatting requires a tuple argument".to_string(),
+            ));
+        }
+
+        let tuple = other.as_type::<VMTuple>();
+        
+        // 解析格式字符串
+        let mut result = String::new();
+        let mut chars = self.value.chars().peekable();
+        let mut position_arg_index = 0; // 用于位置参数
+
+        while let Some(c) = chars.next() {
+            if c == '%' {
+                // 检查是否为转义的百分号
+                if chars.peek() == Some(&'%') {
+                    chars.next(); // 消耗第二个百分号
+                    result.push('%');
+                    continue;
+                }
+
+                // 解析格式说明符
+                if chars.peek() == Some(&'(') {
+                    chars.next(); // 消耗左括号
+                    let mut name = String::new();
+                    
+                    // 收集括号内的名称
+                    while let Some(nc) = chars.next() {
+                        if nc == ')' {
+                            break;
+                        }
+                        name.push(nc);
+                    }
+
+                    if name.is_empty() {
+                        return Err(VMVariableError::ValueError(
+                            GCRef::wrap(self).clone_ref(),
+                            "Empty format specifier name".to_string(),
+                        ));
+                    }
+
+                    // 尝试按名称查找参数
+                    let mut found = false;
+                    let mut value_str = String::new();
+
+                    // 先检查命名参数
+                    for value in &mut tuple.values {
+                        if value.isinstance::<VMNamed>() {
+                            let named = value.as_type::<VMNamed>();
+                            
+                            if named.get_key().isinstance::<VMString>() {
+                                let key_str = named.get_key().as_const_type::<VMString>().value.clone();
+                                
+                                if key_str == name {
+                                    // 找到匹配的命名参数
+                                    let value_ref = named.get_value();
+                                    value_str = try_to_string_vmobject(value_ref, None)?;
+                                    found = true;
+                                    break;
+                                }
+                            }
+                        } else if value.isinstance::<VMKeyVal>() {
+                            let kv = value.as_type::<VMKeyVal>();
+                            
+                            if kv.get_key().isinstance::<VMString>() {
+                                let key_str = kv.get_key().as_const_type::<VMString>().value.clone();
+                                
+                                if key_str == name {
+                                    // 找到匹配的键值对
+                                    let value_ref = kv.get_value();
+                                    value_str = try_to_string_vmobject(value_ref, None)?;
+                                    found = true;
+                                    break;
+                                }
+                            }
+                        }
+                    }
+
+                    if !found {
+                        return Err(VMVariableError::DetailedError(
+                            format!("No format argument for '{}'", name)
+                        ));
+                    }
+
+                    result.push_str(&value_str);
+                } else {
+                    // 位置参数格式化（%s 类似形式）
+                    // 这里我们简化处理，忽略具体的格式类型（如%d, %s等）
+                    // 仅从元组中按顺序取值
+                    
+                    // 消耗格式类型字符（如s, d, f等）
+                    if let Some(format_type) = chars.next() {
+                        if format_type != 's' && format_type != 'r' {
+                            // 这里可以添加对其他格式类型的处理
+                            // 目前我们只处理字符串格式（%s）
+                            return Err(VMVariableError::ValueError(
+                                GCRef::wrap(self).clone_ref(),
+                                format!("Unsupported format type: {}", format_type),
+                            ));
+                        }
+                        // 这里不区分格式类型，直接使用to_string
+                        if position_arg_index >= tuple.values.len() {
+                            return Err(VMVariableError::DetailedError(
+                                format!("Not enough arguments for format string (need at least {})", position_arg_index + 1)
+                            ));
+                        }
+
+                        let value_ref = &mut tuple.values[position_arg_index];
+                        position_arg_index += 1;
+
+                        // 命名参数不用于位置格式化
+                        if value_ref.isinstance::<VMNamed>() || value_ref.isinstance::<VMKeyVal>() {
+                            continue;
+                        }
+
+                        let value_str = match format_type {
+                            's' => try_to_string_vmobject(value_ref, None)?,
+                            'r' => try_repr_vmobject(value_ref, None)?,
+                            _ => unreachable!(),                            
+                        };
+                        result.push_str(&value_str);
+                    } else {
+                        // 格式字符串在%后结束，这是错误的
+                        return Err(VMVariableError::ValueError(
+                            GCRef::wrap(self).clone_ref(),
+                            "Incomplete format specifier".to_string(),
+                        ));
+                    }
+                }
+            } else {
+                // 普通字符直接追加
+                result.push(c);
+            }
+        }
+
+        // 创建新的字符串对象
+        Ok(gc_system.new_object(VMString::new(&result)))
     }
 
     pub fn index_of(
@@ -2795,6 +2947,7 @@ impl VMObject for VMInstructions {
 #[derive(Debug, PartialEq)]
 pub enum VMCoroutineStatus {
     Running,
+    Pending,
     Finished,
     Crashed,
 }
@@ -2812,6 +2965,7 @@ impl VMCoroutineStatus {
         match self {
             VMCoroutineStatus::Running => "Running".bright_green().bold().to_string(),
             VMCoroutineStatus::Finished => "Finished".bright_yellow().bold().to_string(),
+            VMCoroutineStatus::Pending => "Pending".bright_blue().bold().to_string(),
             VMCoroutineStatus::Crashed => "Crashed".bright_red().bold().to_string(),
         }
     }

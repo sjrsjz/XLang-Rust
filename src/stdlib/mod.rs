@@ -5,6 +5,8 @@ mod types;
 mod serialization;
 mod async_request;
 mod time;
+mod asyncio;
+mod os;
 
 use rustc_hash::FxHashMap;
 use xlang_vm_core::executor::context::Context;
@@ -71,6 +73,21 @@ pub(crate) fn build_module(
 
 pub(crate) fn build_dict(
     keyvals: &mut FxHashMap<&str, GCRef>,
+    gc_system: &mut GCSystem,
+) -> GCRef {
+    let mut dict = gc_system.new_object(VMTuple::new(&mut vec![]));
+    for (key, value) in keyvals {
+        let mut key_ref = gc_system.new_object(VMString::new(key));
+        let mut kv_pair = gc_system.new_object(VMKeyVal::new(&mut key_ref, value));
+        let _ = dict.as_type::<VMTuple>().append(&mut kv_pair);
+        key_ref.drop_ref(); // Drop the ref created by VMString::new
+        kv_pair.drop_ref(); // Drop the ref created by VMKeyVal::new
+    }
+    dict
+}
+
+pub(crate) fn build_dict_using_string(
+    keyvals: &mut FxHashMap<String, GCRef>,
     gc_system: &mut GCSystem,
 ) -> GCRef {
     let mut dict = gc_system.new_object(VMTuple::new(&mut vec![]));
@@ -151,6 +168,14 @@ pub fn inject_builtin_functions(
     let time_map = time.into_iter().collect::<FxHashMap<_, _>>();
     let time_module = build_module(&time_map, gc_system);
 
+    let asyncio = asyncio::get_asyncio_functions();
+    let asyncio_map = asyncio.into_iter().collect::<FxHashMap<_, _>>();
+    let asyncio_module = build_module(&asyncio_map, gc_system);
+
+    let os = os::get_os_functions();
+    let os_map = os.into_iter().collect::<FxHashMap<_, _>>();
+    let os_module = build_module(&os_map, gc_system);
+
     let mut builtins_map = FxHashMap::default();
     builtins_map.insert("fs", fs_module);
     builtins_map.insert("io", io_module);
@@ -159,6 +184,8 @@ pub fn inject_builtin_functions(
     builtins_map.insert("string_utils", string_utils_module);
     builtins_map.insert("async_request", async_request_module);
     builtins_map.insert("time", time_module);
+    builtins_map.insert("asyncio", asyncio_module);
+    builtins_map.insert("os", os_module);
 
     for (name, module) in &mut builtins_map {
         context.let_var(name,  module, gc_system)
