@@ -2738,6 +2738,26 @@ impl VMTuple {
         }
     }
 
+    pub fn bind_lambda_self(&mut self, self_object: &mut GCRef) {
+        self.auto_bind = true;
+        let mut collected_lambda = Vec::new();
+        for i in 0..self.values.len() {
+            if self.values[i].isinstance::<VMNamed>()
+                && self.values[i]
+                    .as_const_type::<VMNamed>()
+                    .value
+                    .isinstance::<VMLambda>()
+            {
+                let lambda = self.values[i].as_type::<VMNamed>().value.clone();
+                collected_lambda.push(lambda);
+            }
+        }
+        for collected in &mut collected_lambda {
+            let lambda = collected.as_type::<VMLambda>();
+            lambda.set_self_object(self_object);
+        }
+    }
+
     pub fn append(&mut self, value: &mut GCRef) -> Result<(), VMVariableError> {
         self.values.push(value.clone());
         self.traceable.add_reference(self.values.last_mut().unwrap());

@@ -217,11 +217,29 @@ pub fn bind_self(
     gc_system: &mut GCSystem,
 ) -> Result<Option<Vec<SpawnedCoroutine>>, VMError> {
     let mut obj = vm.get_object_and_check(0)?;
-    if !obj.isinstance::<VMTuple>() {
+    if !obj.isinstance::<VMTuple>() && !obj.isinstance::<VMKeyVal>(){
         return Err(VMError::VMVariableError(VMVariableError::TypeError(
             obj.clone_ref(),
-            "Bind requires a tuple".to_string(),
+            "Bind requires a VMTuple or VMKeyVal".to_string(),
         )));
+    }
+    if obj.isinstance::<VMKeyVal>() {
+        let keyval = obj.as_type::<VMKeyVal>();
+        if !keyval.value.isinstance::<VMLambda>() && !keyval.value.isinstance::<VMTuple>() {
+            return Err(VMError::VMVariableError(VMVariableError::TypeError(
+                keyval.value.clone_ref(),
+                "Bind's value requires a VMLambda or VMTuple".to_string(),
+            )));
+        }
+        if keyval.value.isinstance::<VMTuple>() {
+            keyval.value.as_type::<VMTuple>().bind_lambda_self(&mut keyval.key);
+        } else {
+            keyval.value.as_type::<VMLambda>().set_self_object(&mut keyval.key);
+        }
+        vm.pop_object()?;
+        vm.push_vmobject(keyval.value.clone_ref())?;
+        obj.drop_ref();
+        return Ok(None)
     }
     let mut copied = try_copy_as_vmobject(&mut obj, gc_system).map_err(VMError::VMVariableError)?;
     VMTuple::set_lambda_self(&mut copied);
