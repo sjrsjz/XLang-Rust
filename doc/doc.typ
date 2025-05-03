@@ -564,7 +564,7 @@ my_task := () -> {
 
 === 行为特性
 - *立即执行*: 异步任务一旦通过 `async` 创建，就会被调度并尽快开始执行。
-- *独立作用域*: 启动的异步任务不会继承调用者的作用域。其初始作用域仅包含传递给它的参数和内建函数。这有助于减少任务间的副作用。
+- *独立作用域*: 启动的异步任务不会继承调用者的作用域。其初始作用域仅包含传递给它的参数。这有助于减少任务间的副作用。
 
 == 赋值
 对Lambda的赋值仅仅只会将键（参数），值（返回值）和上下文（捕获的变量）赋值到指定的对象上。
@@ -580,6 +580,17 @@ obj := bind {
     }
 };
 obj.say(); // 调用绑定的对象的"方法"
+```
+
+同时，`bind` 还允许接受一个键值对，其中键被当作 `self` 变量的值，然后键值对的值
+- 如果是一个Lambda，则将其 `self` 绑定为 `bind` 接受的键值对的键。`bind` 返回绑定后的Lambda对象
+- 如果是一个元组，则将所有命名参数的值的 `self` 绑定为 `bind` 接受的键值对的键。`bind` 返回绑定后的元组对象
+
+```xlang
+foo := bind "Hello World" : () -> {
+    print(self); // 访问绑定的对象的属性
+};
+foo(); // 调用绑定的对象的"方法"
 ```
 
 == self变量
@@ -656,109 +667,95 @@ foo(); // 调用函数 foo，输出 1
 
 一半来说，XLang 会尝试自动将跨函数调用的变量捕获为 `var!` 形式的参数传递给 Lambda 函数。这样可以避免在函数调用时出现作用域问题。但也可以使用 `@dynamic` 和 `@required` 来阻止自动捕获。
 
-== 内置函数
-XLang-Rust 提供了一些内置函数来操作和处理数据。以下是一些常用的内置函数：
-- `print(value)`：打印值到标准输出。
-- `len(value)`：返回值的长度或大小。现在可以使用 `lengthof value` 来获取长度。但为了兼容性，`len` 仍然是一个内置函数。
-- `int(value)`：将值转换为整数。
-- `float(value)`：将值转换为浮点数。
-- `string(value)`：将值转换为字符串。
-- `bool(value)`：将值转换为布尔值。
-- `bytes(value)`：将值转换为字节序列。
-- `input(value)`：从标准输入读取值。先输出提示信息，然后等待用户输入。输入的值会被转换为字符串。
-- `load_clambda(path)`：加载一个 C 动态链接库（DLL/SO），并返回一个 clambda 对象。
-- `json_encode(value)`：将值编码为 JSON 字符串。
-- `json_decode(value)`：将 JSON 字符串解码为值。
+== 内置函数与模块
+XLang-Rust 提供了常用的内置函数和模块来操作和处理数据。这些函数被组织为全局函数和模块化的函数库。
+
+任何被使用的内置函数/模块都需要使用 `@required` 语句来声明。
+
+=== 全局内置函数
+- `load_clambda(path)`：加载指定路径的 C 动态链接库，返回一个 clambda 对象，可用于调用 C 函数。
+
+=== 模块化内置函数
+
+XLang-Rust 将许多内置功能组织为模块，必须通过模块名称访问：
+
+==== fs 模块 (文件系统操作)
+- `fs.read(path)`：读取文本文件内容，返回字符串。
+- `fs.read_bytes(path)`：读取文件内容，返回字节序列。
+- `fs.write(path, content)`：将字符串内容写入文件。
+- `fs.write_bytes(path, content)`：将字节序列写入文件。
+- `fs.append(path, content)`：将字符串内容追加到文件末尾。
+- `fs.append_bytes(path, content)`：将字节序列追加到文件末尾。
+- `fs.exists(path)`：检查文件或目录是否存在，返回布尔值。
+- `fs.is_file(path)`：检查路径是否为文件，返回布尔值。
+- `fs.is_dir(path)`：检查路径是否为目录，返回布尔值。
+- `fs.remove(path)`：删除文件或空目录。
+- `fs.mkdir(path)`：递归创建目录。
+- `fs.listdir(path)`：列出目录中的所有文件和子目录，返回名称元组。
+
+==== io 模块 (输入/输出操作)
+- `io.print(...)`：与全局 `print` 函数相同。
+- `io.input([prompt])`：与全局 `input` 函数相同。
+
+==== types 模块 (类型转换)
+- `types.int(value)`：与全局 `int` 函数相同。
+- `types.float(value)`：与全局 `float` 函数相同。
+- `types.string(value)`：与全局 `string` 函数相同。
+- `types.bool(value)`：与全局 `bool` 函数相同。
+- `types.bytes(value)`：与全局 `bytes` 函数相同。
+- `types.len(value)`：与全局 `len` 函数相同。
+
+==== os 模块 (操作系统交互)
+- `os.getcwd()`：获取当前工作目录，返回字符串路径。
+- `os.chdir(path)`：更改当前工作目录。
+- `os.getenv(name)`：获取环境变量的值，不存在则返回空字符串。
+- `os.setenv(name, value)`：设置环境变量的值。
+- `os.environ()`：获取所有环境变量，返回键值对字典。
+- `os.path_separator()`：获取系统路径分隔符（Windows 为 `\`，其他系统为 `/`）。
+- `os.system_name()`：获取当前操作系统名称。
+- `os.system(command)`：执行系统命令，返回命令退出码。
+- `os.join_path(...paths)`：将多个路径组合成一个路径。
+- `os.dirname(path)`：获取路径的父目录部分。
+- `os.basename(path)`：获取路径的文件名部分。
+- `os.abspath(path)`：获取路径的绝对路径形式。
+- `os.getpid()`：获取当前进程 ID。
+- `os.cpu_count()`：获取系统 CPU 核心数。
+- `os.path_exists(path)`：检查路径是否存在（与 `fs.exists` 相同）。
+- `os.system_info()`：获取系统信息，返回包含系统详细信息的字典。
+- `os.args()`：获取命令行参数列表。
+
+==== string_utils 模块 (字符串处理)
+- `string_utils.split(string, separator)`：按分隔符拆分字符串，返回子串元组。
+- `string_utils.join(tuple, separator)`：使用分隔符连接元组中的字符串。
+- `string_utils.replace(string, old, new)`：替换字符串中的子串。
+- `string_utils.startswith(string, prefix)`：检查字符串是否以指定前缀开头。
+- `string_utils.endswith(string, suffix)`：检查字符串是否以指定后缀结尾。
+- `string_utils.strip(string, [chars])`：移除字符串两端的空白或指定字符。
+- `string_utils.lower(string)`：将字符串转换为小写。
+- `string_utils.upper(string)`：将字符串转换为大写。
+
+==== serialization 模块 (序列化)
+- `serialization.json_encode(value)`：将值编码为 JSON 字符串。
+- `serialization.json_decode(string)`：将 JSON 字符串解码为值。
+
+==== time 模块 (时间相关)
+- `time.timestamp()`：获取当前 UNIX 时间戳（秒数），返回浮点数。
+- `time.sleep(seconds)`：暂停执行指定秒数。返回生成器对象。
+
+==== async_request 模块 (异步网络请求)
+- `async_request.request(url, method, data)`：发送异步网络请求，返回生成器对象。
+
+==== asyncio 模块 (异步 IO)
+- `asyncio.pause(lambda)`：暂停指定lambda的执行
+- `asyncio.resume(lambda)`：恢复指定lambda的执行
+- `asyncio.kill(lambda)`：终止指定lambda的执行
+- `asyncio.is_running(lambda)`：检查指定lambda是否正在运行
+- `asyncio.is_pending(lambda)`：检查指定lambda是否处于挂起状态
+- `asyncio.is_crashed(lambda)`：检查指定lambda是否崩溃
 
 *注意*：
-+ 所有内置函数都是Lambda对象，其只在主协程被创建时绑定在初始的作用域上。因此可以被遮蔽。
-+ XLang-Rust 只保证由编译器启动的代码存在上述内置函数的绑定。嵌入到Rust内部执行的代码并不保证存在上述内置函数的绑定，内置函数可以是任意的，只要在VM启动的主线程里绑定就可以被使用（异步任务除外，为了保证纯度，异步任务只接受参数绑定和捕获变量）
-
-考虑到Lambda实现的特殊性（参数缓存），建议用以下代码包装一个自动擦除参数的Lambda对象防止参数出现类型错误
-
-```xlang
-builtins := bind {
-    'builtin_print' : print,
-    'builtin_int' : int,
-    'builtin_float' : float,
-    'builtin_string' : string,
-    'builtin_bool' : bool,
-    'builtin_bytes' : bytes,
-    'builtin_input' : input,
-    'builtin_len' : len,
-    'builtin_load_clambda' : load_clambda,
-    'builtin_json_decode' : json_decode,
-    'builtin_json_encode' : json_encode,
-    print => () -> {
-        result := self.builtin_print(...keyof this);
-        keyof this = (); // 清空参数
-        keyof self.builtin_print = (); // 清空参数
-        return result;
-    },
-    int => () -> {
-        result := self.builtin_int(...keyof this);
-        keyof this = ();
-        keyof self.builtin_int = ();
-        return result;
-    },
-    float => () -> {
-        result := self.builtin_float(...keyof this);
-        keyof this = ();
-        keyof self.builtin_float = ();
-        return result;
-    },
-    string => () -> {
-        result := self.builtin_string(...keyof this);
-        keyof this = ();
-        keyof self.builtin_string = ();
-        return result;
-    },
-    bool => () -> {
-        result := self.builtin_bool(...keyof this);
-        keyof this = ();
-        keyof self.builtin_bool = ();
-        return result;
-    },
-    bytes => () -> {
-        result := self.builtin_bytes(...keyof this);
-        keyof this = ();
-        keyof self.builtin_bytes = ();
-        return result;
-    },
-    len => () -> {
-        result := self.builtin_len(...keyof this);
-        keyof this = ();
-        keyof self.builtin_len = ();
-        return result;
-    },
-    input => () -> {
-        result := self.builtin_input(...keyof this);
-        keyof this = ();
-        keyof self.builtin_input = ();
-        return result;
-    },
-    load_clambda => () -> {
-        result := self.builtin_load_clambda(...keyof this);
-        keyof this = ();
-        keyof self.builtin_load_clambda = ();
-        return result;
-    },
-    json_decode => () -> {
-        result := self.builtin_json_decode(...keyof this);
-        keyof this = ();
-        keyof self.builtin_json_decode = ();
-        return result;
-    },
-    json_encode => () -> {
-        result := self.builtin_json_encode(...keyof this);
-        keyof this = ();
-        keyof self.builtin_json_encode = ();
-        return result;
-    }
-};
-
-builtins.print("Hello World!"); // 打印 "Hello World!"
-```
+- 所有内置函数都是 Lambda 对象，仅在主协程被创建时绑定在初始作用域上，因此可以被变量定义覆盖（遮蔽）。
+- XLang-Rust 只保证由编译器启动的代码存在上述内置函数的绑定。嵌入到 Rust 内部执行的代码不保证存在这些内置函数，内置函数可以是任意的，只要在 VM 启动的主线程中绑定就可以使用（异步任务除外，为了保证纯度，异步任务只接受参数绑定和捕获变量）。
 
 == 快速调用
 XLang-Rust 提供了一个快速调用的语法糖 `#`。
