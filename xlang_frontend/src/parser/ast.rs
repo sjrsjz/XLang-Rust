@@ -460,16 +460,16 @@ pub enum ASTNodeType {
     Boundary,                    // boundary {...}
     Assign,                      // x = expression
     LambdaDef(bool, bool, bool), // tuple -> body or tuple -> dyn expression or tuple -> &capture body or dynamic tuple -> body
-    Expressions,           // expression1; expression2; ...
-    LambdaCall,            // x (tuple)
+    Expressions,                 // expression1; expression2; ...
+    LambdaCall,                  // x (tuple)
     Operation(ASTNodeOperation), // x + y, x - y, x * y, x / y ...
-    Tuple,                 // x, y, z, ...
-    AssumeTuple,           // ...value
-    KeyValue,              // x: y
-    IndexOf,               // x[y]
-    GetAttr,               // x.y
-    Return,                // return expression
-    Raise,                 // raise expression
+    Tuple,                       // x, y, z, ...
+    AssumeTuple,                 // ...value
+    KeyValue,                    // x: y
+    IndexOf,                     // x[y]
+    GetAttr,                     // x.y
+    Return,                      // return expression
+    Raise,                       // raise expression
     If,    // if expression truecondition || if expression truecondition else falsecondition
     While, // while expression body
     Modifier(ASTNodeModifier), // modifier expression
@@ -527,7 +527,7 @@ pub enum ASTNodeModifier {
     BindSelf,
     Collect,
     CaptureOf, // $lambda
-    LengthOf, // LengthOf
+    LengthOf,  // LengthOf
 }
 
 #[derive(Debug, Clone)]
@@ -602,27 +602,30 @@ impl<'a> NodeMatcher<'a> {
         tokens: &'b Vec<GatheredTokens<'a>>,
         current: usize,
     ) -> Result<(Option<ASTNode<'a>>, usize), ParserError<'a>> {
+        if tokens.is_empty() {
+            return Ok((Some(ASTNode::new(ASTNodeType::None, None, None, None)), 0));
+        }
         let mut offset = 0;
         let mut matched_nodes = Vec::<ASTNode<'a>>::new();
         let mut current_pos = current;
         while current_pos < tokens.len() {
-            let (node, next_offset) = self.try_match_node(tokens, current_pos)?;
+            let remaining_tokens = &tokens[current_pos..].to_vec();
+            let (node, next_offset) = self.try_match_node(&remaining_tokens, 0)?;
             if node.is_none() {
                 break;
             }
             matched_nodes.push(node.unwrap());
             offset += next_offset;
             current_pos += next_offset;
-            println!("next_offset {}", next_offset);
         }
-        println!("nodes {:?}", matched_nodes);
-        println!("offset {}", offset);
+
         if matched_nodes.is_empty() {
             return Ok((None, 0));
         }
         if matched_nodes.len() == 1 {
             return Ok((Some(matched_nodes.remove(0)), offset));
         }
+
         Ok((
             Some(ASTNode::new(
                 ASTNodeType::Expressions,
@@ -632,9 +635,7 @@ impl<'a> NodeMatcher<'a> {
             )),
             offset,
         ))
-
     }
-
     fn try_match_node<'b>(
         &self,
         tokens: &'b Vec<GatheredTokens<'a>>,
@@ -643,119 +644,64 @@ impl<'a> NodeMatcher<'a> {
         if tokens.is_empty() {
             return Ok((Some(ASTNode::new(ASTNodeType::None, None, None, None)), 0));
         }
-        let mut is_err = false;
-        // 首先尝试所有注册的匹配器
-        for matcher in &self.matchers {
-            if current >= tokens.len() {
-                return Ok((None, 0));
-            }
-            let result = matcher(tokens, current);
-            let (node, offset) = match result {
-                Ok((node, offset)) => (node, offset),
-                Err(err) => {
-                    // 如果匹配器失败，跳出循环
-                    println!("Matcher failed {:?}", err);
-                    is_err = true;
-                    break;
-                }
-                
-            };
-            if node.is_some() {
-                return Ok((node, offset));
-            }
-        }
-        if !is_err {
+
+        if current >= tokens.len() {
             return Ok((None, 0));
         }
-        if current < tokens.len() {
-            let mut expressions = Vec::<ASTNode<'a>>::new();
-            let mut processed = 0;
-            let mut current_pos = current;
-            
-            while current_pos < tokens.len() {
-                // 使用二分查找找到最长的可匹配子表达式
-                let mut left = 1; // 至少一个token
-                let mut right = tokens.len() - current_pos;
-                let mut max_match: Option<(ASTNode<'a>, usize)> = None;
-                
-                while left <= right {
-                    let mid = (left + right) / 2;
-                    if current_pos + mid > tokens.len() {
-                        right = mid - 1;
-                        continue;
-                    }
-                    
-                    // 尝试匹配当前长度的子序列
-                    let test_tokens = &tokens[current_pos..current_pos + mid].to_vec();
-                    
-                    // 对这部分tokens再次尝试所有匹配器
-                    let mut matched = false;
-                    for matcher in &self.matchers {
-                        match matcher(test_tokens, 0) {
-                            Ok((Some(node), offset)) if offset == test_tokens.len() => {
-                                max_match = Some((node, mid));
-                                matched = true;
-                                break;
-                            },
-                            _ => continue,
+
+        // 使用二分法查找最大成功匹配长度
+        let mut low = 0; // 最小尝试长度
+        let mut high = 2 * (tokens.len() - current - 1); // 最大可能长度
+        let mut best_match: Option<(ASTNode<'a>, usize)> = None;
+
+        while low <= high {
+            // high 所在位置绝对为非成功匹配， low 所在位置绝对为成功匹配
+            let mid = low + (high - low) / 2;
+
+            // 尝试匹配当前长度
+            let test_tokens = &tokens[current..current + mid + 1].to_vec();
+
+            // 对所有匹配器进行尝试
+            let mut current_match: Option<(ASTNode<'a>, usize)> = None;
+
+            for matcher in &self.matchers {
+                match matcher(test_tokens, 0) {
+                    Ok((Some(node), offset)) => {
+                        // 只有当匹配器成功匹配了所有提供的 tokens 时才认为是成功的
+                        if offset == test_tokens.len() {
+                            current_match = Some((node, offset));
+                            break;
                         }
                     }
-                    
-                    if matched {
-                        // 找到匹配，尝试更长的序列
-                        left = mid + 1;
-                    } else {
-                        // 未找到匹配，尝试更短的序列
-                        right = mid - 1;
-                    }
-                }
-                
-                // 如果找到了可匹配的子表达式
-                if let Some((node, length)) = max_match {
-                    expressions.push(node);
-                    processed += length;
-                    current_pos += length;
-                    
-                    // 如果下一个是分号，跳过它
-                    if current_pos < tokens.len() && is_symbol(&tokens[current_pos], ";") {
-                        current_pos += 1;
-                        processed += 1;
-                    } else if current_pos < tokens.len() {
-                        // 没有分号但还有内容，可能是语法错误
-                        return Err(ParserError::InvalidSyntax(
-                            &tokens[current_pos].first().unwrap()
-                        ));
-                    }
-                } else {
-                    // 无法找到任何匹配，报告错误
-                    return Err(ParserError::InvalidSyntax(
-                        &tokens[current_pos].first().unwrap()
-                    ));
+                    _ => continue,
                 }
             }
-            
-            // 如果成功解析了多个表达式
-            if !expressions.is_empty() {
-                if expressions.len() == 1 {
-                    // 只有一个表达式，直接返回
-                    return Ok((Some(expressions.remove(0)), processed));
-                } else {
-                    // 多个表达式，创建Expressions节点
-                    return Ok((
-                        Some(ASTNode::new(
-                            ASTNodeType::Expressions,
-                            Some(&tokens[current].first().unwrap()),
-                            Some(&tokens[current + processed - 1].last().unwrap()),
-                            Some(expressions),
-                        )),
-                        processed,
-                    ));
+            // 如果当前长度能够匹配成功，尝试更长的长度
+            if let Some((node, offset)) = current_match {
+                best_match = Some((node, offset));
+                if low >= mid {
+                    // 如果当前长度已经是最大长度，直接退出
+                    break;
                 }
+                if mid >= tokens.len() - 1 {
+                    break;
+                }
+                low = mid;
+            } else {
+                if low >= mid {
+                    // 如果当前长度已经是最小长度，直接退出
+                    break;
+                }
+                // 否则尝试更短的长度
+                high = mid;
             }
         }
-        
-        // 所有尝试都失败
-        Ok((None, 0))
+
+        // 返回最佳匹配结果
+        match best_match {
+            Some((node, offset)) => Ok((Some(node), offset)),
+            None => Ok((None, 0)),
+        }
     }
 }
 
@@ -845,7 +791,7 @@ pub fn build_ast(tokens: GatheredTokens<'_>) -> Result<ASTNode<'_>, ParserError<
     let gathered = gather(tokens)?;
     let (matched, offset) = match_all(&gathered, 0)?;
     if matched.is_none() {
-        return Err(ParserError::InvalidSyntax(&tokens[0]));
+        return Ok(ASTNode::new(ASTNodeType::None, None, None, None));
     }
     let matched = matched.unwrap();
     if offset != gathered.len() {
@@ -1284,9 +1230,16 @@ fn match_let<'t>(
 
     let left_tokens = gather(tokens[current])?;
 
-    let (right, right_offset) = match_all(tokens, current + 2)?;
+    let right_tokens = tokens[current + 2..].to_vec();
+    let (right, right_offset) = match_all(&right_tokens, 0)?;
     if right.is_none() {
         return Ok((None, 0));
+    }
+    if right_offset != right_tokens.len() {
+        return Err(ParserError::NotFullyMatched(
+            right_tokens.first().unwrap().first().unwrap(),
+            right_tokens.last().unwrap().last().unwrap(),
+        ));
     }
     let right = right.unwrap();
 
@@ -1372,9 +1325,19 @@ fn match_assign<'t>(
     let left = left.unwrap();
 
     // 解析右侧表达式
-    let (right, right_offset) = match_all(tokens, current + offset + 1)?;
+    if current + offset + 1 >= tokens.len() {
+        return Ok((None, 0));
+    }
+    let right_tokens = tokens[current + offset + 1..].to_vec();
+    let (right, right_offset) = match_all(&right_tokens, 0)?;
     if right.is_none() {
         return Ok((None, 0));
+    }
+    if right_offset != right_tokens.len() {
+        return Err(ParserError::NotFullyMatched(
+            right_tokens.first().unwrap().first().unwrap(),
+            right_tokens.last().unwrap().last().unwrap(),
+        ));
     }
     let right = right.unwrap();
 
@@ -1423,9 +1386,16 @@ fn match_named_to<'t>(
         );
     }
 
-    let (right, right_offset) = match_all(tokens, current + 2)?;
+    let right_tokens = tokens[current + 2..].to_vec();
+    let (right, right_offset) = match_all(&right_tokens, 0)?;
     if right.is_none() {
         return Ok((None, 0));
+    }
+    if right_offset != right_tokens.len() {
+        return Err(ParserError::NotFullyMatched(
+            right_tokens.first().unwrap().first().unwrap(),
+            right_tokens.last().unwrap().last().unwrap(),
+        ));
     }
     let right = right.unwrap();
 
@@ -1465,9 +1435,16 @@ fn match_key_value<'t>(
     }
     let left = left.unwrap();
 
-    let (right, right_offset) = match_all(tokens, current + 2)?;
+    let right_tokens = tokens[current + 2..].to_vec();
+    let (right, right_offset) = match_all(&right_tokens, 0)?;
     if right.is_none() {
         return Ok((None, 0));
+    }
+    if right_offset != right_tokens.len() {
+        return Err(ParserError::NotFullyMatched(
+            right_tokens.first().unwrap().first().unwrap(),
+            right_tokens.last().unwrap().last().unwrap(),
+        ));
     }
     let right = right.unwrap();
 
@@ -1508,9 +1485,16 @@ fn match_while<'t>(
     }
     let condition = condition.unwrap();
 
-    let (body, body_offset) = match_all(tokens, current + 2)?;
+    let body_tokens = tokens[current + 2..].to_vec();
+    let (body, body_offset) = match_all(&body_tokens, 0)?;
     if body.is_none() {
         return Ok((None, 0));
+    }
+    if body_offset != body_tokens.len() {
+        return Err(ParserError::NotFullyMatched(
+            body_tokens.first().unwrap().first().unwrap(),
+            body_tokens.last().unwrap().last().unwrap(),
+        ));
     }
     let body = body.unwrap();
 
@@ -1829,9 +1813,19 @@ fn match_not<'t>(
         return Ok((None, 0));
     }
     if is_identifier(&tokens[current], "not") {
-        let (node, node_offset) = match_all(tokens, current + 1)?;
+        if current + 1 >= tokens.len() {
+            return Ok((None, 0));
+        };
+        let not_expr = tokens[current + 1..].to_vec();
+        let (node, node_offset) = match_all(&not_expr, 0)?;
         if node.is_none() {
             return Ok((None, 0));
+        }
+        if node_offset != not_expr.len() {
+            return Err(ParserError::NotFullyMatched(
+                not_expr.first().unwrap().first().unwrap(),
+                not_expr.last().unwrap().last().unwrap(),
+            ));
         }
         let node = node.unwrap();
         return Ok((
@@ -2159,9 +2153,19 @@ fn match_unary<'t>(
         return Ok((None, 0));
     }
     if is_symbol(&tokens[current], "-") || is_symbol(&tokens[current], "+") {
-        let (node, node_offset) = match_all(tokens, current + 1)?;
+        if current + 1 >= tokens.len() {
+            return Ok((None, 0));
+        };
+        let unary_expr = tokens[current + 1..].to_vec();
+        let (node, node_offset) = match_all(&unary_expr, 0)?;
         if node.is_none() {
             return Ok((None, 0));
+        }
+        if node_offset != unary_expr.len() {
+            return Err(ParserError::NotFullyMatched(
+                unary_expr.first().unwrap().first().unwrap(),
+                unary_expr.last().unwrap().last().unwrap(),
+            ));
         }
         let node = node.unwrap();
         let operation = match tokens[current].first().unwrap().token {
@@ -2594,9 +2598,16 @@ fn match_modifier<'t>(
         ]
         .contains(&tokens[current].first().unwrap().token)
     {
-        let (node, node_offset) = match_all(tokens, current + 1)?;
+        let modify_expr = tokens[current + 1..].to_vec();
+        let (node, node_offset) = match_all(&modify_expr, 0)?;
         if node.is_none() {
             return Ok((None, 0));
+        }
+        if node_offset != modify_expr.len() {
+            return Err(ParserError::NotFullyMatched(
+                modify_expr.first().unwrap().first().unwrap(),
+                modify_expr.last().unwrap().last().unwrap(),
+            ));
         }
         let node = node.unwrap();
 
@@ -2617,7 +2628,7 @@ fn match_modifier<'t>(
                 return Err(ParserError::ErrorStructure(
                     tokens[current].first().unwrap(),
                     "Dynamic modifier can only be used with lambda".to_string(),
-                ));   
+                ));
             };
             let node = node.clone();
             return Ok((
@@ -2631,13 +2642,12 @@ fn match_modifier<'t>(
             ));
         }
 
-
         if tokens[current].first().unwrap().token == "static" {
             let ASTNodeType::LambdaDef(is_dyn_gen, is_capture, _) = node.node_type else {
                 return Err(ParserError::ErrorStructure(
                     tokens[current].first().unwrap(),
                     "Dynamic modifier can only be used with lambda".to_string(),
-                ));   
+                ));
             };
             let node = node.clone();
             return Ok((
@@ -2839,9 +2849,16 @@ fn match_alias<'t>(
     };
 
     // 解析右侧值表达式
-    let (value_node, value_offset) = match_all(tokens, current + 2)?;
+    let right_tokens = &tokens[current + 2..].to_vec();
+    let (value_node, value_offset) = match_all(&right_tokens, 0)?;
     if value_node.is_none() {
         return Ok((None, 0));
+    }
+    if value_offset != right_tokens.len() {
+        return Err(ParserError::NotFullyMatched(
+            right_tokens.first().unwrap().first().unwrap(),
+            right_tokens.last().unwrap().last().unwrap(),
+        ));
     }
     let value_node = value_node.unwrap();
 
@@ -2897,6 +2914,12 @@ fn match_member_access_and_call<'t>(
     match access_type.unwrap() {
         // 处理索引访问 obj[idx]
         "[]" => {
+            if access_pos != tokens.len() - 1 {
+                // 非 xxx[] 形式的访问，直接返回
+                return Err(ParserError::InvalidSyntax(
+                    &tokens[access_pos].first().unwrap(),
+                ));
+            }
             // 解析左侧表达式（被访问的对象或被调用的函数）
             let left_tokens = &tokens[current..access_pos].to_vec();
             if left_tokens.is_empty() {
@@ -2916,7 +2939,7 @@ fn match_member_access_and_call<'t>(
                 ));
             }
             // 解包索引括号中的内容
-            let index_tokens = unwrap_brace(&tokens[access_pos])?;
+            let index_tokens = &tokens[access_pos];
             let gathered_index = gather(index_tokens)?;
 
             let (index_node, _) = match_all(&gathered_index, 0)?;
@@ -2939,6 +2962,12 @@ fn match_member_access_and_call<'t>(
 
         // 处理属性访问 obj.prop
         "." => {
+            if access_pos != tokens.len() - 2 {
+                // 非 xxx.xx 形式的访问，直接返回
+                return Err(ParserError::InvalidSyntax(
+                    &tokens[access_pos].first().unwrap(),
+                ));
+            }
             // 解析左侧表达式（被访问的对象或被调用的函数）
             let left_tokens = &tokens[current..access_pos].to_vec();
             if left_tokens.is_empty() {
@@ -3002,6 +3031,12 @@ fn match_member_access_and_call<'t>(
 
         // 处理函数调用 func(args)
         "()" => {
+            if access_pos != tokens.len() - 1 {
+                // 非 xxx() 形式的访问，直接返回
+                return Err(ParserError::InvalidSyntax(
+                    &tokens[access_pos].first().unwrap(),
+                ));
+            }
             // 解析左侧表达式（被访问的对象或被调用的函数）
             let mut left_tokens = tokens[current..access_pos].to_vec();
             if left_tokens.is_empty() {
@@ -3028,7 +3063,7 @@ fn match_member_access_and_call<'t>(
             }
 
             // 解包括号中的参数
-            let args_tokens = unwrap_brace(&tokens[access_pos])?;
+            let args_tokens = &tokens[access_pos];
             let gathered_args = gather(args_tokens)?;
 
             // 处理有参数情况
@@ -3096,7 +3131,8 @@ fn match_range<'t>(
             left_tokens.last().unwrap().last().unwrap(),
         ));
     }
-    let (right, right_offset) = match_all(tokens, current + 2)?;
+    let right_tokens = &tokens[current + 2..].to_vec();
+    let (right, right_offset) = match_all(&right_tokens, 0)?;
     if right.is_none() {
         return Ok((None, 0));
     }
@@ -3136,9 +3172,16 @@ fn match_in<'t>(
             left_tokens.last().unwrap().last().unwrap(),
         ));
     }
-    let (right, right_offset) = match_all(tokens, current + 2)?;
+    let right_tokens = &tokens[current + 2..].to_vec();
+    let (right, right_offset) = match_all(&right_tokens, 0)?;
     if right.is_none() {
         return Ok((None, 0));
+    }
+    if right_offset != right_tokens.len() {
+        return Err(ParserError::NotFullyMatched(
+            right_tokens.first().unwrap().first().unwrap(),
+            right_tokens.last().unwrap().last().unwrap(),
+        ));
     }
     let right = right.unwrap();
 
