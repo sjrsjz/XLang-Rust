@@ -602,18 +602,159 @@ impl<'a> NodeMatcher<'a> {
         tokens: &'b Vec<GatheredTokens<'a>>,
         current: usize,
     ) -> Result<(Option<ASTNode<'a>>, usize), ParserError<'a>> {
+        let mut offset = 0;
+        let mut matched_nodes = Vec::<ASTNode<'a>>::new();
+        let mut current_pos = current;
+        while current_pos < tokens.len() {
+            let (node, next_offset) = self.try_match_node(tokens, current_pos)?;
+            if node.is_none() {
+                break;
+            }
+            matched_nodes.push(node.unwrap());
+            offset += next_offset;
+            current_pos += next_offset;
+            println!("next_offset {}", next_offset);
+        }
+        println!("nodes {:?}", matched_nodes);
+        println!("offset {}", offset);
+        if matched_nodes.is_empty() {
+            return Ok((None, 0));
+        }
+        if matched_nodes.len() == 1 {
+            return Ok((Some(matched_nodes.remove(0)), offset));
+        }
+        Ok((
+            Some(ASTNode::new(
+                ASTNodeType::Expressions,
+                Some(&tokens[current].first().unwrap()),
+                Some(&tokens[current + offset - 1].last().unwrap()),
+                Some(matched_nodes),
+            )),
+            offset,
+        ))
+
+    }
+
+    fn try_match_node<'b>(
+        &self,
+        tokens: &'b Vec<GatheredTokens<'a>>,
+        current: usize,
+    ) -> Result<(Option<ASTNode<'a>>, usize), ParserError<'a>> {
         if tokens.is_empty() {
             return Ok((Some(ASTNode::new(ASTNodeType::None, None, None, None)), 0));
         }
+        let mut is_err = false;
+        // 首先尝试所有注册的匹配器
         for matcher in &self.matchers {
             if current >= tokens.len() {
                 return Ok((None, 0));
             }
-            let (node, offset) = matcher(tokens, current)?;
+            let result = matcher(tokens, current);
+            let (node, offset) = match result {
+                Ok((node, offset)) => (node, offset),
+                Err(err) => {
+                    // 如果匹配器失败，跳出循环
+                    println!("Matcher failed {:?}", err);
+                    is_err = true;
+                    break;
+                }
+                
+            };
             if node.is_some() {
                 return Ok((node, offset));
             }
         }
+        if !is_err {
+            return Ok((None, 0));
+        }
+        if current < tokens.len() {
+            let mut expressions = Vec::<ASTNode<'a>>::new();
+            let mut processed = 0;
+            let mut current_pos = current;
+            
+            while current_pos < tokens.len() {
+                // 使用二分查找找到最长的可匹配子表达式
+                let mut left = 1; // 至少一个token
+                let mut right = tokens.len() - current_pos;
+                let mut max_match: Option<(ASTNode<'a>, usize)> = None;
+                
+                while left <= right {
+                    let mid = (left + right) / 2;
+                    if current_pos + mid > tokens.len() {
+                        right = mid - 1;
+                        continue;
+                    }
+                    
+                    // 尝试匹配当前长度的子序列
+                    let test_tokens = &tokens[current_pos..current_pos + mid].to_vec();
+                    
+                    // 对这部分tokens再次尝试所有匹配器
+                    let mut matched = false;
+                    for matcher in &self.matchers {
+                        match matcher(test_tokens, 0) {
+                            Ok((Some(node), offset)) if offset == test_tokens.len() => {
+                                max_match = Some((node, mid));
+                                matched = true;
+                                break;
+                            },
+                            _ => continue,
+                        }
+                    }
+                    
+                    if matched {
+                        // 找到匹配，尝试更长的序列
+                        left = mid + 1;
+                    } else {
+                        // 未找到匹配，尝试更短的序列
+                        right = mid - 1;
+                    }
+                }
+                
+                // 如果找到了可匹配的子表达式
+                if let Some((node, length)) = max_match {
+                    expressions.push(node);
+                    processed += length;
+                    current_pos += length;
+                    
+                    // 如果下一个是分号，跳过它
+                    if current_pos < tokens.len() && is_symbol(&tokens[current_pos], ";") {
+                        current_pos += 1;
+                        processed += 1;
+                    } else if current_pos < tokens.len() {
+                        // 没有分号但还有内容，可能是语法错误
+                        return Err(ParserError::InvalidSyntax(
+                            &tokens[current_pos].first().unwrap()
+                        ));
+                    }
+                } else {
+                    // 无法找到任何匹配，报告错误
+                    return Err(ParserError::InvalidSyntax(
+                        &tokens[current_pos].first().unwrap()
+                    ));
+                }
+            }
+            
+            // 如果成功解析了多个表达式
+            if !expressions.is_empty() {
+                if expressions.len() == 1 {
+                    // 只有一个表达式，直接返回
+                    return Ok((Some(expressions.remove(0)), processed));
+                } else {
+                    // 多个表达式，创建Expressions节点
+                    return Ok((
+                        Some(ASTNode::new(
+                            ASTNodeType::Expressions,
+                            Some(&tokens[current].first().unwrap()),
+                            Some(&tokens[current + processed - 1].last().unwrap()),
+                            Some(expressions),
+                        )),
+                        processed,
+                    ));
+                }
+            }
+        }
+        
+        // 所有尝试都失败
         Ok((None, 0))
     }
 }
