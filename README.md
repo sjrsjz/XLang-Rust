@@ -1,45 +1,45 @@
 # XLang-Rust
 
-XLang-Rust 是 XLang 编程语言的 Rust 实现版本，旨在提供一个跨平台的、实验性的动态强类型编程环境。它通过虚拟机执行脚本，并提供了一套独特的语言特性。
+XLang-Rust is a Rust implementation of the XLang programming language, designed to provide a cross-platform, experimental, dynamically strong-typed programming environment. It executes scripts through a virtual machine and offers a unique set of language features.
 
-## 特性
+## Features
 
-*   **动态强类型**: 变量类型在运行时确定，但类型错误会引发异常。
-*   **基于表达式**: 语句是表达式序列，最后一个表达式的值是语句的结果，语法风格类似 Rust。
-*   **Lambda 核心**: 完全使用 Lambda 函数进行函数定义和调用，Lambda 会缓存其最后一次调用的参数和返回值。
-*   **元组 (Tuple)**: 主要的有序集合类型，可变、支持索引、键值对和命名参数。
-*   **单线程异步任务**: 通过 `async`/`await` 实现协作式并发，用于管理在单个线程上交错执行的任务（注意：其行为不同于传统的可暂停/恢复的协程）。
-*   **非局部控制流**: 使用 `boundary`/`raise` 实现比 `return` 更强大的非局部跳转。
-*   **对象绑定**: 通过 `bind` 关键字模拟面向对象的行为。
-*   **别名系统**: 使用 `::` 为对象附加静态别名。
-*   **丰富的内建类型**: 包括整数、浮点数、布尔、字符串、字节序列、区间、键值对、命名参数等。
-*   **工具链**: 提供 REPL (`repl`)、编译器 (`compile` 到 `.xir` 或 `.xbc`)、运行器 (`run`)、IR 查看器 (`display-ir`)、字节码翻译器 (`translate`) 和 LSP 服务器 (`lsp`)。
+*   **Dynamically Strong Typed**: Variable types are determined at runtime, but type errors raise exceptions.
+*   **Expression-Based**: Statements are sequences of expressions, with the result of the last expression being the statement's result. The syntax style is similar to Rust.
+*   **Lambda Core**: Functions are defined and called entirely using Lambda functions, allowing Lambdas to cache their last call's parameters and return value.
+*   **Tuples**: The primary ordered collection type, which are mutable and support indexing, key-value pairs, and named parameters.
+*   **Single-Threaded Async Tasks**: Implements cooperative concurrency through `async`/`await` for managing tasks that interleave execution on a single thread (note: behavior differs from traditional suspendable/resumable coroutines).
+*   **Non-Local Control Flow**: Uses `boundary`/`raise` to implement non-local jumps more powerful than `return`.
+*   **Object Binding**: Simulates object-oriented behavior through the `bind` keyword.
+*   **Alias System**: Attaches static aliases to objects using `::`.
+*   **Rich Built-in Types**: Includes integers, floats, booleans, strings, byte sequences, ranges, key-value pairs, named parameters, and more.
+*   **Toolchain**: Provides REPL (`repl`), compiler (`compile` to `.xir` or `.xbc`), runner (`run`), IR viewer (`display-ir`), bytecode translator (`translate`), and LSP server (`lsp`).
 
-## 状态
+## Status
 
-XLang-Rust 目前处于 **实验阶段**。其设计包含一些独特的、可能与其他主流语言不同的概念和行为。欢迎尝试和反馈。
+XLang-Rust is currently in an **experimental phase**. Its design incorporates some unique concepts and behaviors that may differ from other mainstream languages. Feedback and experimentation are welcome.
 
-## 快速开始
+## Quick Start
 
-假设编译器可执行文件名为 `xlang-rust`：
+Assuming the compiler executable is named `xlang-rust`:
 
-1.  **运行脚本文件**:
+1.  **Run a Script File**:
     ```bash
     xlang-rust run your_script.x
     ```
-    也可以运行中间代码 (`.xir`) 或字节码 (`.xbc`) 文件。
+    You can also run intermediate code (`.xir`) or bytecode (`.xbc`) files.
 
-2.  **编译为字节码**:
+2.  **Compile to Bytecode**:
     ```bash
     xlang-rust compile your_script.x -b -o your_script.xbc
     ```
-    ( `-b` 表示编译为字节码, `-o` 指定输出文件)
+    (`-b` indicates compiling to bytecode, `-o` specifies the output file)
 
-3.  **启动 REPL**:
+3.  **Start the REPL**:
     ```bash
     xlang-rust repl
     ```
 
-## 文档
+## Documentation
 
-详细的语言规范和特性介绍请参考：[语言文档](./doc/doc.pdf)
+For detailed language specifications and feature introductions, please refer to: [Language Documentation](./doc/doc.pdf)

@@ -1,20 +1,20 @@
 # XLang VM Core
 
-`xlang_vm_core` 是实验性编程语言 [XLang-Rust](https://github.com/sjrsjz/XLang-Rust) 的核心虚拟机和运行时库。
+`xlang_vm_core` is the core virtual machine and runtime library for the experimental programming language [XLang-Rust](https://github.com/sjrsjz/XLang-Rust).
 
-## 功能
+## Features
 
-该库提供了 XLang-Rust 语言执行所需的基础设施，包括：
+This library provides the infrastructure required for executing XLang-Rust language, including:
 
-*   **虚拟机 (VM):** 负责解释和执行编译后的 XLang 字节码。
-*   **垃圾收集器 (GC):** 自动管理内存，回收不再使用的对象。
-*   **类型系统:** 定义和操作 XLang 的内置数据类型（如整数、浮点数、字符串、元组、Lambda 等）。
-*   **执行上下文:** 管理作用域、栈帧和变量。
-*   **中间表示 (IR):** 定义了编译器和 VM 之间的中间代码格式。
-*   **IR 转换器:** 将 IR 翻译成 VM 可执行的字节码。
-*   **外部函数接口 (FFI):** 允许 XLang 代码调用 C 语言编写的动态链接库。
-*   **内置函数:** 提供核心的内置功能（如 `print`, `len`, 类型转换等）。
+*   **Virtual Machine (VM):** Responsible for interpreting and executing compiled XLang bytecode.
+*   **Garbage Collector (GC):** Automatically manages memory, reclaiming objects that are no longer in use.
+*   **Type System:** Defines and operates on XLang's built-in data types (such as integers, floats, strings, tuples, Lambda, etc.).
+*   **Execution Context:** Manages scopes, stack frames, and variables.
+*   **Intermediate Representation (IR):** Defines the intermediate code format between the compiler and VM.
+*   **IR Translator:** Translates IR into bytecode executable by the VM.
+*   **Foreign Function Interface (FFI):** Allows XLang code to call dynamic libraries written in C.
+*   **Built-in Functions:** Provides core built-in functionality (such as `print`, `len`, type conversions, etc.).
 
-## 用途
+## Usage
 
-`xlang_vm_core` 主要作为 XLang-Rust 编译器和解释器 (`xlang-rust` 主程序包) 的依赖项，提供实际的代码执行能力。
+`xlang_vm_core` primarily serves as a dependency for the XLang-Rust compiler and interpreter (`xlang-rust` main package), providing the actual code execution capability.
