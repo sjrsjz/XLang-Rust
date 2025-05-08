@@ -1,6 +1,6 @@
 [package]
 name = "XLang-Rust"
-version = "0.1.6"
+version = "0.1.7"
 edition = "2021"
 authors = ["sjrsjz <sjrsjz@gmail.com>"]
 description = "An experimental cross-platform dynamic strong-typed programming language written in Rust."
@@ -23,7 +23,7 @@ log = "0.4.27"
 env_logger = "0.11.8"
 url = "2.5.4"
 xlang_frontend = { version = "0.1.4", path = "xlang_frontend" }
-xlang_vm_core = { version = "0.1.3", path = "xlang_vm_core" }
+xlang_vm_core = { version = "0.1.4", path = "xlang_vm_core" }
 rustc-hash = "2.1.1"
 base64 = "0.22.1"
 reqwest = "0.12.15"
