@@ -136,6 +136,8 @@ fn execute_ir(package: VMInstructionPackage, _dir_stack: &mut DirStack) -> Resul
             e.to_string()
         );
         e.consume_ref();
+        main_lambda.drop_ref();
+        gc_system.collect();
         return Err(VMError::AssertFailed);
     }
 
@@ -207,6 +209,7 @@ fn execute_ir_repl(
             e.to_string()
         );
         e.consume_ref();
+        wrapped.drop_ref();
         return Err(VMError::AssertFailed);
     }
 

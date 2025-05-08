@@ -58,6 +58,17 @@ impl Context {
         }
     }
 
+    pub fn drop_all_frames(&mut self) {
+        // 处理所有帧的情况
+        while !self.frames.is_empty() {
+            let (mut vars, _, _, _) = self.frames.pop().unwrap();
+            for variable in vars.values_mut() {
+                variable.drop_ref();
+            }
+        }
+        self.stack_pointers.clear();
+    }
+
     pub fn new_frame(
         &mut self,
         stack: &Vec<VMStackObject>,

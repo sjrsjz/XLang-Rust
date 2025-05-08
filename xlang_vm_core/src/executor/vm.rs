@@ -87,7 +87,6 @@ impl VMError {
             _ => (),
         }
     }
-
 }
 
 #[derive(Debug)]
@@ -215,7 +214,7 @@ impl VMCoroutinePool {
             if idx < self.executors.len() {
                 // 安全地移除和释放资源
                 let (mut executor, _) = self.executors.remove(idx);
-                executor.entry_lambda.drop_ref();
+                executor.clean();
             }
         }
     }
@@ -225,7 +224,7 @@ impl VMCoroutinePool {
 
         loop {
             let spawned_coroutines = self.step_all(gc_system).map_err(|mut vm_error| {
-                if self.enable_dump {
+                let err = if self.enable_dump {
                     let all_coroutines_contexts_repr = self
                         .executors
                         .iter_mut()
@@ -248,17 +247,30 @@ impl VMCoroutinePool {
                         .collect::<Vec<String>>()
                         .join("\n\n");
 
-                    VMError::DetailedError(format!(
+                    let err = VMError::DetailedError(format!(
                         "{}\n\n{}\n{}\n\n{}",
                         "** CoroutinePool Step Error! **".bright_red().bold(),
                         "# Main Error".bright_red().bold().underline(),
                         vm_error.1.to_string().red(),
                         format!("All Coroutine Contexts:\n{}", all_coroutines_contexts_repr)
-                    ))
+                    ));
+                    vm_error.1.consume_ref();
+                    err
                 } else {
                     vm_error.1
+                };
+                err
+            });
+
+            if spawned_coroutines.is_err() {
+                let err = spawned_coroutines.err().unwrap();
+                for coroutine in self.executors.iter_mut() {
+                    coroutine.0.clean();
                 }
-            })?;
+                return Err(err);
+            }
+
+            let spawned_coroutines = spawned_coroutines.unwrap();
 
             self.sweep_finished();
 
@@ -416,6 +428,19 @@ impl VMExecutor {
         }
     }
 
+    pub fn clean(&mut self) {
+        self.entry_lambda.drop_ref();
+        for object in &mut self.stack {
+            match object {
+                VMStackObject::VMObject(obj) => obj.drop_ref(),
+                VMStackObject::LastIP(obj, _, _) => obj.drop_ref(),
+            }
+        }
+        for lambda_instruction in &mut self.lambda_instructions {
+            lambda_instruction.drop_ref();
+        }
+        self.context.drop_all_frames();
+    }
     pub fn pop_object(&mut self) -> Result<VMStackObject, VMError> {
         match self.stack.pop() {
             Some(obj) => Ok(obj),
@@ -545,7 +570,8 @@ impl VMExecutor {
                     name.clone_ref(),
                     format!(
                         "Expected VMString in Lambda arguments {}'s key, but got {}",
-                        try_repr_vmobject(&mut cloned_v_ref, None).unwrap_or(format!("{:?}", cloned_v_ref.clone())),
+                        try_repr_vmobject(&mut cloned_v_ref, None)
+                            .unwrap_or(format!("{:?}", cloned_v_ref.clone())),
                         try_repr_vmobject(name, None).unwrap_or(format!("{:?}", name))
                     ),
                 ));
@@ -795,7 +821,6 @@ impl VMExecutor {
                     // If raising failed, return the original decoding error
                     return raise_result.map_err(|_raise_err| original_error);
                 }
-
                 let decoded = decoded_option.unwrap();
                 self.ip = ip as isize;
 
@@ -854,14 +879,21 @@ impl VMExecutor {
                                 ip_val_obj.drop_ref();
                                 msg_kv_obj.drop_ref();
                                 ip_kv_obj.drop_ref();
-                                vm_error.consume_ref();
 
                                 // Manually call the raise logic after pushing the error object
                                 vm_instructions::raise(self, &decoded, gc_system)
                             })();
 
                         // If the raise operation itself failed, return the original error
-                        return raise_result.map_err(|_| vm_error);
+                        return match raise_result {
+                            Ok(result) => {
+                                vm_error.consume_ref();
+                                Ok(result)
+                            }
+                            Err(_) => {
+                                Err(vm_error)
+                            }
+                        }
                     }
                 }
             }
