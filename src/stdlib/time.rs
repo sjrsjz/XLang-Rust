@@ -4,7 +4,8 @@ use std::{
 };
 use xlang_vm_core::{
     executor::variable::{
-        VMFloat, VMInt, VMLambda, VMLambdaBody, VMNativeGeneratorFunction, VMNull, VMTuple, VMVariableError
+        VMFloat, VMInt, VMLambda, VMLambdaBody, VMNativeGeneratorFunction, VMNull, VMTuple,
+        VMVariableError,
     },
     gc::{GCRef, GCSystem},
 };
@@ -38,17 +39,17 @@ impl VMNativeGeneratorFunction for SleepGenerator {
     fn step(&mut self, gc_system: &mut GCSystem) -> Result<GCRef, VMVariableError> {
         if self.done {
             // Should ideally not be called again after done, but return Null if it is.
-             return Ok(gc_system.new_object(VMNull::new()));
+            return Ok(gc_system.new_object(VMNull::new()));
         }
 
         if let Some(start) = self.start_time {
             if start.elapsed() >= self.duration {
                 self.done = true;
                 // Signal completion by returning Null (or could return a specific completion value)
-                 Ok(gc_system.new_object(VMNull::new()))
+                Ok(gc_system.new_object(VMNull::new()))
             } else {
                 // Not done yet, yield Null to indicate suspension
-                 Ok(gc_system.new_object(VMNull::new()))
+                Ok(gc_system.new_object(VMNull::new()))
             }
         } else {
             // Should not happen if init was called correctly
@@ -73,13 +74,21 @@ impl VMNativeGeneratorFunction for SleepGenerator {
 }
 
 // Entry function exposed to the VM
-pub fn sleep_entry(tuple: &mut GCRef, gc_system: &mut GCSystem) -> Result<GCRef, VMVariableError> {
+pub fn sleep_entry(
+    _self_object: Option<&mut GCRef>,
+    _capture: Option<&mut GCRef>,
+    tuple: &mut GCRef,
+    gc_system: &mut GCSystem,
+) -> Result<GCRef, VMVariableError> {
     check_if_tuple(tuple)?;
     let tuple_obj = tuple.as_type::<VMTuple>();
     if tuple_obj.values.len() != 1 {
         return Err(VMVariableError::TypeError(
             tuple.clone_ref(),
-            format!("sleep expected 1 argument (duration), got {}", tuple.as_const_type::<VMTuple>().values.len()),
+            format!(
+                "sleep expected 1 argument (duration), got {}",
+                tuple.as_const_type::<VMTuple>().values.len()
+            ),
         ));
     }
     let duration_arg = tuple_obj.values[0].clone();
@@ -100,21 +109,20 @@ pub fn sleep_entry(tuple: &mut GCRef, gc_system: &mut GCSystem) -> Result<GCRef,
         ));
     }
 
-    
     // Create an empty tuple for default args
     let mut params = gc_system.new_object(VMTuple::new(&mut vec![]));
     let mut result = gc_system.new_object(VMNull::new()); // Default result placeholder
 
     // Wrap the generator in a VMLambda
     let lambda = gc_system.new_object(VMLambda::new(
-        0,                               // code_position, 0 for native generator
+        0,                                         // code_position, 0 for native generator
         "<builtins>::sleep_generator".to_string(), // signature
         &mut params,
         None, // capture
         None, // self_object
         &mut VMLambdaBody::VMNativeGeneratorFunction(Arc::new(Box::new(generator))),
         &mut result,
-        false
+        false,
     ));
 
     // Drop refs owned by the lambda now
@@ -124,14 +132,16 @@ pub fn sleep_entry(tuple: &mut GCRef, gc_system: &mut GCSystem) -> Result<GCRef,
     Ok(lambda)
 }
 
-
 pub fn timestamp(
+    _self_object: Option<&mut GCRef>,
+    _capture: Option<&mut GCRef>,
     _value: &mut GCRef,
     gc_system: &mut GCSystem,
-) -> Result<GCRef, VMVariableError>{
+) -> Result<GCRef, VMVariableError> {
     // return the current time in seconds since the epoch
     let now = SystemTime::now();
-    let duration = now.duration_since(SystemTime::UNIX_EPOCH)
+    let duration = now
+        .duration_since(SystemTime::UNIX_EPOCH)
         .map_err(|e| VMVariableError::DetailedError(format!("System time error: {}", e)))?;
     let seconds = duration.as_secs() as f64 + duration.subsec_nanos() as f64 / 1_000_000_000.0;
     let result = gc_system.new_object(VMFloat::new(seconds));
@@ -141,7 +151,12 @@ pub fn timestamp(
 // Helper to provide the entry function for registration
 pub fn get_time_function() -> Vec<(
     &'static str,
-    fn(&mut GCRef, &mut GCSystem) -> Result<GCRef, VMVariableError>,
+    fn(
+        Option<&mut GCRef>,
+        Option<&mut GCRef>,
+        &mut GCRef,
+        &mut GCSystem,
+    ) -> Result<GCRef, VMVariableError>,
 )> {
     vec![("sleep", sleep_entry), ("timestamp", timestamp)]
 }

@@ -1,12 +1,13 @@
-use xlang_vm_core::{
-    executor::variable::{
-        try_repr_vmobject, VMBoolean, VMBytes, VMFloat, VMInt, VMKeyVal, VMNull, VMString, VMTuple, VMVariableError
-    },
-    gc::{GCRef, GCSystem},
-};
 use base64::Engine;
 use rustc_hash::FxHashSet as HashSet;
 use serde_json::Value as JsonValue;
+use xlang_vm_core::{
+    executor::variable::{
+        try_repr_vmobject, VMBoolean, VMBytes, VMFloat, VMInt, VMKeyVal, VMNull, VMString, VMTuple,
+        VMVariableError,
+    },
+    gc::{GCRef, GCSystem},
+};
 // Assuming check_if_tuple will be available via super
 use super::check_if_tuple;
 
@@ -99,10 +100,7 @@ fn vmobject_to_json(
 }
 
 // Helper function (remains private to this module)
-fn json_to_vmobject(
-    value: JsonValue,
-    gc_system: &mut GCSystem,
-) -> Result<GCRef, VMVariableError> {
+fn json_to_vmobject(value: JsonValue, gc_system: &mut GCSystem) -> Result<GCRef, VMVariableError> {
     match value {
         JsonValue::Null => Ok(gc_system.new_object(VMNull::new())),
         JsonValue::Bool(b) => Ok(gc_system.new_object(VMBoolean::new(b))),
@@ -158,13 +156,21 @@ fn json_to_vmobject(
     }
 }
 
-pub fn json_encode(tuple: &mut GCRef, gc_system: &mut GCSystem) -> Result<GCRef, VMVariableError> {
+pub fn json_encode(
+    _self_object: Option<&mut GCRef>,
+    _capture: Option<&mut GCRef>,
+    tuple: &mut GCRef,
+    gc_system: &mut GCSystem,
+) -> Result<GCRef, VMVariableError> {
     check_if_tuple(tuple)?;
     let tuple_obj = tuple.as_type::<VMTuple>();
     if tuple_obj.values.len() != 1 {
         return Err(VMVariableError::TypeError(
             tuple.clone_ref(),
-            format!("json_encode expected 1 argument, got {}", tuple.as_const_type::<VMTuple>().values.len()),
+            format!(
+                "json_encode expected 1 argument, got {}",
+                tuple.as_const_type::<VMTuple>().values.len()
+            ),
         ));
     }
     let object_to_encode = &mut tuple_obj.values[0];
@@ -181,13 +187,21 @@ pub fn json_encode(tuple: &mut GCRef, gc_system: &mut GCSystem) -> Result<GCRef,
     }
 }
 
-pub fn json_decode(tuple: &mut GCRef, gc_system: &mut GCSystem) -> Result<GCRef, VMVariableError> {
+pub fn json_decode(
+    _self_object: Option<&mut GCRef>,
+    _capture: Option<&mut GCRef>,
+    tuple: &mut GCRef,
+    gc_system: &mut GCSystem,
+) -> Result<GCRef, VMVariableError> {
     check_if_tuple(tuple)?;
     let tuple_obj = tuple.as_type::<VMTuple>();
     if tuple_obj.values.len() != 1 {
         return Err(VMVariableError::TypeError(
             tuple.clone_ref(),
-            format!("json_decode expected 1 argument, got {}", tuple.as_const_type::<VMTuple>().values.len()),
+            format!(
+                "json_decode expected 1 argument, got {}",
+                tuple.as_const_type::<VMTuple>().values.len()
+            ),
         ));
     }
 
@@ -213,10 +227,12 @@ pub fn json_decode(tuple: &mut GCRef, gc_system: &mut GCSystem) -> Result<GCRef,
 // Helper to provide functions for registration
 pub fn get_serialization_functions() -> Vec<(
     &'static str,
-    fn(&mut GCRef, &mut GCSystem) -> Result<GCRef, VMVariableError>,
+    fn(
+        Option<&mut GCRef>,
+        Option<&mut GCRef>,
+        &mut GCRef,
+        &mut GCSystem,
+    ) -> Result<GCRef, VMVariableError>,
 )> {
-    vec![
-        ("json_encode", json_encode),
-        ("json_decode", json_decode),
-    ]
+    vec![("json_encode", json_encode), ("json_decode", json_decode)]
 }

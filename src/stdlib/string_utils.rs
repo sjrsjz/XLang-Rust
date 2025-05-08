@@ -1,4 +1,3 @@
-
 use xlang_vm_core::{
     executor::variable::{VMBoolean, VMInt, VMNull, VMString, VMTuple, VMVariableError},
     gc::{GCRef, GCSystem},
@@ -8,6 +7,8 @@ use super::check_if_tuple; // Import necessary items
 
 // Helper to extract a specific string argument from the tuple by index
 fn get_string_arg(
+    _self_object: Option<&mut GCRef>,
+    _capture: Option<&mut GCRef>,
     args_tuple: &mut GCRef,
     index: usize,
     func_name: &str,
@@ -32,6 +33,8 @@ fn get_string_arg(
 
 // Helper to extract a specific integer argument from the tuple by index
 fn get_optional_int_arg(
+    _self_object: Option<&mut GCRef>,
+    _capture: Option<&mut GCRef>,
     args_tuple: &mut GCRef,
     index: usize,
     func_name: &str,
@@ -60,6 +63,8 @@ fn get_optional_int_arg(
 
 // Helper to extract a specific tuple argument from the tuple by index
 fn get_tuple_arg<'t>(
+    _self_object: Option<&mut GCRef>,
+    _capture: Option<&mut GCRef>,
     args_tuple: &'t mut GCRef,
     index: usize,
     func_name: &str,
@@ -82,7 +87,12 @@ fn get_tuple_arg<'t>(
 }
 
 // string_utils.split(string, separator, [maxsplit])
-fn split(args_tuple: &mut GCRef, gc_system: &mut GCSystem) -> Result<GCRef, VMVariableError> {
+fn split(
+    _self_object: Option<&mut GCRef>,
+    _capture: Option<&mut GCRef>,
+    args_tuple: &mut GCRef,
+    gc_system: &mut GCSystem,
+) -> Result<GCRef, VMVariableError> {
     check_if_tuple(args_tuple)?;
     let tuple_obj = args_tuple.as_type::<VMTuple>();
     let arg_count = tuple_obj.values.len();
@@ -94,11 +104,11 @@ fn split(args_tuple: &mut GCRef, gc_system: &mut GCSystem) -> Result<GCRef, VMVa
         ));
     }
 
-    let target_str = get_string_arg(args_tuple, 0, "split", "string")?;
-    let separator = get_string_arg(args_tuple, 1, "split", "separator")?;
+    let target_str = get_string_arg(None, None, args_tuple, 0, "split", "string")?;
+    let separator = get_string_arg(None, None, args_tuple, 1, "split", "separator")?;
 
     // Optional maxsplit argument
-    let maxsplit_opt_i64 = get_optional_int_arg(args_tuple, 2, "split", "maxsplit")?;
+    let maxsplit_opt_i64 = get_optional_int_arg(None, None, args_tuple, 2, "split", "maxsplit")?;
     let maxsplit: Option<usize> = match maxsplit_opt_i64 {
         Some(val) if val < 0 => None, // Negative maxsplit means split all
         Some(val) => Some(val as usize),
@@ -127,7 +137,12 @@ fn split(args_tuple: &mut GCRef, gc_system: &mut GCSystem) -> Result<GCRef, VMVa
 }
 
 // string_utils.join(separator, iterable)
-fn join(args_tuple: &mut GCRef, gc_system: &mut GCSystem) -> Result<GCRef, VMVariableError> {
+fn join(
+    _self_object: Option<&mut GCRef>,
+    _capture: Option<&mut GCRef>,
+    args_tuple: &mut GCRef,
+    gc_system: &mut GCSystem,
+) -> Result<GCRef, VMVariableError> {
     check_if_tuple(args_tuple)?;
     let tuple_obj = args_tuple.as_type::<VMTuple>();
     let arg_count = tuple_obj.values.len();
@@ -139,8 +154,8 @@ fn join(args_tuple: &mut GCRef, gc_system: &mut GCSystem) -> Result<GCRef, VMVar
         ));
     }
 
-    let separator = get_string_arg(args_tuple, 0, "join", "separator")?;
-    let iterable_obj = get_tuple_arg(args_tuple, 1, "join", "iterable")?;
+    let separator = get_string_arg(None, None, args_tuple, 0, "join", "separator")?;
+    let iterable_obj = get_tuple_arg(None, None, args_tuple, 1, "join", "iterable")?;
     let iterable_tuple = iterable_obj.as_type::<VMTuple>();
 
     let mut string_parts = Vec::with_capacity(iterable_tuple.values.len());
@@ -159,7 +174,12 @@ fn join(args_tuple: &mut GCRef, gc_system: &mut GCSystem) -> Result<GCRef, VMVar
 }
 
 // string_utils.replace(string, old, new, [count])
-fn replace(args_tuple: &mut GCRef, gc_system: &mut GCSystem) -> Result<GCRef, VMVariableError> {
+fn replace(
+    _self_object: Option<&mut GCRef>,
+    _capture: Option<&mut GCRef>,
+    args_tuple: &mut GCRef,
+    gc_system: &mut GCSystem,
+) -> Result<GCRef, VMVariableError> {
     check_if_tuple(args_tuple)?;
     let tuple_obj = args_tuple.as_const_type::<VMTuple>();
     let arg_count = tuple_obj.values.len();
@@ -171,12 +191,12 @@ fn replace(args_tuple: &mut GCRef, gc_system: &mut GCSystem) -> Result<GCRef, VM
         ));
     }
 
-    let target_str = get_string_arg(args_tuple, 0, "replace", "string")?;
-    let old_str = get_string_arg(args_tuple, 1, "replace", "old")?;
-    let new_str = get_string_arg(args_tuple, 2, "replace", "new")?;
+    let target_str = get_string_arg(None, None, args_tuple, 0, "replace", "string")?;
+    let old_str = get_string_arg(None, None, args_tuple, 1, "replace", "old")?;
+    let new_str = get_string_arg(None, None, args_tuple, 2, "replace", "new")?;
 
     // Optional count argument
-    let count_opt_i64 = get_optional_int_arg(args_tuple, 3, "replace", "count")?;
+    let count_opt_i64 = get_optional_int_arg(None, None, args_tuple, 3, "replace", "count")?;
     let count: Option<usize> = match count_opt_i64 {
         Some(val) if val < 0 => None, // Negative count means replace all
         Some(val) => Some(val as usize),
@@ -192,7 +212,12 @@ fn replace(args_tuple: &mut GCRef, gc_system: &mut GCSystem) -> Result<GCRef, VM
 }
 
 // string_utils.startswith(string, prefix)
-fn startswith(args_tuple: &mut GCRef, gc_system: &mut GCSystem) -> Result<GCRef, VMVariableError> {
+fn startswith(
+    _self_object: Option<&mut GCRef>,
+    _capture: Option<&mut GCRef>,
+    args_tuple: &mut GCRef,
+    gc_system: &mut GCSystem,
+) -> Result<GCRef, VMVariableError> {
     check_if_tuple(args_tuple)?;
     let tuple_obj = args_tuple.as_const_type::<VMTuple>();
     let arg_count = tuple_obj.values.len();
@@ -204,15 +229,20 @@ fn startswith(args_tuple: &mut GCRef, gc_system: &mut GCSystem) -> Result<GCRef,
         ));
     }
 
-    let target_str = get_string_arg(args_tuple, 0, "startswith", "string")?;
-    let prefix_str = get_string_arg(args_tuple, 1, "startswith", "prefix")?;
+    let target_str = get_string_arg(None, None, args_tuple, 0, "startswith", "string")?;
+    let prefix_str = get_string_arg(None, None, args_tuple, 1, "startswith", "prefix")?;
 
     let result = target_str.starts_with(&prefix_str);
     Ok(gc_system.new_object(VMBoolean::new(result)))
 }
 
 // string_utils.endswith(string, suffix)
-fn endswith(args_tuple: &mut GCRef, gc_system: &mut GCSystem) -> Result<GCRef, VMVariableError> {
+fn endswith(
+    _self_object: Option<&mut GCRef>,
+    _capture: Option<&mut GCRef>,
+    args_tuple: &mut GCRef,
+    gc_system: &mut GCSystem,
+) -> Result<GCRef, VMVariableError> {
     check_if_tuple(args_tuple)?;
     let tuple_obj = args_tuple.as_const_type::<VMTuple>();
     let arg_count = tuple_obj.values.len();
@@ -224,15 +254,20 @@ fn endswith(args_tuple: &mut GCRef, gc_system: &mut GCSystem) -> Result<GCRef, V
         ));
     }
 
-    let target_str = get_string_arg(args_tuple, 0, "endswith", "string")?;
-    let suffix_str = get_string_arg(args_tuple, 1, "endswith", "suffix")?;
+    let target_str = get_string_arg(None, None, args_tuple, 0, "endswith", "string")?;
+    let suffix_str = get_string_arg(None, None, args_tuple, 1, "endswith", "suffix")?;
 
     let result = target_str.ends_with(&suffix_str);
     Ok(gc_system.new_object(VMBoolean::new(result)))
 }
 
 // string_utils.strip(string, [chars])
-fn strip(args_tuple: &mut GCRef, gc_system: &mut GCSystem) -> Result<GCRef, VMVariableError> {
+fn strip(
+    _self_object: Option<&mut GCRef>,
+    _capture: Option<&mut GCRef>,
+    args_tuple: &mut GCRef,
+    gc_system: &mut GCSystem,
+) -> Result<GCRef, VMVariableError> {
     check_if_tuple(args_tuple)?;
     let tuple_obj = args_tuple.as_const_type::<VMTuple>();
     let arg_count = tuple_obj.values.len();
@@ -244,10 +279,10 @@ fn strip(args_tuple: &mut GCRef, gc_system: &mut GCSystem) -> Result<GCRef, VMVa
         ));
     }
 
-    let target_str = get_string_arg(args_tuple, 0, "strip", "string")?;
+    let target_str = get_string_arg(None, None, args_tuple, 0, "strip", "string")?;
 
     let result_string = if arg_count > 1 {
-        let chars_str = get_string_arg(args_tuple, 1, "strip", "chars")?;
+        let chars_str = get_string_arg(None, None, args_tuple, 1, "strip", "chars")?;
         let chars_to_strip: Vec<char> = chars_str.chars().collect();
         target_str
             .trim_matches(|c| chars_to_strip.contains(&c))
@@ -261,7 +296,12 @@ fn strip(args_tuple: &mut GCRef, gc_system: &mut GCSystem) -> Result<GCRef, VMVa
 }
 
 // string_utils.lower(string)
-fn lower(args_tuple: &mut GCRef, gc_system: &mut GCSystem) -> Result<GCRef, VMVariableError> {
+fn lower(
+    _self_object: Option<&mut GCRef>,
+    _capture: Option<&mut GCRef>,
+    args_tuple: &mut GCRef,
+    gc_system: &mut GCSystem,
+) -> Result<GCRef, VMVariableError> {
     check_if_tuple(args_tuple)?;
     let tuple_obj = args_tuple.as_const_type::<VMTuple>();
     let arg_count = tuple_obj.values.len();
@@ -273,13 +313,18 @@ fn lower(args_tuple: &mut GCRef, gc_system: &mut GCSystem) -> Result<GCRef, VMVa
         ));
     }
 
-    let target_str = get_string_arg(args_tuple, 0, "lower", "string")?;
+    let target_str = get_string_arg(None, None, args_tuple, 0, "lower", "string")?;
     let result_string = target_str.to_lowercase();
     Ok(gc_system.new_object(VMString::new(&result_string)))
 }
 
 // string_utils.upper(string)
-fn upper(args_tuple: &mut GCRef, gc_system: &mut GCSystem) -> Result<GCRef, VMVariableError> {
+fn upper(
+    _self_object: Option<&mut GCRef>,
+    _capture: Option<&mut GCRef>,
+    args_tuple: &mut GCRef,
+    gc_system: &mut GCSystem,
+) -> Result<GCRef, VMVariableError> {
     check_if_tuple(args_tuple)?;
     let tuple_obj = args_tuple.as_const_type::<VMTuple>();
     let arg_count = tuple_obj.values.len();
@@ -291,15 +336,20 @@ fn upper(args_tuple: &mut GCRef, gc_system: &mut GCSystem) -> Result<GCRef, VMVa
         ));
     }
 
-    let target_str = get_string_arg(args_tuple, 0, "upper", "string")?;
+    let target_str = get_string_arg(None, None, args_tuple, 0, "upper", "string")?;
     let result_string = target_str.to_uppercase();
     Ok(gc_system.new_object(VMString::new(&result_string)))
 }
 
 // Helper to provide functions for registration
-pub fn get_string_utils_module()-> Vec<(
+pub fn get_string_utils_module() -> Vec<(
     &'static str,
-    fn(&mut GCRef, &mut GCSystem) -> Result<GCRef, VMVariableError>,
+    fn(
+        Option<&mut GCRef>,
+        Option<&mut GCRef>,
+        &mut GCRef,
+        &mut GCSystem,
+    ) -> Result<GCRef, VMVariableError>,
 )> {
     vec![
         ("split", split),

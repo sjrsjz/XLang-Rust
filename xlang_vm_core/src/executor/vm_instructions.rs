@@ -1301,7 +1301,7 @@ pub fn call_lambda(
             Ok(None)
         }
         VMLambdaBody::VMNativeFunction(native_function) => {
-            let result = native_function(&mut arg_tuple, gc_system); // Clone arg_tuple for native call
+            let result = native_function(lambda_obj.self_object.as_mut(), lambda_obj.capture.as_mut(), &mut arg_tuple, gc_system); // Clone arg_tuple for native call
             if result.is_err() {
                 arg_tuple.drop_ref();
                 return Err(VMError::VMVariableError(result.unwrap_err()));

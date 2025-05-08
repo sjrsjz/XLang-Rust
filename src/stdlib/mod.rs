@@ -1,19 +1,22 @@
-mod string_utils;
+mod async_request;
+mod asyncio;
 mod fs;
 mod io;
-mod types;
-mod serialization;
-mod async_request;
-mod time;
-mod asyncio;
 mod os;
+mod serialization;
+mod string_utils;
+mod time;
+mod types;
 
 use rustc_hash::FxHashMap;
 use xlang_vm_core::executor::context::Context;
 use xlang_vm_core::executor::ffi::vm_clambda_loading;
+use xlang_vm_core::executor::variable::{
+    VMCLambdaInstruction, VMKeyVal, VMLambda, VMLambdaBody, VMNull, VMString, VMTuple,
+    VMVariableError,
+};
 use xlang_vm_core::executor::vm::VMError;
 use xlang_vm_core::gc::{GCRef, GCSystem};
-use xlang_vm_core::executor::variable::{VMCLambdaInstruction, VMKeyVal, VMLambda, VMLambdaBody, VMNull, VMString, VMTuple, VMVariableError};
 pub(crate) fn check_if_tuple(tuple: &mut GCRef) -> Result<(), VMVariableError> {
     if !tuple.isinstance::<VMTuple>() {
         return Err(VMVariableError::TypeError(
@@ -26,7 +29,12 @@ pub(crate) fn check_if_tuple(tuple: &mut GCRef) -> Result<(), VMVariableError> {
 // Helper function to create a native VMLambda
 pub(crate) fn create_native_lambda(
     name: &str,
-    native_fn: fn(&mut GCRef, &mut GCSystem) -> Result<GCRef, VMVariableError>,
+    native_fn: fn(
+        Option<&mut GCRef>,
+        Option<&mut GCRef>,
+        &mut GCRef,
+        &mut GCSystem,
+    ) -> Result<GCRef, VMVariableError>,
     gc_system: &mut GCSystem,
 ) -> Result<GCRef, VMVariableError> {
     // Create empty tuple for default args (can be shared or created anew)
@@ -43,7 +51,7 @@ pub(crate) fn create_native_lambda(
         None, // self_object
         &mut VMLambdaBody::VMNativeFunction(native_fn),
         &mut result,
-        false
+        false,
     ));
 
     // Drop refs owned by the lambda now
@@ -55,7 +63,15 @@ pub(crate) fn create_native_lambda(
 
 // Helper function to build a module tuple from a map of functions
 pub(crate) fn build_module(
-    functions: &FxHashMap<&str, for<'a> fn(&mut GCRef, &'a mut GCSystem) -> Result<GCRef, VMVariableError>>,
+    functions: &FxHashMap<
+        &str,
+        for<'a> fn(
+            Option<&mut GCRef>,
+            Option<&mut GCRef>,
+            &mut GCRef,
+            &'a mut GCSystem,
+        ) -> Result<GCRef, VMVariableError>,
+    >,
     gc_system: &mut GCSystem,
 ) -> GCRef {
     let mut module = gc_system.new_object(VMTuple::new(&mut vec![]));
@@ -71,10 +87,7 @@ pub(crate) fn build_module(
     module
 }
 
-pub(crate) fn build_dict(
-    keyvals: &mut FxHashMap<&str, GCRef>,
-    gc_system: &mut GCSystem,
-) -> GCRef {
+pub(crate) fn build_dict(keyvals: &mut FxHashMap<&str, GCRef>, gc_system: &mut GCSystem) -> GCRef {
     let mut dict = gc_system.new_object(VMTuple::new(&mut vec![]));
     for (key, value) in keyvals {
         let mut key_ref = gc_system.new_object(VMString::new(key));
@@ -101,21 +114,26 @@ pub(crate) fn build_dict_using_string(
     dict
 }
 
-
-pub fn load_clambda(tuple: &mut GCRef, gc_system: &mut GCSystem) -> Result<GCRef, VMVariableError> {
+pub fn load_clambda(
+    _self_object: Option<&mut GCRef>,
+    _capture: Option<&mut GCRef>,
+    tuple: &mut GCRef,
+    gc_system: &mut GCSystem,
+) -> Result<GCRef, VMVariableError> {
     check_if_tuple(tuple)?;
     let tuple_obj = tuple.as_type::<VMTuple>();
     if tuple_obj.values.len() != 1 {
         return Err(VMVariableError::TypeError(
             tuple.clone_ref(),
-            format!("load_clambda expected 1 argument, got {}", tuple.as_const_type::<VMTuple>().values.len()),
+            format!(
+                "load_clambda expected 1 argument, got {}",
+                tuple.as_const_type::<VMTuple>().values.len()
+            ),
         ));
     }
     let target_obj = &mut tuple_obj.values[0];
     if target_obj.isinstance::<VMString>() {
-        let data = target_obj
-            .as_const_type::<VMString>()
-            .to_string()?;
+        let data = target_obj.as_const_type::<VMString>().to_string()?;
         let mut clambda = unsafe {
             vm_clambda_loading::load_clambda(&data).map_err(|e| {
                 VMVariableError::ValueError(
@@ -188,18 +206,19 @@ pub fn inject_builtin_functions(
     builtins_map.insert("os", os_module);
 
     for (name, module) in &mut builtins_map {
-        context.let_var(name,  module, gc_system)
+        context
+            .let_var(name, module, gc_system)
             .map_err(|e| VMError::ContextError(e))?;
         module.drop_ref(); // Drop the ref created by build_module
     }
 
     // 构建 load_clambda 函数
-    let mut load_clambda_ref = create_native_lambda("load_clambda", load_clambda, gc_system).unwrap();
+    let mut load_clambda_ref =
+        create_native_lambda("load_clambda", load_clambda, gc_system).unwrap();
     context
         .let_var("load_clambda", &mut load_clambda_ref, gc_system)
         .map_err(|e| VMError::ContextError(e))?;
     load_clambda_ref.drop_ref(); // Drop the ref created by create_native_lambda
 
     Ok(())
-
 }

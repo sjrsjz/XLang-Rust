@@ -1,9 +1,16 @@
+use super::build_dict;
+use super::check_if_tuple;
+use once_cell::sync::Lazy;
+use reqwest::{
+    header::{HeaderMap, HeaderName, HeaderValue},
+    Body, Client, Method, Url,
+};
+use rustc_hash::FxHashMap;
 use std::{
     fmt::{self, Debug},
     sync::{Arc, Mutex},
     time::Duration, // Import Duration
 };
-use rustc_hash::FxHashMap;
 use tokio::runtime::Runtime;
 use xlang_vm_core::{
     executor::variable::{
@@ -11,13 +18,6 @@ use xlang_vm_core::{
         VMNativeGeneratorFunction, VMNull, VMString, VMTuple, VMVariableError,
     },
     gc::{GCRef, GCSystem},
-};
-use super::check_if_tuple;
-use super::build_dict;
-use once_cell::sync::Lazy;
-use reqwest::{
-    header::{HeaderMap, HeaderName, HeaderValue},
-    Body, Client, Method, Url,
 }; // Import necessary reqwest types
 
 static RUNTIME: Lazy<Runtime> = Lazy::new(|| {
@@ -68,7 +68,9 @@ impl Debug for RequestState {
                     result.body_bytes.len()
                 ))
                 .finish(),
-            RequestState::Done(Err(e)) => f.debug_tuple("Done").field(&format!("Err({})", e)).finish(),
+            RequestState::Done(Err(e)) => {
+                f.debug_tuple("Done").field(&format!("Err({})", e)).finish()
+            }
         }
     }
 }
@@ -241,7 +243,6 @@ impl VMNativeGeneratorFunction for RequestGenerator {
                 }
                 let mut headers_dict = build_dict(&mut headers_map, gc_system);
 
-
                 let mut result_dict_map = FxHashMap::from_iter(vec![
                     ("status_code", status_obj.clone()),
                     ("headers", headers_dict.clone()), // Add headers dict
@@ -265,7 +266,7 @@ impl VMNativeGeneratorFunction for RequestGenerator {
                 let mut result_dict_map = FxHashMap::from_iter(vec![
                     ("status_code", null_obj.clone()),
                     ("headers", null_obj.clone()), // Headers are null on error
-                    ("body", null_obj.clone()), // Body is null on error
+                    ("body", null_obj.clone()),    // Body is null on error
                     ("error_message", error_message.clone()),
                 ]);
                 let result_dict = build_dict(&mut result_dict_map, gc_system);
@@ -311,7 +312,12 @@ impl VMNativeGeneratorFunction for RequestGenerator {
 /// - header: tuple (可选, 元素为 key:value 或 key=>value, key/value 需为 string)
 /// - body: bytes | string | null (可选)
 /// - timeout_ms: int (可选, 超时毫秒数)
-pub fn request(tuple: &mut GCRef, gc_system: &mut GCSystem) -> Result<GCRef, VMVariableError> {
+pub fn request(
+    _self_object: Option<&mut GCRef>,
+    _capture: Option<&mut GCRef>,
+    tuple: &mut GCRef,
+    gc_system: &mut GCSystem,
+) -> Result<GCRef, VMVariableError> {
     check_if_tuple(tuple)?;
     let tuple_obj = tuple.as_type::<VMTuple>(); // Get mutable reference
 
@@ -328,9 +334,8 @@ pub fn request(tuple: &mut GCRef, gc_system: &mut GCSystem) -> Result<GCRef, VMV
         ));
     }
     let url_str = &url_ref.as_const_type::<VMString>().value;
-    let url = Url::parse(url_str).map_err(|e| {
-        VMVariableError::DetailedError(format!("Invalid URL '{}': {}", url_str, e))
-    })?;
+    let url = Url::parse(url_str)
+        .map_err(|e| VMVariableError::DetailedError(format!("Invalid URL '{}': {}", url_str, e)))?;
     let url_str_for_sig = url_str.clone(); // For lambda signature
 
     // --- 解析 Method (可选) ---
@@ -368,10 +373,16 @@ pub fn request(tuple: &mut GCRef, gc_system: &mut GCSystem) -> Result<GCRef, VMV
         for header_item in &mut header_tuple.values {
             let (h_key_str, h_val_str) = if header_item.isinstance::<VMKeyVal>() {
                 let kv = header_item.as_type::<VMKeyVal>();
-                (try_to_string_vmobject(kv.get_key(), None)?, try_to_string_vmobject(kv.get_value(), None)?)
+                (
+                    try_to_string_vmobject(kv.get_key(), None)?,
+                    try_to_string_vmobject(kv.get_value(), None)?,
+                )
             } else if header_item.isinstance::<VMNamed>() {
                 let named_h = header_item.as_type::<VMNamed>();
-                (try_to_string_vmobject(named_h.get_key(), None)?, try_to_string_vmobject(named_h.get_value(), None)?)
+                (
+                    try_to_string_vmobject(named_h.get_key(), None)?,
+                    try_to_string_vmobject(named_h.get_value(), None)?,
+                )
             } else {
                 return Err(VMVariableError::TypeError(
                     header_item.clone_ref(),
@@ -380,11 +391,14 @@ pub fn request(tuple: &mut GCRef, gc_system: &mut GCSystem) -> Result<GCRef, VMV
             };
 
             let header_name = HeaderName::from_bytes(h_key_str.as_bytes()).map_err(|e| {
-                VMVariableError::DetailedError(format!("Invalid header name '{}': {}", h_key_str, e))
+                VMVariableError::DetailedError(format!(
+                    "Invalid header name '{}': {}",
+                    h_key_str, e
+                ))
             })?;
             // Use from_str for HeaderValue as it handles validation better for common cases
             let header_value = HeaderValue::from_str(&h_val_str).map_err(|e| {
-                 VMVariableError::DetailedError(format!(
+                VMVariableError::DetailedError(format!(
                     "Invalid header value for '{}': {}",
                     h_key_str, e
                 ))
@@ -425,22 +439,21 @@ pub fn request(tuple: &mut GCRef, gc_system: &mut GCSystem) -> Result<GCRef, VMV
             if ms > 0 {
                 timeout_opt = Some(Duration::from_millis(ms as u64));
             } else if ms == 0 {
-                 // Treat 0 as no timeout (or default Reqwest timeout)
-                 timeout_opt = None;
-            }
-             else {
+                // Treat 0 as no timeout (or default Reqwest timeout)
+                timeout_opt = None;
+            } else {
                 return Err(VMVariableError::DetailedError(
                     "Named argument 'timeout_ms' must be a non-negative integer".to_string(),
                 ));
             }
-        } else if !timeout_ref.isinstance::<VMNull>() { // Allow null to explicitly mean no timeout
-             return Err(VMVariableError::TypeError(
+        } else if !timeout_ref.isinstance::<VMNull>() {
+            // Allow null to explicitly mean no timeout
+            return Err(VMVariableError::TypeError(
                 timeout_ref.clone_ref(),
                 "Named argument 'timeout_ms' must be an integer or null".to_string(),
             ));
         }
     }
-
 
     // --- 创建 Generator ---
     log::debug!(
@@ -473,7 +486,7 @@ pub fn request(tuple: &mut GCRef, gc_system: &mut GCSystem) -> Result<GCRef, VMV
         None,
         &mut lambda_body,
         &mut result_placeholder,
-        false
+        false,
     ));
 
     // 释放临时 GCRef
@@ -487,7 +500,12 @@ pub fn request(tuple: &mut GCRef, gc_system: &mut GCSystem) -> Result<GCRef, VMV
 /// 返回包含 `request` 函数的向量，以便注册到 VM。
 pub fn get_request_functions() -> Vec<(
     &'static str,
-    fn(&mut GCRef, &mut GCSystem) -> Result<GCRef, VMVariableError>,
+    fn(
+        Option<&mut GCRef>,
+        Option<&mut GCRef>,
+        &mut GCRef,
+        &mut GCSystem,
+    ) -> Result<GCRef, VMVariableError>,
 )> {
     vec![("request", request)]
 }

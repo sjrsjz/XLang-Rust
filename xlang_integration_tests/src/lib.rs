@@ -177,7 +177,7 @@ mod tests {
             &mut params,
             None,
             None,
-            &mut VMLambdaBody::VMNativeFunction(|params_tuple, gc| {
+            &mut VMLambdaBody::VMNativeFunction(|_self_object, _capture, params_tuple, gc| {
                 let repr = try_repr_vmobject(params_tuple, None).unwrap_or_else(|mut e| {
                     e.consume_ref();
                     "<error>".to_string()

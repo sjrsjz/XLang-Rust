@@ -2,20 +2,35 @@ use xlang_vm_core::{
     executor::variable::{
         try_to_string_vmobject,
         // Import necessary VM types
-        VMBoolean, VMBytes, VMFloat, VMInt, VMNull, VMString, VMTuple, VMVariableError,
+        VMBoolean,
+        VMBytes,
+        VMFloat,
+        VMInt,
+        VMNull,
+        VMString,
+        VMTuple,
+        VMVariableError,
     },
     gc::{GCRef, GCSystem},
 };
 // Assuming check_if_tuple will be available via super
 use super::check_if_tuple;
 
-pub fn len(tuple: &mut GCRef, gc_system: &mut GCSystem) -> Result<GCRef, VMVariableError> {
+pub fn len(
+    _self_object: Option<&mut GCRef>,
+    _capture: Option<&mut GCRef>,
+    tuple: &mut GCRef,
+    gc_system: &mut GCSystem,
+) -> Result<GCRef, VMVariableError> {
     check_if_tuple(tuple)?;
     let tuple_obj = tuple.as_type::<VMTuple>();
     if tuple_obj.values.len() != 1 {
         return Err(VMVariableError::TypeError(
             tuple.clone_ref(),
-            format!("len expected 1 argument, got {}", tuple.as_const_type::<VMTuple>().values.len()),
+            format!(
+                "len expected 1 argument, got {}",
+                tuple.as_const_type::<VMTuple>().values.len()
+            ),
         ));
     }
     let target_obj = &mut tuple_obj.values[0];
@@ -39,13 +54,21 @@ pub fn len(tuple: &mut GCRef, gc_system: &mut GCSystem) -> Result<GCRef, VMVaria
     }
 }
 
-pub fn to_int(tuple: &mut GCRef, gc_system: &mut GCSystem) -> Result<GCRef, VMVariableError> {
+pub fn to_int(
+    _self_object: Option<&mut GCRef>,
+    _capture: Option<&mut GCRef>,
+    tuple: &mut GCRef,
+    gc_system: &mut GCSystem,
+) -> Result<GCRef, VMVariableError> {
     check_if_tuple(tuple)?;
     let tuple_obj = tuple.as_type::<VMTuple>();
     if tuple_obj.values.len() != 1 {
         return Err(VMVariableError::TypeError(
             tuple.clone_ref(),
-            format!("int expected 1 argument, got {}", tuple.as_const_type::<VMTuple>().values.len()),
+            format!(
+                "int expected 1 argument, got {}",
+                tuple.as_const_type::<VMTuple>().values.len()
+            ),
         ));
     }
     let target_obj = &mut tuple_obj.values[0];
@@ -74,13 +97,21 @@ pub fn to_int(tuple: &mut GCRef, gc_system: &mut GCSystem) -> Result<GCRef, VMVa
     ))
 }
 
-pub fn to_float(tuple: &mut GCRef, gc_system: &mut GCSystem) -> Result<GCRef, VMVariableError> {
+pub fn to_float(
+    _self_object: Option<&mut GCRef>,
+    _capture: Option<&mut GCRef>,
+    tuple: &mut GCRef,
+    gc_system: &mut GCSystem,
+) -> Result<GCRef, VMVariableError> {
     check_if_tuple(tuple)?;
     let tuple_obj = tuple.as_type::<VMTuple>();
     if tuple_obj.values.len() != 1 {
         return Err(VMVariableError::TypeError(
             tuple.clone_ref(),
-            format!("float expected 1 argument, got {}", tuple.as_const_type::<VMTuple>().values.len()),
+            format!(
+                "float expected 1 argument, got {}",
+                tuple.as_const_type::<VMTuple>().values.len()
+            ),
         ));
     }
     let target_obj = &mut tuple_obj.values[0];
@@ -100,9 +131,7 @@ pub fn to_float(tuple: &mut GCRef, gc_system: &mut GCSystem) -> Result<GCRef, VM
         return Ok(gc_system.new_object(VMFloat::new(0.0)));
     }
     if target_obj.isinstance::<VMBoolean>() {
-        let data = target_obj
-            .as_const_type::<VMBoolean>()
-            .to_float()?;
+        let data = target_obj.as_const_type::<VMBoolean>().to_float()?;
         return Ok(gc_system.new_object(VMFloat::new(data)));
     }
     Err(VMVariableError::TypeError(
@@ -111,13 +140,21 @@ pub fn to_float(tuple: &mut GCRef, gc_system: &mut GCSystem) -> Result<GCRef, VM
     ))
 }
 
-pub fn to_string(tuple: &mut GCRef, gc_system: &mut GCSystem) -> Result<GCRef, VMVariableError> {
+pub fn to_string(
+    _self_object: Option<&mut GCRef>,
+    _capture: Option<&mut GCRef>,
+    tuple: &mut GCRef,
+    gc_system: &mut GCSystem,
+) -> Result<GCRef, VMVariableError> {
     check_if_tuple(tuple)?;
     let tuple_obj = tuple.as_type::<VMTuple>();
     if tuple_obj.values.len() != 1 {
         return Err(VMVariableError::TypeError(
             tuple.clone_ref(),
-            format!("string expected 1 argument, got {}", tuple.as_const_type::<VMTuple>().values.len()),
+            format!(
+                "string expected 1 argument, got {}",
+                tuple.as_const_type::<VMTuple>().values.len()
+            ),
         ));
     }
     let target_obj = &mut tuple_obj.values[0];
@@ -130,13 +167,21 @@ pub fn to_string(tuple: &mut GCRef, gc_system: &mut GCSystem) -> Result<GCRef, V
     Ok(gc_system.new_object(VMString::new(&data)))
 }
 
-pub fn to_bool(tuple: &mut GCRef, gc_system: &mut GCSystem) -> Result<GCRef, VMVariableError> {
+pub fn to_bool(
+    _self_object: Option<&mut GCRef>,
+    _capture: Option<&mut GCRef>,
+    tuple: &mut GCRef,
+    gc_system: &mut GCSystem,
+) -> Result<GCRef, VMVariableError> {
     check_if_tuple(tuple)?;
     let tuple_obj = tuple.as_type::<VMTuple>();
     if tuple_obj.values.len() != 1 {
         return Err(VMVariableError::TypeError(
             tuple.clone_ref(),
-            format!("bool expected 1 argument, got {}", tuple.as_const_type::<VMTuple>().values.len()),
+            format!(
+                "bool expected 1 argument, got {}",
+                tuple.as_const_type::<VMTuple>().values.len()
+            ),
         ));
     }
     let target_obj = &mut tuple_obj.values[0];
@@ -159,31 +204,34 @@ pub fn to_bool(tuple: &mut GCRef, gc_system: &mut GCSystem) -> Result<GCRef, VMV
         let data = target_obj.as_const_type::<VMBoolean>().to_bool()?;
         return Ok(gc_system.new_object(VMBoolean::new(data)));
     }
-     Err(VMVariableError::TypeError(
+    Err(VMVariableError::TypeError(
         target_obj.clone_ref(), // Error points to the specific object
         "Argument for bool must be convertible to a boolean".to_string(),
     ))
 }
-pub fn to_bytes(tuple: &mut GCRef, gc_system: &mut GCSystem) -> Result<GCRef, VMVariableError> {
+pub fn to_bytes(
+    _self_object: Option<&mut GCRef>,
+    _capture: Option<&mut GCRef>,
+    tuple: &mut GCRef,
+    gc_system: &mut GCSystem,
+) -> Result<GCRef, VMVariableError> {
     check_if_tuple(tuple)?;
     let tuple_obj = tuple.as_type::<VMTuple>();
     if tuple_obj.values.len() != 1 {
         return Err(VMVariableError::TypeError(
             tuple.clone_ref(),
-            format!("bytes expected 1 argument, got {}", tuple.as_const_type::<VMTuple>().values.len()),
+            format!(
+                "bytes expected 1 argument, got {}",
+                tuple.as_const_type::<VMTuple>().values.len()
+            ),
         ));
     }
     let target_obj = &mut tuple_obj.values[0];
     if target_obj.isinstance::<VMBytes>() {
-        return Ok(gc_system.new_object(VMBytes::new(
-            &target_obj.as_const_type::<VMBytes>().value,
-        )));
+        return Ok(gc_system.new_object(VMBytes::new(&target_obj.as_const_type::<VMBytes>().value)));
     } else if target_obj.isinstance::<VMString>() {
         // 将字符串转换为字节序列
-        let string_value = target_obj
-            .as_const_type::<VMString>()
-            .value
-            .clone();
+        let string_value = target_obj.as_const_type::<VMString>().value.clone();
         return Ok(gc_system.new_object(VMBytes::new(&string_value.as_bytes().to_vec())));
     } else if target_obj.isinstance::<VMInt>() {
         // 支持单字节的整数转字节
@@ -232,7 +280,12 @@ pub fn to_bytes(tuple: &mut GCRef, gc_system: &mut GCSystem) -> Result<GCRef, VM
 // Helper to provide functions for registration
 pub fn get_type_conversion_functions() -> Vec<(
     &'static str,
-    fn(&mut GCRef, &mut GCSystem) -> Result<GCRef, VMVariableError>,
+    fn(
+        Option<&mut GCRef>,
+        Option<&mut GCRef>,
+        &mut GCRef,
+        &mut GCSystem,
+    ) -> Result<GCRef, VMVariableError>,
 )> {
     vec![
         ("len", len),

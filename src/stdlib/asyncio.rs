@@ -4,7 +4,12 @@ use xlang_vm_core::{
     gc::{GCRef, GCSystem},
 };
 
-pub fn pause(tuple: &mut GCRef, _gc_system: &mut GCSystem) -> Result<GCRef, VMVariableError> {
+pub fn pause(
+    _self_object: Option<&mut GCRef>,
+    _capture: Option<&mut GCRef>,
+    tuple: &mut GCRef,
+    _gc_system: &mut GCSystem,
+) -> Result<GCRef, VMVariableError> {
     check_if_tuple(tuple)?;
     let tuple_obj = tuple.as_type::<VMTuple>();
     if tuple_obj.values.len() != 1 {
@@ -41,7 +46,12 @@ pub fn pause(tuple: &mut GCRef, _gc_system: &mut GCSystem) -> Result<GCRef, VMVa
     Ok(obj)
 }
 
-pub fn resume(tuple: &mut GCRef, _gc_system: &mut GCSystem) -> Result<GCRef, VMVariableError> {
+pub fn resume(
+    _self_object: Option<&mut GCRef>,
+    _capture: Option<&mut GCRef>,
+    tuple: &mut GCRef,
+    _gc_system: &mut GCSystem,
+) -> Result<GCRef, VMVariableError> {
     check_if_tuple(tuple)?;
     let tuple_obj = tuple.as_type::<VMTuple>();
     if tuple_obj.values.len() != 1 {
@@ -78,7 +88,12 @@ pub fn resume(tuple: &mut GCRef, _gc_system: &mut GCSystem) -> Result<GCRef, VMV
     Ok(obj)
 }
 
-pub fn kill(tuple: &mut GCRef, _gc_system: &mut GCSystem) -> Result<GCRef, VMVariableError> {
+pub fn kill(
+    _self_object: Option<&mut GCRef>,
+    _capture: Option<&mut GCRef>,
+    tuple: &mut GCRef,
+    _gc_system: &mut GCSystem,
+) -> Result<GCRef, VMVariableError> {
     check_if_tuple(tuple)?;
     let tuple_obj = tuple.as_type::<VMTuple>();
     if tuple_obj.values.len() != 1 {
@@ -115,7 +130,12 @@ pub fn kill(tuple: &mut GCRef, _gc_system: &mut GCSystem) -> Result<GCRef, VMVar
     Ok(obj)
 }
 
-pub fn is_running(tuple: &mut GCRef, gc_system: &mut GCSystem) -> Result<GCRef, VMVariableError> {
+pub fn is_running(
+    _self_object: Option<&mut GCRef>,
+    _capture: Option<&mut GCRef>,
+    tuple: &mut GCRef,
+    gc_system: &mut GCSystem,
+) -> Result<GCRef, VMVariableError> {
     check_if_tuple(tuple)?;
     let tuple_obj = tuple.as_type::<VMTuple>();
     if tuple_obj.values.len() != 1 {
@@ -141,7 +161,12 @@ pub fn is_running(tuple: &mut GCRef, gc_system: &mut GCSystem) -> Result<GCRef, 
     Ok(obj)
 }
 
-pub fn is_pending(tuple: &mut GCRef, gc_system: &mut GCSystem) -> Result<GCRef, VMVariableError> {
+pub fn is_pending(
+    _self_object: Option<&mut GCRef>,
+    _capture: Option<&mut GCRef>,
+    tuple: &mut GCRef,
+    gc_system: &mut GCSystem,
+) -> Result<GCRef, VMVariableError> {
     check_if_tuple(tuple)?;
     let tuple_obj = tuple.as_type::<VMTuple>();
     if tuple_obj.values.len() != 1 {
@@ -167,7 +192,12 @@ pub fn is_pending(tuple: &mut GCRef, gc_system: &mut GCSystem) -> Result<GCRef, 
     Ok(obj)
 }
 
-pub fn is_crashed(tuple: &mut GCRef, gc_system: &mut GCSystem) -> Result<GCRef, VMVariableError> {
+pub fn is_crashed(
+    _self_object: Option<&mut GCRef>,
+    _capture: Option<&mut GCRef>,
+    tuple: &mut GCRef,
+    gc_system: &mut GCSystem,
+) -> Result<GCRef, VMVariableError> {
     check_if_tuple(tuple)?;
     let tuple_obj = tuple.as_type::<VMTuple>();
     if tuple_obj.values.len() != 1 {
@@ -195,7 +225,12 @@ pub fn is_crashed(tuple: &mut GCRef, gc_system: &mut GCSystem) -> Result<GCRef, 
 // Helper to provide functions for registration
 pub fn get_asyncio_functions() -> Vec<(
     &'static str,
-    fn(&mut GCRef, &mut GCSystem) -> Result<GCRef, VMVariableError>,
+    fn(
+        Option<&mut GCRef>,
+        Option<&mut GCRef>,
+        &mut GCRef,
+        &mut GCSystem,
+    ) -> Result<GCRef, VMVariableError>,
 )> {
     vec![
         ("pause", pause),

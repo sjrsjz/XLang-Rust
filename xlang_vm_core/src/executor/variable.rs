@@ -2993,7 +2993,7 @@ impl VMCoroutineStatus {
 
 pub enum VMLambdaBody {
     VMInstruction(GCRef),
-    VMNativeFunction(fn(&mut GCRef, &mut GCSystem) -> Result<GCRef, VMVariableError>),
+    VMNativeFunction(fn(Option<&mut GCRef>, Option<&mut GCRef>, &mut GCRef, &mut GCSystem) -> Result<GCRef, VMVariableError>),
     VMNativeGeneratorFunction(Arc<Box<dyn VMNativeGeneratorFunction>>),
 }
 
