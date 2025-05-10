@@ -1,6 +1,7 @@
 use crate::instruction_set::VMInstruction;
 use crate::opcode::Instruction32;
 use crate::opcode::ProcessedOpcode;
+use colored::Colorize;
 
 use super::super::gc::*;
 use super::context::*;
@@ -92,9 +93,9 @@ impl VMError {
 #[derive(Debug)]
 // 协程池
 pub struct VMCoroutinePool {
-    executors: Vec<(VMExecutor, isize)>, // executor, id
-    gen_id: isize,
-    enable_dump: bool,
+    pub executors: Vec<(VMExecutor, isize)>, // executor, id
+    pub gen_id: isize,
+    pub enable_dump: bool,
 }
 
 impl VMCoroutinePool {
@@ -220,9 +221,89 @@ impl VMCoroutinePool {
     }
 
     pub fn run_until_finished(&mut self, gc_system: &mut GCSystem) -> Result<(), VMError> {
-        use colored::*;
-
         loop {
+            let spawned_coroutines = self.step_all(gc_system).map_err(|mut vm_error| {
+                let err = if self.enable_dump {
+                    let all_coroutines_contexts_repr = self
+                        .executors
+                        .iter_mut()
+                        .map(|(e, _)| {
+                            let lambda = e.entry_lambda.as_const_type::<VMLambda>();
+                            format!(
+                                "{}\n{}\n\n{}\n\n{}",
+                                format!(
+                                    "-> {}: {}",
+                                    lambda.signature,
+                                    lambda.coroutine_status.to_string()
+                                )
+                                .bright_yellow()
+                                .bold(),
+                                e.context.format_context(&mut e.stack),
+                                "=== Code ===".bright_blue().bold(),
+                                e.repr_current_code(Some(2))
+                            )
+                        })
+                        .collect::<Vec<String>>()
+                        .join("\n\n");
+
+                    let err = VMError::DetailedError(format!(
+                        "{}\n\n{}\n{}\n\n{}",
+                        "** CoroutinePool Step Error! **".bright_red().bold(),
+                        "# Main Error".bright_red().bold().underline(),
+                        vm_error.1.to_string().red(),
+                        format!("All Coroutine Contexts:\n{}", all_coroutines_contexts_repr)
+                    ));
+                    vm_error.1.consume_ref();
+                    err
+                } else {
+                    vm_error.1
+                };
+                err
+            });
+
+            if spawned_coroutines.is_err() {
+                let err = spawned_coroutines.err().unwrap();
+                for coroutine in self.executors.iter_mut() {
+                    coroutine.0.clean();
+                }
+                return Err(err);
+            }
+
+            let spawned_coroutines = spawned_coroutines.unwrap();
+
+            self.sweep_finished();
+
+            if let Some(mut coroutines) = spawned_coroutines {
+                for coroutine in coroutines.iter_mut() {
+                    self.new_coroutine(&mut coroutine.lambda_ref, &mut coroutine.args, gc_system)?;
+                }
+            }
+
+            if self.executors.is_empty() {
+                break;
+            }
+        }
+
+        Ok(())
+    }
+
+    pub fn run_while<F>(
+        &mut self,
+        gc_system: &mut GCSystem,
+        mut condition: F,
+    ) -> Result<(), VMError>
+    where
+        F: FnMut(&VMCoroutinePool) -> Result<(), VMError>,
+    {
+        loop {
+            let condition_result = condition(self);
+            if condition_result.is_err() {
+                let err = condition_result.err().unwrap();
+                for coroutine in self.executors.iter_mut() {
+                    coroutine.0.clean();
+                }
+                return Err(err);
+            }
             let spawned_coroutines = self.step_all(gc_system).map_err(|mut vm_error| {
                 let err = if self.enable_dump {
                     let all_coroutines_contexts_repr = self
@@ -290,8 +371,8 @@ impl VMCoroutinePool {
 }
 #[derive(Debug)]
 pub struct SpawnedCoroutine {
-    pub(super) lambda_ref: GCRef,
-    pub(super) args: GCRef,
+    pub lambda_ref: GCRef,
+    pub args: GCRef,
 }
 
 type InstructionHandler = fn(
@@ -302,12 +383,12 @@ type InstructionHandler = fn(
 
 #[derive(Debug)]
 pub struct VMExecutor {
-    pub(super) context: Context,
-    pub(super) lambda_instructions: Vec<GCRef>,
-    pub(super) stack: Vec<VMStackObject>,
-    pub(super) ip: isize,
-    pub(super) entry_lambda: GCRef,
-    pub(super) instruction_table: Vec<InstructionHandler>,
+    pub context: Context,
+    pub lambda_instructions: Vec<GCRef>,
+    pub stack: Vec<VMStackObject>,
+    pub ip: isize,
+    pub entry_lambda: GCRef,
+    pub instruction_table: Vec<InstructionHandler>,
 }
 
 impl VMExecutor {
@@ -890,10 +971,8 @@ impl VMExecutor {
                                 vm_error.consume_ref();
                                 Ok(result)
                             }
-                            Err(_) => {
-                                Err(vm_error)
-                            }
-                        }
+                            Err(_) => Err(vm_error),
+                        };
                     }
                 }
             }

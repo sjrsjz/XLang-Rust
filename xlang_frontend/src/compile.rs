@@ -1,5 +1,4 @@
 use colored::Colorize;
-
 use crate::dir_stack::DirStack;
 use crate::parser::analyzer::auto_capture_and_rebuild;
 use crate::parser::lexer::lexer;
@@ -30,11 +29,15 @@ pub fn build_code(code: &str, dir_stack: &mut DirStack) -> Result<IRPackage, Str
     let ast = auto_capture_and_rebuild(&ast).1;
 
     let analyse_result = analyze_ast(&ast, None, dir_stack);
+    
+    let mut errors = "".to_string();
     for error in &analyse_result.errors {
-        println!("{}", error.format(code.to_string()).bright_red());
+        //println!("{}", error.format(code.to_string()).bright_red());
+        errors.push_str(&error.format(code.to_string()));
+        errors.push_str("\n");
     }
     if !analyse_result.errors.is_empty() {
-        return Err("AST analysis failed".to_string());
+        return Err(format!("{}AST analysis failed", errors));
     }
     for warn in &analyse_result.warnings {
         println!("{}", warn.format(code.to_string()).bright_yellow());

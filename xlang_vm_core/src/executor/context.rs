@@ -14,8 +14,8 @@ pub enum ContextFrameType {
 
 #[derive(Debug)]
 pub struct Context {
-    pub(crate) frames: Vec<(HashMap<String, GCRef>, ContextFrameType, usize, bool)>, // vars, is_function_frame, function_code_position, is_hidden_frame
-    pub(crate) stack_pointers: Vec<usize>,
+    pub frames: Vec<(HashMap<String, GCRef>, ContextFrameType, usize, bool)>, // vars, is_function_frame, function_code_position, is_hidden_frame
+    pub stack_pointers: Vec<usize>,
 }
 
 #[derive(Debug)]
