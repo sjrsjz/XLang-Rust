@@ -21,8 +21,20 @@ MyClass := #class {
     },
 };
 
-// // 测试类
+// 测试类
 my_instance := MyClass.new("Hello, World!");
 my_instance.print();
-// // 检查类的类型
+// 检查类的类型
 assert isinstance(my_instance, MyClass);
+
+MyClass2 := #class {
+    print => () -> stdlib.builtins.print("Hi,", self._data),
+};
+
+extended := MyClass2.extends(my_instance);
+extended.print();
+extended.super().print();
+stdlib.builtins.print(extended._data);
+
+stdlib.builtins.print(lengthof stdlib.class.flatten(extended));
+stdlib.builtins.print(stdlib.class.ifsub(extended, MyClass2))
