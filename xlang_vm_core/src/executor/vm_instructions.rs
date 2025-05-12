@@ -1046,17 +1046,17 @@ pub fn reset_stack(
 pub fn get_attr(
     vm: &mut VMExecutor,
     _opcode: &ProcessedOpcode,
-    _gc_system: &mut GCSystem,
+    gc_system: &mut GCSystem,
 ) -> Result<Option<Vec<SpawnedCoroutine>>, VMError> {
     let mut attr = vm.get_object_and_check(0)?;
     let mut obj = vm.get_object_and_check(1)?;
 
-    let result = try_get_attr_as_vmobject(&mut obj, &mut attr).map_err(VMError::VMVariableError)?;
+    let result = try_get_attr_as_vmobject(&mut obj, &mut attr, gc_system).map_err(VMError::VMVariableError)?;
 
     // Pop objects from stack after successful operation
     vm.pop_object()?;
     vm.pop_object()?;
-    vm.push_vmobject(result.clone_ref())?;
+    vm.push_vmobject(result)?;
 
     // Drop references at the end
     obj.drop_ref();
@@ -1957,5 +1957,25 @@ pub fn get_length(
 
     // Drop reference at the end
     obj.drop_ref();
+    Ok(None)
+}
+
+pub fn check_is_same_object(
+    vm: &mut VMExecutor,
+    _opcode: &ProcessedOpcode,
+    gc_system: &mut GCSystem,
+) -> Result<Option<Vec<SpawnedCoroutine>>, VMError> {
+    let mut obj_1 = vm.get_object_and_check(0)?;
+    let mut obj_2 = vm.get_object_and_check(1)?;
+    let result = obj_1 == obj_2;
+
+    // Pop objects from stack after successful operation
+    vm.pop_object()?;
+    vm.pop_object()?;
+    vm.push_vmobject(gc_system.new_object(VMBoolean::new(result)))?;
+
+    // Drop references at the end
+    obj_1.drop_ref();
+    obj_2.drop_ref();
     Ok(None)
 }

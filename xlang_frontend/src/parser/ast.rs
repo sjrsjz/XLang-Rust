@@ -484,6 +484,7 @@ pub enum ASTNodeType {
     Set,                // collection | filter
     Map,                // collection |> map
     Annotation(String), // @annotation expr
+    Is, // x is y
 }
 
 #[derive(Debug, PartialEq, Eq, Clone)]
@@ -969,6 +970,12 @@ fn match_all<'t>(
     node_matcher.add_matcher(Box::new(
         |tokens, current| -> Result<(Option<ASTNode<'t>>, usize), ParserError<'t>> {
             match_in(tokens, current)
+        },
+    ));
+
+    node_matcher.add_matcher(Box::new(
+        |tokens, current| -> Result<(Option<ASTNode<'t>>, usize), ParserError<'t>> {
+            match_is(tokens, current)
         },
     ));
 
@@ -3195,6 +3202,54 @@ fn match_in<'t>(
         right_offset + 2,
     ))
 }
+
+fn match_is<'t>(
+    tokens: &Vec<GatheredTokens<'t>>,
+    current: usize,
+) -> Result<(Option<ASTNode<'t>>, usize), ParserError<'t>> {
+    if current + 2 >= tokens.len() {
+        return Ok((None, 0));
+    }
+    if !is_identifier(&tokens[current + 1], "is") {
+        return Ok((None, 0));
+    }
+
+    let left_tokens = gather(tokens[current])?;
+    let (left, left_offset) = match_all(&left_tokens, 0)?;
+    if left.is_none() {
+        return Ok((None, 0));
+    }
+    let left = left.unwrap();
+    if left_offset != left_tokens.len() {
+        return Err(ParserError::NotFullyMatched(
+            left_tokens.first().unwrap().first().unwrap(),
+            left_tokens.last().unwrap().last().unwrap(),
+        ));
+    }
+    let right_tokens = &tokens[current + 2..].to_vec();
+    let (right, right_offset) = match_all(&right_tokens, 0)?;
+    if right.is_none() {
+        return Ok((None, 0));
+    }
+    if right_offset != right_tokens.len() {
+        return Err(ParserError::NotFullyMatched(
+            right_tokens.first().unwrap().first().unwrap(),
+            right_tokens.last().unwrap().last().unwrap(),
+        ));
+    }
+    let right = right.unwrap();
+
+    Ok((
+        Some(ASTNode::new(
+            ASTNodeType::Is,
+            Some(&tokens[current].first().unwrap()),
+            Some(&tokens[current + right_offset + 1].last().unwrap()),
+            Some(vec![left, right]),
+        )),
+        right_offset + 2,
+    ))
+}
+
 
 fn match_capture_of<'t>(
     tokens: &Vec<GatheredTokens<'t>>,

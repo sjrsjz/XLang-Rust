@@ -92,6 +92,7 @@ pub enum IR{
     PushValueIntoTuple(usize), // push value into tuple on stack
     CaptureOf, // capture value
     LengthOf, // get length of object
+    IsSameObject, // check if two objects are the same
 }
 
 #[derive(Serialize, Deserialize, Debug, Clone)]

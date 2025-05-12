@@ -32,7 +32,7 @@ pub enum VMVariableError {
     AssignError(GCRef, String),
     ReferenceError(GCRef, String),
     OverflowError(GCRef, GCRef, String),
-    DetailedError(String)
+    DetailedError(String),
 }
 
 impl VMVariableError {
@@ -89,10 +89,7 @@ impl VMVariableError {
                 try_repr_vmobject(gc_ref, None).unwrap_or(format!("{:?}", gc_ref)),
                 try_repr_vmobject(other, None).unwrap_or(format!("{:?}", other)),
             ),
-            VMVariableError::DetailedError(msg) => format!(
-                "DetailedError: {}",
-                msg
-            ),
+            VMVariableError::DetailedError(msg) => format!("DetailedError: {}", msg),
         }
     }
 
@@ -132,15 +129,12 @@ impl VMVariableError {
                 gc_ref.drop_ref();
                 other.drop_ref();
             }
-            _ => {
-            }
+            _ => {}
         }
     }
 }
 
-pub fn try_length_of_as_vmobject(
-    value: &mut GCRef,
-) -> Result<usize, VMVariableError> {
+pub fn try_length_of_as_vmobject(value: &mut GCRef) -> Result<usize, VMVariableError> {
     if value.isinstance::<VMString>() {
         let string = value.as_const_type::<VMString>();
         return Ok(string.value.len());
@@ -160,7 +154,10 @@ pub fn try_length_of_as_vmobject(
     ))
 }
 
-pub fn try_contains_as_vmobject(value: &mut GCRef, other: &mut GCRef) -> Result<bool, VMVariableError> {
+pub fn try_contains_as_vmobject(
+    value: &mut GCRef,
+    other: &mut GCRef,
+) -> Result<bool, VMVariableError> {
     if value.isinstance::<VMString>() {
         let string = value.as_type::<VMString>();
         return string.contains(other);
@@ -278,8 +275,7 @@ pub fn try_repr_vmobject(
         }
     } else if value.isinstance::<VMLambda>() {
         let lambda = value.as_type::<VMLambda>();
-        let default_args =
-            try_repr_vmobject(&mut lambda.default_args_tuple, new_ref_path.clone())?;
+        let default_args = try_repr_vmobject(&mut lambda.default_args_tuple, new_ref_path.clone())?;
         let result_repr = try_repr_vmobject(&mut lambda.result, new_ref_path)?;
         format!("{}::{} -> {}", lambda.signature, default_args, result_repr)
     } else if value.isinstance::<VMInstructions>() {
@@ -683,7 +679,10 @@ pub fn try_shift_right_as_vmobject(
     ))
 }
 
-pub fn try_less_than_as_vmobject(value: &mut GCRef, other: &mut GCRef) -> Result<bool, VMVariableError> {
+pub fn try_less_than_as_vmobject(
+    value: &mut GCRef,
+    other: &mut GCRef,
+) -> Result<bool, VMVariableError> {
     if value.isinstance::<VMInt>() {
         let int = value.as_type::<VMInt>();
         return int.less_than(other);
@@ -698,7 +697,10 @@ pub fn try_less_than_as_vmobject(value: &mut GCRef, other: &mut GCRef) -> Result
     ))
 }
 
-pub fn try_greater_than_as_vmobject(value: &mut GCRef, other: &mut GCRef) -> Result<bool, VMVariableError> {
+pub fn try_greater_than_as_vmobject(
+    value: &mut GCRef,
+    other: &mut GCRef,
+) -> Result<bool, VMVariableError> {
     if value.isinstance::<VMInt>() {
         let int = value.as_type::<VMInt>();
         return int.greater_than(other);
@@ -716,12 +718,19 @@ pub fn try_greater_than_as_vmobject(value: &mut GCRef, other: &mut GCRef) -> Res
 pub fn try_get_attr_as_vmobject<'t>(
     value: &'t mut GCRef,
     attr: &'t mut GCRef,
-) -> Result<&'t mut GCRef, VMVariableError> {
+    gc_system: &mut GCSystem,
+) -> Result<GCRef, VMVariableError> {
     if value.isinstance::<VMTuple>() {
         let tuple = value.as_type::<VMTuple>();
-        return tuple.get_member(attr);
+        return tuple.get_member(attr).map(|v| v.clone_ref());
     }
-    Err(VMVariableError::KeyNotFound(attr.clone_ref(), value.clone_ref()))
+    if value.isinstance::<VMKeyVal>() {
+        return VMKeyVal::get_member(value, attr, gc_system)
+    }
+    Err(VMVariableError::KeyNotFound(
+        attr.clone_ref(),
+        value.clone_ref(),
+    ))
 }
 
 pub fn try_index_of_as_vmobject(
@@ -741,7 +750,10 @@ pub fn try_index_of_as_vmobject(
         let range = value.as_type::<VMBytes>();
         return range.index_of(index, gc_system);
     }
-    Err(VMVariableError::IndexNotFound(index.clone_ref(), value.clone_ref()))
+    Err(VMVariableError::IndexNotFound(
+        index.clone_ref(),
+        value.clone_ref(),
+    ))
 }
 
 pub fn try_key_of_as_vmobject(value: &mut GCRef) -> Result<&mut GCRef, VMVariableError> {
@@ -759,7 +771,10 @@ pub fn try_key_of_as_vmobject(value: &mut GCRef) -> Result<&mut GCRef, VMVariabl
         let wrapper = value.as_type::<VMSet>();
         return Ok(wrapper.get_key());
     }
-    Err(VMVariableError::TypeError(value.clone_ref(), "The value does not have a key".to_string()))
+    Err(VMVariableError::TypeError(
+        value.clone_ref(),
+        "The value does not have a key".to_string(),
+    ))
 }
 
 pub fn try_value_of_as_vmobject(value: &mut GCRef) -> Result<&mut GCRef, VMVariableError> {
@@ -1041,7 +1056,11 @@ impl VMInt {
         ))
     }
 
-    pub fn sub(&mut self, other: &mut GCRef, gc_system: &mut GCSystem) -> Result<GCRef, VMVariableError> {
+    pub fn sub(
+        &mut self,
+        other: &mut GCRef,
+        gc_system: &mut GCSystem,
+    ) -> Result<GCRef, VMVariableError> {
         if other.isinstance::<VMInt>() {
             let other_int = other.as_const_type::<VMInt>();
             return Ok(gc_system.new_object(VMInt::new(self.value - other_int.value)));
@@ -1056,7 +1075,11 @@ impl VMInt {
         ))
     }
 
-    pub fn mul(&mut self, other: &mut GCRef, gc_system: &mut GCSystem) -> Result<GCRef, VMVariableError> {
+    pub fn mul(
+        &mut self,
+        other: &mut GCRef,
+        gc_system: &mut GCSystem,
+    ) -> Result<GCRef, VMVariableError> {
         if other.isinstance::<VMInt>() {
             let other_int = other.as_const_type::<VMInt>();
             return Ok(gc_system.new_object(VMInt::new(self.value * other_int.value)));
@@ -1071,7 +1094,11 @@ impl VMInt {
         ))
     }
 
-    pub fn div(&mut self, other: &mut GCRef, gc_system: &mut GCSystem) -> Result<GCRef, VMVariableError> {
+    pub fn div(
+        &mut self,
+        other: &mut GCRef,
+        gc_system: &mut GCSystem,
+    ) -> Result<GCRef, VMVariableError> {
         if other.isinstance::<VMInt>() {
             let other_int = other.as_const_type::<VMInt>();
             return Ok(
@@ -1107,7 +1134,11 @@ impl VMInt {
         ))
     }
 
-    pub fn power(&mut self, other: &mut GCRef, gc_system: &mut GCSystem) -> Result<GCRef, VMVariableError> {
+    pub fn power(
+        &mut self,
+        other: &mut GCRef,
+        gc_system: &mut GCSystem,
+    ) -> Result<GCRef, VMVariableError> {
         if other.isinstance::<VMInt>() {
             let other_int = other.as_const_type::<VMInt>();
             let r = self.value.checked_pow(other_int.value as u32);
@@ -1390,7 +1421,6 @@ impl VMString {
         ))
     }
 
-
     pub fn mod_op(
         &mut self,
         other: &mut GCRef,
@@ -1406,7 +1436,7 @@ impl VMString {
         }
 
         let tuple = other.as_type::<VMTuple>();
-        
+
         // 解析格式字符串
         let mut result = String::new();
         let mut chars = self.value.chars().peekable();
@@ -1425,7 +1455,7 @@ impl VMString {
                 if chars.peek() == Some(&'(') {
                     chars.next(); // 消耗左括号
                     let mut name = String::new();
-                    
+
                     // 收集括号内的名称
                     while let Some(nc) = chars.next() {
                         if nc == ')' {
@@ -1449,10 +1479,11 @@ impl VMString {
                     for value in &mut tuple.values {
                         if value.isinstance::<VMNamed>() {
                             let named = value.as_type::<VMNamed>();
-                            
+
                             if named.get_key().isinstance::<VMString>() {
-                                let key_str = named.get_key().as_const_type::<VMString>().value.clone();
-                                
+                                let key_str =
+                                    named.get_key().as_const_type::<VMString>().value.clone();
+
                                 if key_str == name {
                                     // 找到匹配的命名参数
                                     let value_ref = named.get_value();
@@ -1463,10 +1494,11 @@ impl VMString {
                             }
                         } else if value.isinstance::<VMKeyVal>() {
                             let kv = value.as_type::<VMKeyVal>();
-                            
+
                             if kv.get_key().isinstance::<VMString>() {
-                                let key_str = kv.get_key().as_const_type::<VMString>().value.clone();
-                                
+                                let key_str =
+                                    kv.get_key().as_const_type::<VMString>().value.clone();
+
                                 if key_str == name {
                                     // 找到匹配的键值对
                                     let value_ref = kv.get_value();
@@ -1479,9 +1511,10 @@ impl VMString {
                     }
 
                     if !found {
-                        return Err(VMVariableError::DetailedError(
-                            format!("No format argument for '{}'", name)
-                        ));
+                        return Err(VMVariableError::DetailedError(format!(
+                            "No format argument for '{}'",
+                            name
+                        )));
                     }
 
                     result.push_str(&value_str);
@@ -1489,7 +1522,7 @@ impl VMString {
                     // 位置参数格式化（%s 类似形式）
                     // 这里我们简化处理，忽略具体的格式类型（如%d, %s等）
                     // 仅从元组中按顺序取值
-                    
+
                     // 消耗格式类型字符（如s, d, f等）
                     if let Some(format_type) = chars.next() {
                         if format_type != 's' && format_type != 'r' {
@@ -1502,9 +1535,10 @@ impl VMString {
                         }
                         // 这里不区分格式类型，直接使用to_string
                         if position_arg_index >= tuple.values.len() {
-                            return Err(VMVariableError::DetailedError(
-                                format!("Not enough arguments for format string (need at least {})", position_arg_index + 1)
-                            ));
+                            return Err(VMVariableError::DetailedError(format!(
+                                "Not enough arguments for format string (need at least {})",
+                                position_arg_index + 1
+                            )));
                         }
 
                         let value_ref = &mut tuple.values[position_arg_index];
@@ -1518,7 +1552,7 @@ impl VMString {
                         let value_str = match format_type {
                             's' => try_to_string_vmobject(value_ref, None)?,
                             'r' => try_repr_vmobject(value_ref, None)?,
-                            _ => unreachable!(),                            
+                            _ => unreachable!(),
                         };
                         result.push_str(&value_str);
                     } else {
@@ -1706,7 +1740,11 @@ impl VMFloat {
         ))
     }
 
-    pub fn sub(&mut self, other: &mut GCRef, gc_system: &mut GCSystem) -> Result<GCRef, VMVariableError> {
+    pub fn sub(
+        &mut self,
+        other: &mut GCRef,
+        gc_system: &mut GCSystem,
+    ) -> Result<GCRef, VMVariableError> {
         if other.isinstance::<VMFloat>() {
             let other_float = other.as_const_type::<VMFloat>();
             return Ok(gc_system.new_object(VMFloat::new(self.value - other_float.value)));
@@ -1721,7 +1759,11 @@ impl VMFloat {
         ))
     }
 
-    pub fn mul(&mut self, other: &mut GCRef, gc_system: &mut GCSystem) -> Result<GCRef, VMVariableError> {
+    pub fn mul(
+        &mut self,
+        other: &mut GCRef,
+        gc_system: &mut GCSystem,
+    ) -> Result<GCRef, VMVariableError> {
         if other.isinstance::<VMFloat>() {
             let other_float = other.as_const_type::<VMFloat>();
             return Ok(gc_system.new_object(VMFloat::new(self.value * other_float.value)));
@@ -1736,7 +1778,11 @@ impl VMFloat {
         ))
     }
 
-    pub fn div(&mut self, other: &mut GCRef, gc_system: &mut GCSystem) -> Result<GCRef, VMVariableError> {
+    pub fn div(
+        &mut self,
+        other: &mut GCRef,
+        gc_system: &mut GCSystem,
+    ) -> Result<GCRef, VMVariableError> {
         if other.isinstance::<VMFloat>() {
             let other_float = other.as_const_type::<VMFloat>();
             return Ok(gc_system.new_object(VMFloat::new(self.value / other_float.value)));
@@ -1770,7 +1816,11 @@ impl VMFloat {
         ))
     }
 
-    pub fn power(&mut self, other: &mut GCRef, gc_system: &mut GCSystem) -> Result<GCRef, VMVariableError> {
+    pub fn power(
+        &mut self,
+        other: &mut GCRef,
+        gc_system: &mut GCSystem,
+    ) -> Result<GCRef, VMVariableError> {
         if other.isinstance::<VMFloat>() {
             let other_float = other.as_const_type::<VMFloat>();
             return Ok(gc_system.new_object(VMFloat::new(self.value.powf(other_float.value))));
@@ -2154,6 +2204,89 @@ impl VMKeyVal {
             false
         }
     }
+
+    pub fn get_member(
+        key_val: &mut GCRef,
+        member: &mut GCRef,
+        gc: &mut GCSystem,
+    ) -> Result<GCRef, VMVariableError> {
+        // keyval 的成员访问遵循如下规则
+        // + 首先尝试在 value 中查找成员
+        // + 如果 value 中没有，则尝试在 key 中查找成员
+        // + 如果 value 中找到的成员是一个函数，则fork一个新的函数对象并将lambda的self引用绑定为keyval对象, 否则返回原始对象
+        // + 对key中的所有成员都返回原始对象
+
+        if !key_val.isinstance::<VMKeyVal>() {
+            return Err(VMVariableError::TypeError(
+                key_val.clone_ref(),
+                "Unreachable Internal Error: keyval is not a VMKeyVal".to_string(),
+            ));
+        }
+
+        let kv = key_val.as_type::<VMKeyVal>();
+        let value_ref = kv.get_value();
+
+        // 首先尝试在 value 中查找成员
+        if value_ref.isinstance::<VMTuple>() {
+            // 如果 value 是元组类型，尝试在其中查找成员
+            let tuple = value_ref.as_type::<VMTuple>();
+            match tuple.get_member(member) {
+                Ok(found_member) => {
+                    // 检查找到的成员是否为 Lambda
+                    if found_member.isinstance::<VMLambda>() {
+                        // 如果是函数，创建副本并绑定 self
+                        let mut lambda_copy = try_copy_as_vmobject(found_member, gc)?;
+                        lambda_copy.as_type::<VMLambda>().set_self_object(key_val);
+                        return Ok(lambda_copy);
+                    } else {
+                        // 不是函数，返回原始对象
+                        return Ok(found_member.clone_ref());
+                    }
+                }
+                Err(_) => {
+                    // value 中没有找到成员，继续尝试在 key 中查找
+                }
+            }
+        } else if value_ref.isinstance::<VMKeyVal>() {
+            // 如果 value 是另一个 KeyVal，递归查找
+            match VMKeyVal::get_member(value_ref, member, gc) {
+                Ok(found_member) => return Ok(found_member),
+                Err(_) => {
+                    // value 中没有找到成员，继续尝试在 key 中查找
+                }
+            }
+        }
+
+        // 然后尝试在 key 中查找成员
+        let key_ref = kv.get_key();
+        if key_ref.isinstance::<VMTuple>() {
+            // 如果 key 是元组类型，尝试在其中查找成员
+            let tuple = key_ref.as_type::<VMTuple>();
+            match tuple.get_member(member) {
+                Ok(found_member) => {
+                    // 对 key 中的所有成员都返回原始对象
+                    return Ok(found_member.clone_ref());
+                }
+                Err(_) => {
+                    // key 中也没有找到成员
+                }
+            }
+        } else if key_ref.isinstance::<VMKeyVal>() {
+            // 如果 key 是另一个 KeyVal，递归查找
+            match VMKeyVal::get_member(key_ref, member, gc) {
+                Ok(found_member) => return Ok(found_member),
+                Err(_) => {
+                    // key 中也没有找到成员
+                }
+            }
+        }
+
+        // 如果两处都没找到，返回错误
+        Err(VMVariableError::KeyNotFound(
+            member.clone_ref(),
+            key_val.clone_ref(),
+        ))
+    }
 }
 
 impl GCObject for VMKeyVal {
@@ -2417,7 +2550,10 @@ impl VMTuple {
                 }
             }
         }
-        Err(VMVariableError::KeyNotFound(key.clone_ref(), GCRef::wrap(self).clone_ref()))
+        Err(VMVariableError::KeyNotFound(
+            key.clone_ref(),
+            GCRef::wrap(self).clone_ref(),
+        ))
     }
 
     pub fn get_member_by_string(
@@ -2428,21 +2564,25 @@ impl VMTuple {
         for i in 0..self.values.len() {
             if self.values[i].isinstance::<VMKeyVal>() {
                 let kv = self.values[i].as_const_type::<VMKeyVal>();
-                if kv.get_const_key().isinstance::<VMString>() && 
-                   kv.get_const_key().as_const_type::<VMString>().value == key {
+                if kv.get_const_key().isinstance::<VMString>()
+                    && kv.get_const_key().as_const_type::<VMString>().value == key
+                {
                     return Ok(self.values[i].as_type::<VMKeyVal>().get_value().clone());
                 }
             } else if self.values[i].isinstance::<VMNamed>() {
                 let named = self.values[i].as_const_type::<VMNamed>();
-                if named.get_const_key().isinstance::<VMString>() && 
-                   named.get_const_key().as_const_type::<VMString>().value == key {
+                if named.get_const_key().isinstance::<VMString>()
+                    && named.get_const_key().as_const_type::<VMString>().value == key
+                {
                     return Ok(self.values[i].as_type::<VMNamed>().get_value().clone());
                 }
             }
         }
-        Err(VMVariableError::DetailedError(
-            format!("Key '{}' not found in {}", key, try_repr_vmobject(&mut GCRef::wrap(self), None)?),
-        ))
+        Err(VMVariableError::DetailedError(format!(
+            "Key '{}' not found in {}",
+            key,
+            try_repr_vmobject(&mut GCRef::wrap(self), None)?
+        )))
     }
 
     pub fn index_of(
@@ -2553,8 +2693,7 @@ impl VMTuple {
             if !found {
                 // 如果没有找到匹配的键，添加新的键值对
                 self.values.push(kv.clone());
-                self.traceable
-                    .add_reference(kv);
+                self.traceable.add_reference(kv);
                 assigned.push(true)
             }
         }
@@ -2567,7 +2706,8 @@ impl VMTuple {
                 normal_index += 1;
             }
 
-            if normal_index < self.values.len() && self.values[normal_index].isinstance::<VMNamed>() {
+            if normal_index < self.values.len() && self.values[normal_index].isinstance::<VMNamed>()
+            {
                 // 找到位置，进行赋值
                 let value_ref = &mut self.values[normal_index];
                 try_assign_as_vmobject(value_ref, value)?;
@@ -2576,16 +2716,18 @@ impl VMTuple {
             } else {
                 // 没有更多位置，追加到末尾
                 self.values.push(value.clone());
-                self.traceable
-                    .add_reference(value);
+                self.traceable.add_reference(value);
                 assigned.push(true);
             }
         }
         Ok(())
     }
 
-
-    pub fn clone_and_assign_members(&mut self, other: &mut GCRef, gc_system: &mut GCSystem) -> Result<GCRef, VMVariableError> {
+    pub fn clone_and_assign_members(
+        &mut self,
+        other: &mut GCRef,
+        gc_system: &mut GCSystem,
+    ) -> Result<GCRef, VMVariableError> {
         // 确保参数是元组
         if !other.isinstance::<VMTuple>() {
             return Err(VMVariableError::ValueError2Param(
@@ -2596,7 +2738,8 @@ impl VMTuple {
         }
 
         let other_tuple = other.as_type::<VMTuple>();
-        let mut new_args_tuple = gc_system.new_object(VMTuple::new(&mut self.values.iter_mut().collect()));
+        let mut new_args_tuple =
+            gc_system.new_object(VMTuple::new(&mut self.values.iter_mut().collect()));
         let tuple = new_args_tuple.as_type::<VMTuple>();
         // 分离命名参数和普通值
         let mut key_values = Vec::new();
@@ -2626,7 +2769,6 @@ impl VMTuple {
 
                     // 检查键是否匹配
                     if try_eq_as_vmobject(self_named.get_const_key(), kv_named.get_const_key()) {
-                        
                         let mut old_value = tuple.values[i].clone();
                         tuple.traceable.add_reference(kv);
                         tuple.values[i] = kv.clone();
@@ -2641,8 +2783,7 @@ impl VMTuple {
             if !found {
                 // 如果没有找到匹配的键，添加新的键值对
                 tuple.values.push(kv.clone());
-                tuple.traceable
-                    .add_reference(kv);
+                tuple.traceable.add_reference(kv);
                 assigned.push(true)
             }
         }
@@ -2655,28 +2796,30 @@ impl VMTuple {
                 normal_index += 1;
             }
 
-            if normal_index < self.values.len() && self.values[normal_index].isinstance::<VMNamed>() {
+            if normal_index < self.values.len() && self.values[normal_index].isinstance::<VMNamed>()
+            {
                 // 找到位置，构建新的命名参数并替换
                 let mut old_value = tuple.values[normal_index].clone();
                 let mut new_named = gc_system.new_object(VMNamed::new(
-                    &mut self.values[normal_index].as_type::<VMNamed>().get_key().clone(),
+                    &mut self.values[normal_index]
+                        .as_type::<VMNamed>()
+                        .get_key()
+                        .clone(),
                     value,
                 ));
-
 
                 tuple.traceable.add_reference(&mut new_named);
                 tuple.values[normal_index] = new_named.clone();
                 tuple.traceable.remove_reference(&mut old_value);
 
                 new_named.drop_ref();
-                
+
                 assigned[normal_index] = true;
                 normal_index += 1;
             } else {
                 // 没有更多位置，追加到末尾
                 tuple.values.push(value.clone());
-                tuple.traceable
-                    .add_reference(value);
+                tuple.traceable.add_reference(value);
                 assigned.push(true);
             }
         }
@@ -2760,7 +2903,8 @@ impl VMTuple {
 
     pub fn append(&mut self, value: &mut GCRef) -> Result<(), VMVariableError> {
         self.values.push(value.clone());
-        self.traceable.add_reference(self.values.last_mut().unwrap());
+        self.traceable
+            .add_reference(self.values.last_mut().unwrap());
         Ok(())
     }
 }
@@ -2993,27 +3137,42 @@ impl VMCoroutineStatus {
 
 pub enum VMLambdaBody {
     VMInstruction(GCRef),
-    VMNativeFunction(fn(Option<&mut GCRef>, Option<&mut GCRef>, &mut GCRef, &mut GCSystem) -> Result<GCRef, VMVariableError>),
+    VMNativeFunction(
+        fn(
+            Option<&mut GCRef>,
+            Option<&mut GCRef>,
+            &mut GCRef,
+            &mut GCSystem,
+        ) -> Result<GCRef, VMVariableError>,
+    ),
     VMNativeGeneratorFunction(Arc<Box<dyn VMNativeGeneratorFunction>>),
 }
 
 impl Debug for VMLambdaBody {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         match self {
-            VMLambdaBody::VMInstruction(gc_ref) => f.debug_tuple("VMInstruction").field(gc_ref).finish(),
-            VMLambdaBody::VMNativeFunction(_) => f.debug_tuple("VMNativeFunction").field(&"<fn>").finish(), // 函数指针不直接可调试
-            VMLambdaBody::VMNativeGeneratorFunction(gen) => f.debug_tuple("VMNativeGeneratorFunction").field(gen).finish(), // 使用 trait object 的 Debug
+            VMLambdaBody::VMInstruction(gc_ref) => {
+                f.debug_tuple("VMInstruction").field(gc_ref).finish()
+            }
+            VMLambdaBody::VMNativeFunction(_) => {
+                f.debug_tuple("VMNativeFunction").field(&"<fn>").finish()
+            } // 函数指针不直接可调试
+            VMLambdaBody::VMNativeGeneratorFunction(gen) => f
+                .debug_tuple("VMNativeGeneratorFunction")
+                .field(gen)
+                .finish(), // 使用 trait object 的 Debug
         }
     }
 }
-
 
 impl Clone for VMLambdaBody {
     fn clone(&self) -> Self {
         match self {
             VMLambdaBody::VMInstruction(gc_ref) => VMLambdaBody::VMInstruction(gc_ref.clone()),
             VMLambdaBody::VMNativeFunction(func) => VMLambdaBody::VMNativeFunction(*func), // 函数指针是 Copy
-            VMLambdaBody::VMNativeGeneratorFunction(gen) => VMLambdaBody::VMNativeGeneratorFunction(gen.clone()), // 使用 Box 的 Clone
+            VMLambdaBody::VMNativeGeneratorFunction(gen) => {
+                VMLambdaBody::VMNativeGeneratorFunction(gen.clone())
+            } // 使用 Box 的 Clone
         }
     }
 }
@@ -3023,7 +3182,10 @@ impl PartialEq for VMLambdaBody {
         match (self, other) {
             (VMLambdaBody::VMInstruction(a), VMLambdaBody::VMInstruction(b)) => a == b, // 假设 GCRef 实现 PartialEq
             (VMLambdaBody::VMNativeFunction(_), VMLambdaBody::VMNativeFunction(_)) => false, // 函数指针通常不比较
-            (VMLambdaBody::VMNativeGeneratorFunction(_), VMLambdaBody::VMNativeGeneratorFunction(_)) => false, // 通常不比较 trait object 的内容
+            (
+                VMLambdaBody::VMNativeGeneratorFunction(_),
+                VMLambdaBody::VMNativeGeneratorFunction(_),
+            ) => false, // 通常不比较 trait object 的内容
             _ => false, // 不同变体不相等
         }
     }
@@ -3069,7 +3231,7 @@ impl VMLambda {
         self_object: Option<&mut GCRef>,
         lambda_body: &mut VMLambdaBody,
         result: &mut GCRef,
-        dynamic_params: bool
+        dynamic_params: bool,
     ) -> Self {
         if !default_args_tuple.isinstance::<VMTuple>() {
             panic!("default_args_tuple must be a VMTuple");
@@ -3137,7 +3299,7 @@ impl VMLambda {
         lambda_body: &mut VMLambdaBody,
         result: &mut GCRef,
         alias: &Vec<String>,
-        dynamic_params: bool
+        dynamic_params: bool,
     ) -> Self {
         if !default_args_tuple.isinstance::<VMTuple>() {
             panic!("default_args_tuple must be a VMTuple");
@@ -3279,7 +3441,7 @@ impl VMObject for VMLambda {
                     ));
                 };
                 VMLambdaBody::VMNativeGeneratorFunction(gen.clone_generator())
-            },
+            }
         };
 
         let new_lambda = gc_system.new_object(VMLambda::new_with_alias(
@@ -3299,60 +3461,24 @@ impl VMObject for VMLambda {
                 instructions.drop_ref();
             }
             VMLambdaBody::VMNativeFunction(_) => {}
-            VMLambdaBody::VMNativeGeneratorFunction(_) => {
-            }
+            VMLambdaBody::VMNativeGeneratorFunction(_) => {}
         }
         new_result.drop_ref();
         Ok(new_lambda)
     }
 
     fn copy(&mut self, gc_system: &mut GCSystem) -> Result<GCRef, VMVariableError> {
-        let mut new_default_args_tuple = self
-            .default_args_tuple
-            .as_type::<VMTuple>()
-            .copy(gc_system)?;
-
-        let mut new_result = try_copy_as_vmobject(&mut self.result, gc_system)?;
-
-        let mut new_lambda_body = match self.lambda_body {
-            VMLambdaBody::VMInstruction(ref mut instructions) => {
-                VMLambdaBody::VMInstruction(try_copy_as_vmobject(instructions, gc_system)?)
-            }
-            VMLambdaBody::VMNativeFunction(_) => self.lambda_body.clone(),
-            VMLambdaBody::VMNativeGeneratorFunction(_) => {
-                let VMLambdaBody::VMNativeGeneratorFunction(ref gen) = self.lambda_body else {
-                    return Err(VMVariableError::ValueError(
-                        GCRef::wrap(self).clone_ref(),
-                        "Invalid lambda body type".to_string(),
-                    ));
-                };
-                VMLambdaBody::VMNativeGeneratorFunction(gen.clone_generator())
-            },
-        };
-
-
-        let new_lambda = gc_system.new_object(VMLambda::new_with_alias(
+        Ok(gc_system.new_object(VMLambda::new_with_alias(
             self.code_position,
             self.signature.clone(),
-            &mut new_default_args_tuple,
+            &mut self.default_args_tuple,
             self.capture.as_mut(), // 捕获对象不会被复制
             None,
-            &mut new_lambda_body,
-            &mut new_result,
+            &mut self.lambda_body,
+            &mut self.result,
             &self.alias,
             self.dynamic_params,
-        ));
-        new_default_args_tuple.drop_ref();
-        match new_lambda_body {
-            VMLambdaBody::VMInstruction(ref mut instructions) => {
-                instructions.drop_ref();
-            }
-            VMLambdaBody::VMNativeFunction(_) => {}
-            VMLambdaBody::VMNativeGeneratorFunction(_) => {
-            }
-        }
-        new_result.drop_ref();
-        return Ok(new_lambda);
+        )))
     }
 
     fn assign<'t>(&mut self, value: &'t mut GCRef) -> Result<&'t mut GCRef, VMVariableError> {
@@ -3550,7 +3676,11 @@ impl VMRange {
             "Cannot add a value of non-integer type".to_string(),
         ))
     }
-    pub fn sub(&mut self, other: &mut GCRef, gc_system: &mut GCSystem) -> Result<GCRef, VMVariableError> {
+    pub fn sub(
+        &mut self,
+        other: &mut GCRef,
+        gc_system: &mut GCSystem,
+    ) -> Result<GCRef, VMVariableError> {
         if other.isinstance::<VMInt>() {
             let other_int = other.as_const_type::<VMInt>();
             return Ok(gc_system.new_object(VMRange::new(

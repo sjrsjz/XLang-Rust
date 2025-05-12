@@ -815,6 +815,13 @@ impl<'t> IRGenerator<'t> {
                 ));
                 Ok(instructions)
             }
+            ASTNodeType::Is => {
+                let mut instructions = Vec::new();
+                instructions.extend(self.generate_without_redirect(&ast_node.children[0])?);
+                instructions.extend(self.generate_without_redirect(&ast_node.children[1])?);
+                instructions.push((self.generate_debug_info(ast_node), IR::IsSameObject));
+                Ok(instructions)
+            }
             ASTNodeType::Alias(alias) => {
                 let mut instructions = Vec::new();
                 instructions.extend(self.generate_without_redirect(&ast_node.children[0])?);

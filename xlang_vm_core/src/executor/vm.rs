@@ -438,6 +438,7 @@ impl VMExecutor {
         instruction_table[VMInstruction::BinaryGe as usize] = vm_instructions::binary_greater_equal;
         instruction_table[VMInstruction::BinaryLe as usize] = vm_instructions::binary_less_equal;
         instruction_table[VMInstruction::BinaryIn as usize] = vm_instructions::is_in;
+        instruction_table[VMInstruction::BinaryIs as usize] = vm_instructions::check_is_same_object;
 
         // 一元操作
         instruction_table[VMInstruction::UnaryBitNot as usize] = vm_instructions::unary_bitwise_not;

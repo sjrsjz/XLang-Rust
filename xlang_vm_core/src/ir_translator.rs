@@ -618,6 +618,17 @@ impl IRTranslator {
                         .get_opcode(),
                     );
                 }
+                IR::IsSameObject => {
+                    self.code.push(
+                        Opcode32::build_opcode(
+                            VMInstruction::BinaryIs as u8,
+                            0,
+                            0,
+                            0,
+                        )
+                        .get_opcode(),
+                    );
+                }
                 IR::AliasOf => {
                     self.code.push(
                         Opcode32::build_opcode(

@@ -116,6 +116,7 @@ fn process_node(
             ASTNodeType::Set => SemanticTokenTypes::Set,
             ASTNodeType::Map => SemanticTokenTypes::Map,
             ASTNodeType::Annotation(_) => SemanticTokenTypes::Annotation,
+            ASTNodeType::Is => SemanticTokenTypes::Operation,
             _ => SemanticTokenTypes::Variable, // 默认情况
         };
 
