@@ -10,6 +10,7 @@
 @compile "./interface.x";
 @compile "./match.x";
 @compile "./functools.x";
+@compile "./class.x";
 @required __stdlib_root;
 @required io;
 
@@ -40,6 +41,7 @@ return #try_catch {
         interface := #import_module "" : "interface";
         match := #import_module "" : "match";
         functools := #import_module "" : "functools";
+        class := #import_module "" : "class";
 
         return {
             builtins!,
@@ -49,6 +51,7 @@ return #try_catch {
             interface!,
             match!,
             functools!,
+            class!,
         };
     }
 } : {
